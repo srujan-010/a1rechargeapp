@@ -30,6 +30,7 @@ final class NetworkException extends AppException {
     this.isNoConnection = false,
     this.isDnsFailure = false,
     this.isServerUnreachable = false,
+    this.isServerWakingUp = false,
   });
 
   final int? statusCode;
@@ -37,6 +38,7 @@ final class NetworkException extends AppException {
   final bool isNoConnection;
   final bool isDnsFailure;
   final bool isServerUnreachable;
+  final bool isServerWakingUp;
 
   static const NetworkException noConnection = NetworkException(
     message: 'No internet connection.',
@@ -56,6 +58,11 @@ final class NetworkException extends AppException {
   static const NetworkException serverUnreachable = NetworkException(
     message: 'Unable to reach the server.',
     isServerUnreachable: true,
+  );
+
+  static const NetworkException serverWakingUp = NetworkException(
+    message: 'Server is currently waking up from sleep. Please try again in a few seconds.',
+    isServerWakingUp: true,
   );
 }
 

@@ -100,6 +100,27 @@ class ApiClient {
             }
           }
 
+          // Render Cold Start Retry Logic (Wait and retry exactly once for 5xx or timeouts)
+          final isColdStartError = 
+              error.type == DioExceptionType.connectionTimeout || 
+              error.type == DioExceptionType.receiveTimeout ||
+              (error.response?.statusCode != null && [502, 503, 504].contains(error.response?.statusCode));
+              
+          final hasRetried = error.requestOptions.extra['retried'] == true;
+
+          if (isColdStartError && !hasRetried) {
+            AppLogger.warning('Detected possible Render cold start. Retrying request in 2 seconds...', tag: 'HTTP');
+            error.requestOptions.extra['retried'] = true;
+            await Future.delayed(const Duration(seconds: 2));
+            try {
+              final retryResponse = await _dio.fetch(error.requestOptions);
+              return handler.resolve(retryResponse);
+            } catch (retryError) {
+              // If retry fails, pass the error down
+              return handler.next(retryError is DioException ? retryError : error);
+            }
+          }
+
           handler.next(error);
         },
       ),
@@ -329,6 +350,10 @@ class ApiClient {
             code: code,
             fieldErrors: fieldErrors,
           );
+        }
+        if (statusCode != null && [502, 503, 504].contains(statusCode)) {
+          AppLogger.error('Server is waking up (Render cold start) or gateway error: $statusCode', tag: 'Network');
+          return NetworkException.serverWakingUp;
         }
         if (statusCode != null && statusCode >= 500) {
           return ServerException(

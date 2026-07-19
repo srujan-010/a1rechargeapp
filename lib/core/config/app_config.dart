@@ -53,32 +53,8 @@ abstract final class AppConfig {
       return;
     }
 
-    if (kIsWeb) {
-      _initializedBaseUrl = 'http://localhost:5000/api';
-    } else {
-      final deviceInfo = DeviceInfoPlugin();
-      bool isEmulator = false;
-
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        final androidInfo = await deviceInfo.androidInfo;
-        isEmulator = !androidInfo.isPhysicalDevice;
-        if (isEmulator) {
-          _initializedBaseUrl = 'http://10.0.2.2:5000/api';
-        } else {
-          _initializedBaseUrl = 'http://$_lanIp:5000/api';
-        }
-      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        final iosInfo = await deviceInfo.iosInfo;
-        isEmulator = !iosInfo.isPhysicalDevice;
-        if (isEmulator) {
-          _initializedBaseUrl = 'http://127.0.0.1:5000/api';
-        } else {
-          _initializedBaseUrl = 'http://$_lanIp:5000/api';
-        }
-      } else {
-        _initializedBaseUrl = 'http://127.0.0.1:5000/api';
-      }
-    }
+    // Default to the live Render backend for all environments
+    _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }
@@ -93,9 +69,10 @@ abstract final class AppConfig {
   static const String supportEmail = 'support@a1recharge.com';
 
   // ─── Timeout durations ────────────────────────────────────────────
-  static const Duration connectTimeout = Duration(seconds: 60);
-  static const Duration receiveTimeout = Duration(seconds: 60);
-  static const Duration sendTimeout = Duration(seconds: 60);
+  // Increased to 90 seconds to generously accommodate Render's free tier cold starts
+  static const Duration connectTimeout = Duration(seconds: 90);
+  static const Duration receiveTimeout = Duration(seconds: 90);
+  static const Duration sendTimeout = Duration(seconds: 90);
 
   // ─── Session / Security ───────────────────────────────────────────
   /// Inactivity auto-logout duration
