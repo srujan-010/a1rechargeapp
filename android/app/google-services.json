@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "765569713221",
+    "project_id": "shopulse-a954e",
+    "storage_bucket": "shopulse-a954e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:765569713221:android:3eaedadd9e6d1e13c30f2c",
+        "android_client_info": {
+          "package_name": "com.a1recharge.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCkFby7MFkFfMzZMFCTna1v_kvdAm57KM0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
