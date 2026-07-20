@@ -82,18 +82,33 @@ class RechargeRepositoryImpl implements RechargeRepository {
   Future<Result<List<RechargePlan>, AppException>> getPlans({
     required String operatorId,
     required String circle,
+    required String serviceType,
   }) async {
-    // A1 Topup doesn't provide a plan API directly yet, so we return generic dummy plans or a single dummy plan.
-    // In production, this should hit a plan API if available.
     try {
-      // Simulate network delay
-      await Future.delayed(const Duration(milliseconds: 500));
-      return const Success([
-        RechargePlan(id: 'p1', pricePaise: 29900, category: PlanCategory.unlimited, description: '2GB/day, Unlimited Calls, 100 SMS/day', validity: '28 Days'),
-        RechargePlan(id: 'p2', pricePaise: 66600, category: PlanCategory.unlimited, description: '1.5GB/day, Unlimited Calls, 100 SMS/day', validity: '84 Days'),
-        RechargePlan(id: 'p5', pricePaise: 1500, category: PlanCategory.data, description: '1GB Data Add-on', validity: 'Base Plan Validity'),
-        RechargePlan(id: 'p8', pricePaise: 1000, category: PlanCategory.topup, description: '₹7.47 Talktime', validity: 'Unlimited'),
-      ]);
+      String endpoint = '/plans/mobile/prepaid';
+      if (serviceType.toLowerCase() == 'postpaid') {
+        endpoint = '/plans/mobile/postpaid';
+      } else if (serviceType.toLowerCase() == 'dth') {
+        endpoint = '/plans/dth/packs';
+      }
+
+      final response = await apiClient.get<Map<String, dynamic>>(
+        endpoint,
+        queryParameters: {
+          'operatorId': operatorId,
+          'circleId': circle,
+        },
+        fromJson: (json) => json as Map<String, dynamic>,
+      );
+
+      if (response.success && response.data != null) {
+        final List<dynamic> plansData = response.data!['plans'] ?? [];
+        final plans = plansData.map((json) => RechargePlan.fromJson(json as Map<String, dynamic>)).toList();
+        return Success(plans);
+      }
+      return Failure(ServerException(message: response.message));
+    } on AppException catch (e) {
+      return Failure(e);
     } catch (e) {
       return Failure(UnknownException.from(e));
     }

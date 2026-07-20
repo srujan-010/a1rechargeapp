@@ -64,6 +64,7 @@ app.use('/api/user', require('./routes/userRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
+app.use('/api/plans', require('./routes/plans.routes'));
 app.use('/api/bank', require('./routes/bankRoutes'));
 app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));

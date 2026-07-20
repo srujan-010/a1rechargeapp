@@ -33,15 +33,15 @@ class RechargePlan extends Equatable {
   final String? talktime; // for topup plans
 
   factory RechargePlan.fromJson(Map<String, dynamic> json) => RechargePlan(
-        id: json['id'] as String? ?? json['_id'] as String? ?? '',
+        id: json['id'] as String? ?? json['_id'] as String? ?? (json['amount']?.toString() ?? ''),
         category: _parseCategory(json['category'] as String?),
-        pricePaise: (json['price'] as num?)?.toInt() ?? 0,
+        pricePaise: (json['amount'] != null ? (json['amount'] as num).toInt() * 100 : ((json['price'] as num?)?.toInt() ?? 0)),
         validity: json['validity'] as String? ?? '',
-        description: json['description'] as String? ?? '',
+        description: json['description'] as String? ?? json['benefit'] as String? ?? '',
         data: json['data'] as String?,
         sms: json['sms'] as String?,
-        voice: json['voice'] as String?,
-        tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+        voice: json['voice'] as String? ?? json['calls'] as String?,
+        tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? (json['subscriptions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
         isPopular: json['isPopular'] as bool? ?? false,
         isBestValue: json['isBestValue'] as bool? ?? false,
         talktime: json['talktime'] as String?,
@@ -62,16 +62,18 @@ class RechargePlan extends Equatable {
         'talktime': talktime,
       };
 
-  static PlanCategory _parseCategory(String? raw) => switch (raw) {
-        'popular' => PlanCategory.popular,
-        'topup' => PlanCategory.topup,
-        'data' => PlanCategory.data,
-        'unlimited' => PlanCategory.unlimited,
-        'sms' => PlanCategory.sms,
-        'special' => PlanCategory.special,
-        'monthly' => PlanCategory.monthly,
-        _ => PlanCategory.popular,
-      };
+  static PlanCategory _parseCategory(String? raw) {
+    if (raw == null) return PlanCategory.popular;
+    final normalized = raw.toLowerCase().trim();
+    if (normalized.contains('popular')) return PlanCategory.popular;
+    if (normalized.contains('top up') || normalized.contains('talktime')) return PlanCategory.topup;
+    if (normalized.contains('data')) return PlanCategory.data;
+    if (normalized.contains('unlimited')) return PlanCategory.unlimited;
+    if (normalized.contains('sms')) return PlanCategory.sms;
+    if (normalized.contains('special') || normalized.contains('ott') || normalized.contains('international') || normalized.contains('roaming')) return PlanCategory.special;
+    if (normalized.contains('monthly')) return PlanCategory.monthly;
+    return PlanCategory.popular;
+  }
 
   static List<RechargePlan> fakeList() => [
         const RechargePlan(

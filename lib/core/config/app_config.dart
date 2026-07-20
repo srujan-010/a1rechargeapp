@@ -54,7 +54,7 @@ abstract final class AppConfig {
     }
 
     // Default to the live Render backend for all environments
-    _initializedBaseUrl = kIsWeb ? 'http://localhost:5000/api' : 'http://10.0.2.2:5000/api'; // Use local for dev testing
+    _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }

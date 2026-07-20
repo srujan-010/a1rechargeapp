@@ -26,6 +26,7 @@ abstract class RechargeRepository {
   Future<Result<List<RechargePlan>, AppException>> getPlans({
     required String operatorId,
     required String circle,
+    required String serviceType,
   });
 
   /// Initiates a recharge transaction

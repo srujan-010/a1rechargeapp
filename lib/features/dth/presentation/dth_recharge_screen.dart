@@ -185,6 +185,19 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                     prefixText: '₹ ',
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
+                TextButton.icon(
+                  onPressed: () {
+                    context.push(RouteNames.rechargePlans);
+                  },
+                  icon: const Icon(Icons.list_alt),
+                  label: const Text('Browse DTH Packs'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryBlue,
+                    alignment: Alignment.centerLeft,
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.xxxl),
 
                 // ── Proceed Button ──

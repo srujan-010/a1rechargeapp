@@ -30,10 +30,14 @@ final circlesProvider = FutureProvider<List<Circle>>((ref) async {
   return result.getOrElseCompute((e) => throw e);
 });
 
-// A provider to fetch plans based on operatorId and circle
-final plansProvider = FutureProvider.family<List<RechargePlan>, ({String operatorId, String circle})>((ref, params) async {
+// A provider to fetch plans based on operatorId, circle, and serviceType
+final plansProvider = FutureProvider.family<List<RechargePlan>, ({String operatorId, String circle, String serviceType})>((ref, params) async {
   final repo = ref.watch(rechargeRepositoryProvider);
-  final result = await repo.getPlans(operatorId: params.operatorId, circle: params.circle);
+  final result = await repo.getPlans(
+    operatorId: params.operatorId,
+    circle: params.circle,
+    serviceType: params.serviceType,
+  );
   return result.getOrElseCompute((e) => throw e);
 });
 
