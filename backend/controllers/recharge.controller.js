@@ -256,6 +256,19 @@ const executeRecharge = async (req, res, next) => {
           referenceId: transaction._id,
           description: `Commission for Recharge ${orderId}`,
         });
+        
+        await Transaction.create({
+          userId,
+          type: 'credit',
+          amountPaise: commission.retailerCommissionAmount * 100,
+          status: 'success',
+          service: 'commission',
+          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          description: `Commission for Recharge ${orderId}`,
+          apiReference: transaction._id.toString(),
+          paymentMethod: 'wallet',
+          operatorName: operator.name,
+        });
       }
 
       // Record Commission History
@@ -386,6 +399,18 @@ const checkStatus = async (req, res, next) => {
           referenceId: transaction._id,
           description: `Commission for Recharge ${transaction.orderId}`,
         });
+        
+        await Transaction.create({
+          userId: transaction.userId,
+          type: 'credit',
+          amountPaise: commission.retailerCommissionAmount * 100,
+          status: 'success',
+          service: 'commission',
+          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          description: `Commission for Recharge ${transaction.orderId}`,
+          apiReference: transaction._id.toString(),
+          paymentMethod: 'wallet',
+        });
       }
       
       await CommissionHistory.create({
@@ -481,6 +506,18 @@ const providerCallback = async (req, res, next) => {
           referenceType: 'COMMISSION',
           referenceId: transaction._id,
           description: `Commission for Recharge ${transaction.orderId}`,
+        });
+
+        await Transaction.create({
+          userId: transaction.userId,
+          type: 'credit',
+          amountPaise: commission.retailerCommissionAmount * 100,
+          status: 'success',
+          service: 'commission',
+          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+          description: `Commission for Recharge ${transaction.orderId}`,
+          apiReference: transaction._id.toString(),
+          paymentMethod: 'wallet',
         });
       }
 

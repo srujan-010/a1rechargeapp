@@ -92,6 +92,18 @@ describe('Recharge Controller - executeRecharge', () => {
       message: 'Recharge successful',
       data: expect.objectContaining({ status: 'success' })
     }));
+    
+    // Check if Transaction.create was called twice (once for recharge, once for commission)
+    expect(Transaction.create).toHaveBeenCalledTimes(2);
+    expect(Transaction.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      service: 'mobile_recharge',
+      type: 'debit',
+    }));
+    expect(Transaction.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      service: 'commission',
+      type: 'credit',
+      amountPaise: 500, // 5 * 100
+    }));
   });
 
   it('should handle FAILED status correctly', async () => {
