@@ -43,6 +43,10 @@ app.use(cors({
     // Allow any origin in dev or if explicitly allowed
     if (process.env.NODE_ENV !== 'production') return callback(null, true);
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    
+    // Allow flutter web local development even when backend is in production
+    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+    
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
