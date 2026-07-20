@@ -237,10 +237,19 @@ class A1TopupProvider extends ProviderInterface {
   _normalizeResponse(data, orderId = null) {
     // This maps A1 Topup's specific fields to our generic format
     let status = 'PENDING';
-    const rawStatus = (data.status || '').toUpperCase();
     
-    if (rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED') status = 'SUCCESS';
-    else if (rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'FAILURE') status = 'FAILED';
+    // Some APIs use lowercase, some uppercase keys.
+    const rawStatusValue = data.status || data.Status || '';
+    const rawStatus = String(rawStatusValue).toUpperCase().trim();
+    
+    if (rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED') {
+      status = 'SUCCESS';
+    } else if (rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'FAILURE') {
+      status = 'FAILED';
+    } else {
+      // Anything else is PENDING (Timeout, Unknown, etc)
+      status = 'PENDING';
+    }
 
     let rawMessage = data.message || data.opid || 'Processed';
     let cleanMessage = rawMessage;

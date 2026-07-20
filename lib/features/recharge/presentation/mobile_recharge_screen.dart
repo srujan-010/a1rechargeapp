@@ -26,9 +26,48 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   final _phoneController = TextEditingController();
   final FocusNode _phoneFocusNode = FocusNode();
 
-  final List<int> _quickAmounts = [19, 199, 299, 666, 719, 2999];
+  final List<int> _quickAmounts = [19, 199, 299, 479, 666, 719];
+  
+  String _selectedCategory = '⭐ Recommended';
+  final List<String> _categories = [
+    '⭐ Recommended',
+    '♾ Unlimited',
+    '📶 Data',
+    '⚡ Data Booster',
+    '🎬 Content Packs',
+    '5️⃣ Unlimited 5G',
+    '💰 Talktime',
+    '🌍 International Roaming',
+    '📅 Yearly Plans',
+  ];
 
   bool _hasContactPermission = false;
+
+  final List<String> _quickFilters = [
+    '28 Days', '56 Days', '84 Days', '365 Days', 
+    '1GB/day', '1.5GB/day', '2GB/day', 'Unlimited 5G'
+  ];
+  String _searchQuery = '';
+  String _selectedQuickFilter = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  String _categorizePlan(RechargePlan plan) {
+    final desc = plan.description.toLowerCase();
+    final data = plan.data?.toLowerCase() ?? '';
+    final voice = plan.voice?.toLowerCase() ?? '';
+    final validity = plan.validity.toLowerCase();
+    
+    if (plan.tags.isNotEmpty || desc.contains('hotstar') || desc.contains('prime') || desc.contains('netflix')) return '🎬 Content Packs';
+    if (validity.contains('365') || validity.contains('year')) return '📅 Yearly Plans';
+    if (desc.contains('isd') || desc.contains('roaming')) return '🌍 International Roaming';
+    if (desc.contains('5g') || plan.tags.any((t) => t.toLowerCase().contains('5g'))) return '5️⃣ Unlimited 5G';
+    if (voice.contains('unlimited') || desc.contains('unlimited calls')) return '♾ Unlimited';
+    if (data.isNotEmpty && (voice.isEmpty || voice == 'na' || voice == 'none')) return '⚡ Data Booster';
+    if (data.isNotEmpty) return '📶 Data';
+    if (plan.talktime != null || desc.contains('talktime')) return '💰 Talktime';
+    
+    return '♾ Unlimited'; // Fallback
+  }
 
   @override
   void initState() {
@@ -84,12 +123,11 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     }
   }
 
-  // Removed _dismissPermissionCard
-
   @override
   void dispose() {
     _phoneController.dispose();
     _phoneFocusNode.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -348,146 +386,107 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                     ),
                   ),
 
-                  // ── Phone Input Section ──
-                  SliverToBoxAdapter(
-                    child: Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
-                      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Mobile Number', style: AppTextTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: AppSpacing.md),
-                          SizedBox(
-                            height: 60,
-                            child: TextFormField(
-                              controller: _phoneController,
-                              focusNode: _phoneFocusNode,
-                              keyboardType: TextInputType.phone,
-                              maxLength: 10,
-                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                              onChanged: _onPhoneChanged,
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: 1),
-                              textAlignVertical: TextAlignVertical.center,
-                              decoration: InputDecoration(
-                                counterText: '',
-                                hintText: 'Enter 10-digit mobile number',
-                                hintStyle: TextStyle(color: AppColors.textHint.withValues(alpha: 0.6), fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: 0),
-                                prefixIcon: const Padding(
-                                  padding: EdgeInsets.only(left: 12.0, right: 8.0),
-                                  child: Icon(Icons.phone_android, size: 24, color: AppColors.textSecondary),
+                  // ── Compact Customer Card or Phone Input ──
+                  if (hasOperator)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+                        child: InkWell(
+                          onTap: () {
+                            ref.read(rechargeFlowProvider.notifier).clearOperator();
+                            _phoneController.clear();
+                          },
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
+                          child: Container(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(AppRadius.lg),
+                              border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: AppColors.primaryBlueLight.withValues(alpha: 0.2),
+                                  radius: 18,
+                                  child: const Icon(Icons.sim_card, color: AppColors.primaryBlue, size: 20),
                                 ),
-                                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                                suffixIcon: Padding(
-                                  padding: const EdgeInsets.only(right: 6.0),
-                                  child: _hasContactPermission
-                                      ? TextButton.icon(
-                                          onPressed: () {
-                                            // Handle contact picker
-                                          },
-                                          icon: const Icon(Icons.import_contacts, size: 16),
-                                          label: const Text('Import', style: TextStyle(fontWeight: FontWeight.bold)),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: AppColors.primaryBlue,
-                                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                                          ),
-                                        )
-                                      : IconButton(
-                                          icon: Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: const BoxDecoration(
-                                              color: AppColors.primaryBlue,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(Icons.contacts, color: Colors.white, size: 20),
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          splashRadius: 24,
-                                          onPressed: () {
-                                            _requestContactPermission();
-                                          },
-                                        ),
+                                const SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(_phoneController.text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      Text('${state.operator!.name} • ${state.circle?.state ?? 'Unknown'}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.5), width: 1.5),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.5), width: 1.5),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: const BorderSide(color: AppColors.primaryBlue, width: 2),
-                                ),
-                                filled: true,
-                                fillColor: AppColors.background,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                              ),
+                                const Text('CHANGE', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12)),
+                              ],
                             ),
                           ),
-                          
-                          // Operator details if resolved (Animated Fade In)
-                          AnimatedOpacity(
-                            opacity: hasOperator ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 300),
-                            child: hasOperator ? Padding(
-                              padding: const EdgeInsets.only(top: AppSpacing.md),
-                              child: Container(
-                                padding: const EdgeInsets.all(AppSpacing.md),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      backgroundColor: Colors.white,
-                                      radius: 16,
-                                      child: Text(state.operator!.name[0], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                    ),
-                                    const SizedBox(width: AppSpacing.md),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(state.operator!.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                          Text('${state.circle?.state ?? 'Unknown'} • Prepaid', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                                        ],
+                        ),
+                      ),
+                    )
+                  else
+                    SliverToBoxAdapter(
+                      child: Container(
+                        color: Colors.white,
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
+                        margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Mobile Number', style: AppTextTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              height: 60,
+                              child: TextFormField(
+                                controller: _phoneController,
+                                focusNode: _phoneFocusNode,
+                                keyboardType: TextInputType.phone,
+                                maxLength: 10,
+                                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                onChanged: _onPhoneChanged,
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: 1),
+                                textAlignVertical: TextAlignVertical.center,
+                                decoration: InputDecoration(
+                                  counterText: '',
+                                  hintText: 'Enter 10-digit mobile number',
+                                  hintStyle: TextStyle(color: AppColors.textHint.withValues(alpha: 0.6), fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: 0),
+                                  prefixIcon: const Padding(
+                                    padding: EdgeInsets.only(left: 12.0, right: 8.0),
+                                    child: Icon(Icons.phone_android, size: 24, color: AppColors.textSecondary),
+                                  ),
+                                  prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                  suffixIcon: Padding(
+                                    padding: const EdgeInsets.only(right: 6.0),
+                                    child: IconButton(
+                                      icon: Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: const BoxDecoration(color: AppColors.primaryBlue, shape: BoxShape.circle),
+                                        child: const Icon(Icons.contacts, color: Colors.white, size: 20),
                                       ),
+                                      padding: EdgeInsets.zero,
+                                      splashRadius: 24,
+                                      onPressed: _requestContactPermission,
                                     ),
-                                    Row(
-                                      children: [
-                                        InkWell(
-                                          onTap: _selectOperator,
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            child: Text('CHANGE OP', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
-                                          ),
-                                        ),
-                                        InkWell(
-                                          onTap: _selectCircle,
-                                          borderRadius: BorderRadius.circular(4),
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            child: Text('CHANGE CIRCLE', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  ],
+                                  ),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.5), width: 1.5)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.5), width: 1.5)),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primaryBlue, width: 2)),
+                                  filled: true,
+                                  fillColor: AppColors.background,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                                 ),
                               ),
-                            ) : const SizedBox.shrink(),
-                          )
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
                   // ── Recent Contacts ──
                   if (!hasOperator)
@@ -497,167 +496,182 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                       ),
                     ),
 
-                  // ── Quick Amounts & Plans (if operator detected) ──
+                  // ── Premium Category Selector & Plans ──
                   if (hasOperator) ...[
-                    // Quick Amounts
+                    // Search Bar
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                              child: Text('Popular Amounts', style: AppTextTheme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+                        child: TextField(
+                          controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Search ₹299, 2GB/day, Netflix...',
+                                    hintStyle: TextStyle(color: AppColors.textHint, fontSize: 14),
+                                    prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                                    suffixIcon: _searchQuery.isNotEmpty 
+                                      ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() { _searchController.clear(); _searchQuery = ''; }))
+                                      : null,
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.lg), borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
+                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.lg), borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
+                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.lg), borderSide: const BorderSide(color: AppColors.primaryBlue)),
+                                  ),
+                                  onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: AppSpacing.sm),
-                            SizedBox(
-                              height: 40,
-                              child: ListView.separated(
-                                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _quickAmounts.length,
-                                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                itemBuilder: (context, index) {
-                                  final amount = _quickAmounts[index];
-                                  final isSelected = state.customAmountPaise == amount * 100;
-                                  return AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    child: ActionChip(
-                                      label: Text(CurrencyFormatter.fromPaiseNoDecimal(amount * 100)),
+                            
+                            // Quick Filters
+                            SliverToBoxAdapter(
+                              child: SizedBox(
+                                height: 36,
+                                child: ListView.separated(
+                                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _quickFilters.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                                  itemBuilder: (context, index) {
+                                    final filter = _quickFilters[index];
+                                    final isSelected = filter == _selectedQuickFilter;
+                                    return ActionChip(
+                                      label: Text(filter),
                                       labelStyle: TextStyle(
-                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                                         color: isSelected ? Colors.white : AppColors.textPrimary,
                                       ),
-                                      backgroundColor: isSelected ? AppColors.primaryBlue : Colors.white,
-                                      side: BorderSide(color: isSelected ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.5)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      backgroundColor: isSelected ? AppColors.textPrimary : Colors.white,
+                                      side: BorderSide(color: isSelected ? AppColors.textPrimary : AppColors.border.withValues(alpha: 0.5)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                                       onPressed: () {
-                                        ref.read(rechargeFlowProvider.notifier).setAmount(amount * 100);
+                                        setState(() {
+                                          _selectedQuickFilter = isSelected ? '' : filter;
+                                        });
                                       },
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Fetched Plans
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.sm),
-                        child: Text('Recommended Plans', style: AppTextTheme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-                      ),
-                    ),
-                    Consumer(
-                      builder: (context, ref, child) {
-                        final plansAsync = ref.watch(plansProvider((operatorId: state.operator!.id, circle: state.circle!.id, serviceType: state.operator!.type.name)));
-                        
-                        return plansAsync.when(
-                          loading: () => SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
-                                child: SkeletonBox(width: double.infinity, height: 120, borderRadius: 12),
-                              ),
-                              childCount: 4,
-                            ),
-                          ),
-                          error: (err, _) => SliverToBoxAdapter(
-                            child: Padding(
-                              padding: const EdgeInsets.all(AppSpacing.lg),
-                              child: Text('Failed to load plans: $err', style: const TextStyle(color: AppColors.error)),
-                            ),
-                          ),
-                          data: (plans) {
-                            final filteredPlans = plans.where((p) => p.category != PlanCategory.data).toList();
-                            return SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final plan = filteredPlans[index];
-                                  final isSelected = state.selectedPlan?.id == plan.id || state.customAmountPaise == plan.pricePaise;
-                                  
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
-                                    child: AnimatedScale(
-                                      scale: isSelected ? 1.02 : 1.0,
-                                      duration: const Duration(milliseconds: 150),
-                                      child: InkWell(
-                                        onTap: () => ref.read(rechargeFlowProvider.notifier).setPlan(plan),
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: isSelected ? AppColors.primaryBlueLight.withValues(alpha: 0.3) : Colors.white,
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(
-                                              color: isSelected ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.3),
-                                              width: isSelected ? 2 : 1,
-                                            ),
-                                            boxShadow: [
-                                              if (!isSelected) BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6, offset: const Offset(0, 2))
-                                            ]
-                                          ),
-                                          padding: const EdgeInsets.all(AppSpacing.md),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  Text(
-                                                    CurrencyFormatter.fromPaiseNoDecimal(plan.pricePaise),
-                                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.textPrimary),
-                                                  ),
-                                                  if (index == 0 || index == 2)
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.amber.shade100,
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
-                                                      child: const Text('Best Value', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
-                                                    ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 12),
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  _PlanDetailCol(label: 'VALIDITY', value: plan.validity),
-                                                  _PlanDetailCol(label: 'DATA', value: plan.data ?? 'NA'),
-                                                  _PlanDetailCol(label: 'VOICE', value: 'Unlimited'),
-                                                ],
-                                              ),
-                                              if (plan.description.isNotEmpty) ...[
-                                                const SizedBox(height: 12),
-                                                Divider(height: 1, color: AppColors.border.withValues(alpha: 0.3)),
-                                                const SizedBox(height: 12),
-                                                Text(
-                                                  plan.description,
-                                                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
-                                                  maxLines: 2,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ]
-                                            ],
-                                          ),
-                                        ),
+                            
+                            Consumer(
+                              builder: (context, ref, child) {
+                                final plansAsync = ref.watch(plansProvider((operatorId: state.operator!.id, circle: state.circle!.id, serviceType: state.operator!.type.name)));
+                                
+                                return plansAsync.when(
+                                  loading: () => SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) => const Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 6),
+                                        child: SkeletonBox(width: double.infinity, height: 160, borderRadius: 12),
                                       ),
+                                      childCount: 4,
                                     ),
-                                  );
-                                },
-                                childCount: filteredPlans.length,
-                              ),
+                                  ),
+                                  error: (err, _) => SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(AppSpacing.lg),
+                                      child: Text('Failed to load plans: $err', style: const TextStyle(color: AppColors.error)),
+                                    ),
+                                  ),
+                                  data: (allPlans) {
+                                    // Apply Search & Filters
+                                    var plans = allPlans.where((p) {
+                                      if (_searchQuery.isNotEmpty) {
+                                        final q = _searchQuery;
+                                        if (!p.pricePaise.toString().contains(q) &&
+                                            !p.validity.toLowerCase().contains(q) &&
+                                            !p.description.toLowerCase().contains(q) &&
+                                            !(p.data?.toLowerCase().contains(q) ?? false)) {
+                                          return false;
+                                        }
+                                      }
+                                      if (_selectedQuickFilter.isNotEmpty) {
+                                        final f = _selectedQuickFilter.toLowerCase();
+                                        if (f.contains('day') && !f.contains('gb')) {
+                                          if (!p.validity.toLowerCase().contains(f)) return false;
+                                        } else if (f.contains('gb')) {
+                                          if (!(p.data?.toLowerCase().contains(f) ?? false)) return false;
+                                        } else if (f.contains('5g')) {
+                                          if (!p.description.toLowerCase().contains('5g') && !p.tags.any((t) => t.toLowerCase().contains('5g'))) return false;
+                                        }
+                                      }
+                                      return true;
+                                    }).toList();
+                            final categoriesMap = <String, List<RechargePlan>>{};
+                            for (final cat in _categories) { categoriesMap[cat] = []; }
+                            
+                            for (final p in plans) {
+                              final cat = _categorizePlan(p);
+                              if (categoriesMap.containsKey(cat)) { categoriesMap[cat]!.add(p); }
+                            }
+                            
+                            final recommended = plans.where((p) => p.isPopular || p.isBestValue).toList();
+                            categoriesMap['⭐ Recommended'] = recommended.isNotEmpty ? recommended : plans.take(15).toList();
+
+                            final activeCategories = _categories.where((c) => c == '⭐ Recommended' || (categoriesMap[c]?.isNotEmpty ?? false)).toList();
+                            
+                            if (!activeCategories.contains(_selectedCategory)) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) setState(() => _selectedCategory = '⭐ Recommended');
+                              });
+                            }
+
+                            final selectedPlans = categoriesMap[_selectedCategory] ?? [];
+
+                            return SliverMainAxisGroup(
+                              slivers: [
+                                SliverPersistentHeader(
+                                  pinned: true,
+                                  delegate: _CategorySelectorDelegate(
+                                    categories: activeCategories,
+                                    categoriesMap: categoriesMap,
+                                    selectedCategory: _selectedCategory,
+                                    onSelected: (cat) => setState(() => _selectedCategory = cat),
+                                  ),
+                                ),
+                                SliverPadding(
+                                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) {
+                                        final plan = selectedPlans[index];
+                                        final isSelected = state.selectedPlan?.id == plan.id || state.customAmountPaise == plan.pricePaise;
+                                        
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
+                                          child: _PremiumPlanCard(
+                                            plan: plan,
+                                            isSelected: isSelected,
+                                            onTap: () => ref.read(rechargeFlowProvider.notifier).setPlan(plan),
+                                            onDetailsTap: () {
+                                              showModalBottomSheet(
+                                                context: context,
+                                                isScrollControlled: true,
+                                                backgroundColor: Colors.transparent,
+                                                builder: (context) => _PlanDetailsSheet(plan: plan, onRecharge: () {
+                                                  Navigator.pop(context);
+                                                  ref.read(rechargeFlowProvider.notifier).setPlan(plan);
+                                                }),
+                                              );
+                                            },
+                                          ),
+                                        );
+                                      },
+                                      childCount: selectedPlans.length,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             );
                           },
                         );
                       },
                     ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 120)), // padding for sticky bottom
+                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
                   ]
                 ],
               ),
@@ -683,7 +697,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                           const Text('Amount Payable', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 2),
                           Text(
-                            CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise!),
+                            CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise ?? state.selectedPlan?.pricePaise ?? 0),
                             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
                         ],
@@ -698,6 +712,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                               backgroundColor: AppColors.primaryBlue,
                               foregroundColor: Colors.white,
                               elevation: 0,
+                              minimumSize: const Size(120, 52), // Override global double.infinity
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                             child: const Text('PROCEED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
@@ -715,6 +730,99 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   }
 }
 
+class _CategorySelectorDelegate extends SliverPersistentHeaderDelegate {
+  _CategorySelectorDelegate({
+    required this.categories,
+    required this.categoriesMap,
+    required this.selectedCategory,
+    required this.onSelected,
+  });
+
+  final List<String> categories;
+  final Map<String, List<RechargePlan>> categoriesMap;
+  final String selectedCategory;
+  final ValueChanged<String> onSelected;
+
+  @override
+  double get minExtent => 70;
+  @override
+  double get maxExtent => 70;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppColors.background,
+      alignment: Alignment.centerLeft,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 15),
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final cat = categories[index];
+          final count = categoriesMap[cat]?.length ?? 0;
+          final isSelected = cat == selectedCategory;
+          
+          return GestureDetector(
+            onTap: () => onSelected(cat),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primaryBlue : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isSelected ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.5),
+                ),
+                boxShadow: isSelected 
+                  ? [BoxShadow(color: AppColors.primaryBlue.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3))]
+                  : [],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    cat,
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                  if (count > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.white.withValues(alpha: 0.2) : AppColors.surfaceVariant,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        count.toString(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_CategorySelectorDelegate oldDelegate) {
+    return oldDelegate.selectedCategory != selectedCategory ||
+           oldDelegate.categories != categories;
+  }
+}
+
 class _PlanDetailCol extends StatelessWidget {
   final String label;
   final String value;
@@ -729,6 +837,332 @@ class _PlanDetailCol extends StatelessWidget {
         const SizedBox(height: 4),
         Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
       ],
+    );
+  }
+}
+
+class _PremiumPlanCard extends StatelessWidget {
+  const _PremiumPlanCard({
+    required this.plan,
+    required this.isSelected,
+    required this.onTap,
+    required this.onDetailsTap,
+  });
+
+  final RechargePlan plan;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onDetailsTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasOtt = plan.description.toLowerCase().contains('hotstar') || plan.description.toLowerCase().contains('prime') || plan.description.toLowerCase().contains('netflix');
+    
+    // Calculate Rs/day
+    String? rsPerDay;
+    if (plan.validity.toLowerCase().contains('day')) {
+      final daysMatch = RegExp(r'(\d+)').firstMatch(plan.validity);
+      if (daysMatch != null) {
+        final days = int.tryParse(daysMatch.group(1)!);
+        if (days != null && days > 0) {
+          final ppd = (plan.pricePaise / 100) / days;
+          rsPerDay = '\u20B9${ppd.toStringAsFixed(1)}/day';
+        }
+      }
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.primaryBlueLight.withValues(alpha: 0.1) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isSelected ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.3),
+          width: isSelected ? 1.5 : 1,
+        ),
+        boxShadow: isSelected 
+          ? [BoxShadow(color: AppColors.primaryBlue.withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, 4))]
+          : [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top Row: Price, Badges, Action Button
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '\u20B9${plan.pricePaise ~/ 100}',
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(width: 8),
+                    if (plan.isBestValue || plan.isPopular)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(plan.isBestValue ? 'Best Value' : 'Popular', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+                      ),
+                    const Spacer(),
+                    SizedBox(
+                      height: 36,
+                      child: ElevatedButton(
+                        onPressed: onTap,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isSelected ? AppColors.primaryBlue : Colors.white,
+                          foregroundColor: isSelected ? Colors.white : AppColors.primaryBlue,
+                          elevation: 0,
+                          minimumSize: const Size(64, 36), // Override global double.infinity
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            side: const BorderSide(color: AppColors.primaryBlue),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        ),
+                        child: const Text('Recharge', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                
+                // Second Row: Compact Chips
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _InfoChip(icon: '🗓', text: plan.validity),
+                    if (plan.data != null && plan.data != 'NA') _InfoChip(icon: '📶', text: plan.data!),
+                    if (plan.voice != null && plan.voice != 'NA') _InfoChip(icon: '📞', text: plan.voice!),
+                  ],
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Third Row: Meta details and View Details
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 12,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (plan.sms != null && plan.sms!.isNotEmpty)
+                            _MetaText(icon: '💬', text: plan.sms!),
+                          if (hasOtt)
+                            const _MetaText(icon: '🎬', text: 'OTT Included', color: Colors.purple),
+                          if (rsPerDay != null)
+                            _MetaText(icon: '💚', text: rsPerDay, color: Colors.green),
+                        ],
+                      ),
+                    ),
+                    InkWell(
+                      onTap: onDetailsTap,
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8, top: 4, bottom: 4),
+                        child: Text('Details →', style: TextStyle(fontSize: 13, color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final String icon;
+  final String text;
+  const _InfoChip({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 12)),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaText extends StatelessWidget {
+  final String icon;
+  final String text;
+  final Color? color;
+  const _MetaText({required this.icon, required this.text, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = color ?? AppColors.textSecondary;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(icon, style: const TextStyle(fontSize: 12)),
+        const SizedBox(width: 4),
+        Text(
+          text, 
+          style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
+          maxLines: 1, 
+          overflow: TextOverflow.ellipsis
+        ),
+      ],
+    );
+  }
+}
+
+class _SheetStat extends StatelessWidget {
+  final String label;
+  final String value;
+  const _SheetStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label.toUpperCase(), style: const TextStyle(fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _PlanDetailsSheet extends StatelessWidget {
+  final RechargePlan plan;
+  final VoidCallback onRecharge;
+
+  const _PlanDetailsSheet({required this.plan, required this.onRecharge});
+
+  @override
+  Widget build(BuildContext context) {
+    final bullets = plan.description.split('. ').where((s) => s.trim().isNotEmpty).toList();
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '\u20B9${plan.pricePaise ~/ 100}',
+                    style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                  if (plan.isBestValue)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('Best Value', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _SheetStat(label: 'VALIDITY', value: plan.validity)),
+                    Expanded(child: _SheetStat(label: 'DATA', value: plan.data ?? 'NA')),
+                    Expanded(child: _SheetStat(label: 'VOICE', value: plan.voice ?? 'NA')),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              const Text('Benefits', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: AppSpacing.md),
+              if (bullets.isNotEmpty)
+                ...bullets.map((b) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6.0, right: 8.0),
+                        child: Icon(Icons.circle, size: 6, color: AppColors.primaryBlue),
+                      ),
+                      Expanded(child: Text(b, style: const TextStyle(color: AppColors.textSecondary, height: 1.4))),
+                    ],
+                  ),
+                ))
+              else
+                Text(plan.description, style: const TextStyle(color: AppColors.textSecondary, height: 1.4)),
+              
+              const SizedBox(height: AppSpacing.xxl),
+              SizedBox(
+                height: 54,
+                child: ElevatedButton(
+                  onPressed: onRecharge,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 54), // Ensure it spans the bottom sheet
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text('Select Plan', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

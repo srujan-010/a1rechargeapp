@@ -490,7 +490,6 @@ class _SupportScreenState extends State<SupportScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     SizedBox(
-                      width: double.infinity,
                       child: ElevatedButton(
                         onPressed: _callSupport,
                         style: ElevatedButton.styleFrom(

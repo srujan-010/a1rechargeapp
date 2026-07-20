@@ -88,6 +88,7 @@ const getPlans = async (req, res, next) => {
 };
 
 const RechargeTransaction = require('../models/RechargeTransaction');
+const Transaction = require('../models/Transaction');
 const CommissionHistory = require('../models/CommissionHistory');
 const walletService = require('../services/wallet/wallet.service');
 const commissionService = require('../services/commission/commission.service');
@@ -97,6 +98,10 @@ const ledgerService = require('../services/ledger/ledger.service');
 // @route   POST /api/recharge/mobile
 // @access  Private (Retailer)
 const executeRecharge = async (req, res, next) => {
+  let orderId;
+  let amountForRollback = 0;
+  let walletReserved = false;
+
   try {
     // Compatibility Layer for Flutter legacy payload
     let { mobileNumber, amount, operatorId, circleId, amountPaise, mpin, paymentMode = 'wallet' } = req.body;
@@ -172,10 +177,12 @@ const executeRecharge = async (req, res, next) => {
     const circleCode = circle.code;
 
     // 1. Generate Order ID
-    const orderId = `A1R${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    orderId = `A1R${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
     // 2. Reserve Wallet Balance
+    amountForRollback = amount;
     await walletService.reserveAmount(userId, amount);
+    walletReserved = true;
 
     // 3. Create Pending Transaction
     const transaction = await RechargeTransaction.create({
@@ -188,6 +195,20 @@ const executeRecharge = async (req, res, next) => {
       circleCode,
       status: 'PENDING',
       reservedAmount: amount,
+    });
+
+    const globalTransaction = await Transaction.create({
+      userId,
+      type: 'debit',
+      amountPaise: amount * 100,
+      status: 'pending',
+      service: 'mobile_recharge',
+      referenceId: orderId,
+      description: `Recharge for ${mobileNumber} - ${operator.name}`,
+      recipientName: mobileNumber,
+      mobileNumber: mobileNumber,
+      operatorName: operator.name,
+      paymentMethod: paymentMode,
     });
 
     // 4. Call Provider
@@ -252,27 +273,35 @@ const executeRecharge = async (req, res, next) => {
       });
 
       transaction.commissionCalculated = true;
+      globalTransaction.status = 'success';
+      globalTransaction.apiReference = providerResponse.providerTransactionId;
+      globalTransaction.commissionEarnedPaise = commission.retailerCommissionAmount * 100;
+      await globalTransaction.save();
     } else if (providerResponse.status === 'FAILED') {
       // Release Wallet Reservation
       await walletService.releaseReservation(userId, amount);
-      // Wait for the synchronous provider response
+      globalTransaction.status = 'failed';
+      globalTransaction.apiReference = providerResponse.providerTransactionId;
+      await globalTransaction.save();
+    } else if (providerResponse.status === 'PENDING') {
+      globalTransaction.status = 'pending';
+      globalTransaction.apiReference = providerResponse.providerTransactionId;
+      await globalTransaction.save();
     }
 
     await transaction.save();
 
-    // If successful or pending, we send success to Flutter.
-    // Ensure we send back the EXACT payload format expected by the legacy Flutter mock implementation.
-    const isSuccess = providerResponse.status === 'SUCCESS' || providerResponse.status === 'PENDING';
-    
-    if (isSuccess) {
+    // Send 200 OK for both SUCCESS and PENDING, but send accurate status inside payload
+    if (providerResponse.status === 'SUCCESS' || providerResponse.status === 'PENDING') {
+      const isPending = providerResponse.status === 'PENDING';
       res.status(200).json({
         success: true,
-        message: 'Recharge successful',
+        message: isPending ? 'Recharge pending verification' : 'Recharge successful',
         data: {
           transactionId: transaction.orderId,
           referenceId: transaction.orderId, // Flutter uses this
           operatorRef: transaction.operatorReference || transaction.providerTransactionId || 'Processing...',
-          status: 'success',
+          status: isPending ? 'pending' : 'success',
           amountPaise: transaction.amount * 100,
           commissionEarnedPaise: transaction.commissionCalculated ? (await CommissionHistory.findOne({ transactionId: transaction._id })).retailerCommissionAmount * 100 : 0,
           walletDebitedPaise: paymentMode === 'wallet' ? transaction.amount * 100 : 0,
@@ -290,6 +319,13 @@ const executeRecharge = async (req, res, next) => {
     }
 
   } catch (error) {
+    if (walletReserved) {
+      await walletService.releaseReservation(req.user._id, amountForRollback);
+      if (orderId) {
+         await Transaction.updateOne({ referenceId: orderId }, { status: 'failed' }).catch(e => console.error(e));
+         await RechargeTransaction.updateOne({ orderId }, { status: 'FAILED', failureReason: error.message }).catch(e => console.error(e));
+      }
+    }
     next(error);
   }
 };
@@ -447,6 +483,12 @@ const providerCallback = async (req, res, next) => {
           description: `Commission for Recharge ${transaction.orderId}`,
         });
       }
+
+      await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+         status: 'success', 
+         apiReference: actualTxId,
+         commissionEarnedPaise: commission.retailerCommissionAmount * 100 
+      });
       
       await CommissionHistory.create({
         transactionId: transaction._id,
@@ -463,8 +505,14 @@ const providerCallback = async (req, res, next) => {
       transaction.commissionCalculated = true;
     } else if (normalizedStatus === 'FAILED') {
       transaction.status = 'FAILED';
-      transaction.failureReason = message || 'Provider Failed via Webhook';
+      transaction.failureReason = message || 'Failed at provider end';
+      
       await walletService.releaseReservation(transaction.userId, transaction.amount);
+      
+      await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+         status: 'failed', 
+         apiReference: actualTxId 
+      });
     }
 
     await transaction.save();

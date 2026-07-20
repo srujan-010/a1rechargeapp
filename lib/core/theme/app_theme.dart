@@ -89,7 +89,6 @@ abstract final class AppTheme {
               horizontal: AppSpacing.xl,
               vertical: AppSpacing.lg,
             ),
-            minimumSize: const Size(double.infinity, 52),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.button),
             ),
@@ -110,7 +109,6 @@ abstract final class AppTheme {
               horizontal: AppSpacing.xl,
               vertical: AppSpacing.lg,
             ),
-            minimumSize: const Size(double.infinity, 52),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.button),
             ),

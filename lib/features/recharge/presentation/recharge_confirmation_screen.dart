@@ -366,7 +366,6 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
-                        width: double.infinity,
                         height: 48,
                         child: ElevatedButton(
                           onPressed: () => context.push(RouteNames.walletTopup),
@@ -381,7 +380,6 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                       ),
                       const SizedBox(height: 12),
                       SizedBox(
-                        width: double.infinity,
                         height: 48,
                         child: TextButton(
                           onPressed: () => setState(() => _selectedPaymentMethod = PaymentMethod.upi),
@@ -418,7 +416,6 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                   const Center(child: CircularProgressIndicator())
                 else
                   SizedBox(
-                    width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
                       onPressed: () => _processUpiPayment(state.customAmountPaise! / 100.0),

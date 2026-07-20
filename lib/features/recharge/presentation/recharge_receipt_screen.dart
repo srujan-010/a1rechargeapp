@@ -56,6 +56,8 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
   @override
   Widget build(BuildContext context) {
     final bool isSuccess = widget.receipt.isSuccess;
+    final bool isPending = widget.receipt.status == RechargeStatus.pending || widget.receipt.status == RechargeStatus.processing;
+    final bool isFailed = !isSuccess && !isPending;
     final bool hasCommission = (widget.receipt.commission ?? 0) > 0;
     
     final String amountStr = CurrencyFormatter.fromPaise(widget.receipt.amountPaise);
@@ -103,17 +105,17 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isSuccess ? const Color(0xFF10B981).withValues(alpha: 0.2) : const Color(0xFFEF4444).withValues(alpha: 0.2),
+                      color: isSuccess ? const Color(0xFF10B981).withValues(alpha: 0.2) : isPending ? const Color(0xFFF59E0B).withValues(alpha: 0.2) : const Color(0xFFEF4444).withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: isSuccess ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                        color: isSuccess ? const Color(0xFF10B981) : isPending ? const Color(0xFFF59E0B) : const Color(0xFFEF4444),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        isSuccess ? Icons.check_rounded : Icons.close_rounded,
+                        isSuccess ? Icons.check_rounded : isPending ? Icons.hourglass_empty_rounded : Icons.close_rounded,
                         color: Colors.white,
                         size: 32,
                       ),
@@ -126,7 +128,7 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                   child: Column(
                     children: [
                       Text(
-                        isSuccess ? 'Recharge Successful' : 'Recharge Failed',
+                        isSuccess ? 'Recharge Successful' : isPending ? 'Recharge Pending' : 'Recharge Failed',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -136,11 +138,11 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        isSuccess ? '$amountStr ${widget.receipt.operatorName} Recharge Completed' : widget.receipt.failureReason ?? 'Transaction failed',
+                        isSuccess ? '$amountStr ${widget.receipt.operatorName} Recharge Completed' : isPending ? 'Your recharge is processing and will complete shortly' : widget.receipt.failureReason ?? 'Transaction failed',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.95),
-                          fontSize: isSuccess ? 22 : 14,
-                          fontWeight: isSuccess ? FontWeight.w800 : FontWeight.w400,
+                          fontSize: isSuccess || isPending ? 18 : 14,
+                          fontWeight: isSuccess || isPending ? FontWeight.w800 : FontWeight.w400,
                         ),
                         textAlign: TextAlign.center,
                       ),

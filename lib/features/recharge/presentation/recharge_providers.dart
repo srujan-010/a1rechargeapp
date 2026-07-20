@@ -88,6 +88,10 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
     state = state.copyWith(operator: op, clearPlan: true);
   }
 
+  void clearOperator() {
+    state = RechargeState(phoneNumber: state.phoneNumber);
+  }
+
   void setCircle(Circle circle) {
     state = state.copyWith(circle: circle, clearPlan: true);
   }
