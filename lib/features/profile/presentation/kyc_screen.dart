@@ -128,7 +128,6 @@ class KycScreen extends ConsumerWidget {
           Text('Benefits Unlocked', style: AppTextTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: AppColors.success)),
           const SizedBox(height: AppSpacing.md),
           _benefitRow('Unlimited Recharge'),
-          _benefitRow('Wallet Withdrawal'),
           _benefitRow('Higher Transaction Limits'),
           _benefitRow('Commission Eligibility'),
         ],

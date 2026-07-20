@@ -25,7 +25,7 @@ class PlanSelectionScreen extends ConsumerWidget {
     }
 
     final plansAsync = ref.watch(
-      plansProvider((operatorId: state.operator!.id, circle: state.circle!))
+      plansProvider((operatorId: state.operator!.id, circle: state.circle!.state))
     );
 
     return Scaffold(
@@ -42,7 +42,7 @@ class PlanSelectionScreen extends ConsumerWidget {
                 const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textSecondary),
                 const SizedBox(width: AppSpacing.xs),
                 Text(
-                  '${state.operator!.name} - ${state.circle}',
+                  '${state.operator!.name} - ${state.circle!.state}',
                   style: AppTextTheme.textTheme.labelMedium?.copyWith(
                     color: AppColors.textSecondary,
                   ),

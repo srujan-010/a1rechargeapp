@@ -3,28 +3,30 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/models/app_exception.dart';
 import '../../../core/providers/core_providers.dart';
-import '../data/recharge_repository_mock.dart';
 import '../data/recharge_repository_impl.dart';
 import '../domain/recharge_repository.dart';
 import '../domain/models/operator.dart';
 import '../domain/models/recharge_plan.dart';
 import '../domain/models/recharge_result.dart';
 import '../domain/models/recent_contact.dart';
+import '../domain/models/circle.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 
-
 final rechargeRepositoryProvider = Provider<RechargeRepository>((ref) {
-  if (AppConfig.useMockApi) {
-    return RechargeRepositoryMock();
-  } else {
-    return RechargeRepositoryImpl(apiClient: ref.watch(apiClientProvider));
-  }
+  return RechargeRepositoryImpl(apiClient: ref.watch(apiClientProvider));
 });
 
 // A family provider to fetch operators by service type ('mobile', 'dth', etc.)
 final operatorsProvider = FutureProvider.family<List<Operator>, String>((ref, serviceType) async {
   final repo = ref.watch(rechargeRepositoryProvider);
   final result = await repo.getOperators(serviceType: serviceType);
+  return result.getOrElseCompute((e) => throw e);
+});
+
+// A provider to fetch all circles
+final circlesProvider = FutureProvider<List<Circle>>((ref) async {
+  final repo = ref.watch(rechargeRepositoryProvider);
+  final result = await repo.getCircles();
   return result.getOrElseCompute((e) => throw e);
 });
 
@@ -39,7 +41,7 @@ final plansProvider = FutureProvider.family<List<RechargePlan>, ({String operato
 class RechargeState {
   final String? phoneNumber;
   final Operator? operator;
-  final String? circle;
+  final Circle? circle;
   final RechargePlan? selectedPlan;
   final int? customAmountPaise;
 
@@ -54,7 +56,7 @@ class RechargeState {
   RechargeState copyWith({
     String? phoneNumber,
     Operator? operator,
-    String? circle,
+    Circle? circle,
     RechargePlan? selectedPlan,
     int? customAmountPaise,
     bool clearPlan = false,
@@ -82,7 +84,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
     state = state.copyWith(operator: op, clearPlan: true);
   }
 
-  void setCircle(String circle) {
+  void setCircle(Circle circle) {
     state = state.copyWith(circle: circle, clearPlan: true);
   }
 
@@ -100,7 +102,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
 
   // Action method to process the recharge
   Future<RechargeReceipt> processRecharge({String? mpin, String paymentMode = 'wallet'}) async {
-    if (state.phoneNumber == null || state.operator == null || state.customAmountPaise == null) {
+    if (state.phoneNumber == null || state.operator == null || state.circle == null || state.customAmountPaise == null) {
       throw const ValidationException(message: 'Incomplete recharge details', code: 'INVALID_STATE');
     }
     
@@ -121,6 +123,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       phoneNumber: state.phoneNumber!,
       operatorId: state.operator!.id,
       operatorName: state.operator!.name,
+      circleId: state.circle!.id,
       serviceType: serviceType,
       amountPaise: state.customAmountPaise!,
       mpin: mpin,
@@ -133,7 +136,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
     final walletAsync = ref.read(walletBalanceProvider);
     final finalReceipt = receipt.copyWith(
       paymentMode: paymentMode.toUpperCase(),
-      circle: state.circle,
+      circle: state.circle?.state,
       walletBalancePaise: walletAsync.valueOrNull?.availablePaise, // Get current wallet balance
     );
 
@@ -142,7 +145,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       final contact = RecentContact(
         phone: finalReceipt.mobileNumber,
         operatorId: state.operator!.id,
-        circle: state.circle ?? 'Unknown',
+        circle: state.circle?.state ?? 'Unknown',
         lastRechargeDate: DateTime.now(),
         lastRechargeAmountPaise: finalReceipt.amountPaise,
       );

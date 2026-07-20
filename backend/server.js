@@ -18,6 +18,19 @@ initFirebaseAdmin();
 // Connect to database
 connectDB();
 
+// --- STARTUP PROTECTION ---
+const fs = require('fs');
+const serviceControllerCode = fs.readFileSync(path.join(__dirname, 'controllers/serviceController.js'), 'utf-8');
+if (
+  serviceControllerCode.includes('setTimeout') || 
+  serviceControllerCode.includes('OP${Math.random') || 
+  serviceControllerCode.includes('TXN${Math.random')
+) {
+  console.error('CRITICAL STARTUP ERROR: Mock recharge code detected in serviceController.js. Startup aborted.');
+  process.exit(1);
+}
+// --- END STARTUP PROTECTION ---
+
 const app = express();
 
 const allowedOrigins = [
@@ -42,12 +55,15 @@ app.use(morgan('dev'));
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/msg91', require('./routes/msg91Routes'));
 app.use('/api/user', require('./routes/userRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
+app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
 app.use('/api/bank', require('./routes/bankRoutes'));
 app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/master', require('./routes/masterData.routes'));
 app.use('/api/commission', require('./routes/commissionRoutes'));
 
 // Serve uploaded KYC documents statically (protected by token in production
@@ -66,6 +82,10 @@ app.get('/', (req, res) => {
 
 // Error handling middleware (must be after routes)
 app.use(errorHandler);
+
+// Start the background workers
+const pendingRechargeWorker = require('./workers/pendingRecharge.worker');
+pendingRechargeWorker.start(2 * 60 * 1000); // Check every 2 minutes
 
 const PORT = process.env.PORT || 5000;
 

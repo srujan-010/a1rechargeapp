@@ -54,7 +54,7 @@ abstract final class AppConfig {
     }
 
     // Default to the live Render backend for all environments
-    _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+    _initializedBaseUrl = kIsWeb ? 'http://localhost:5000/api' : 'http://10.0.2.2:5000/api'; // Use local for dev testing
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }
@@ -64,9 +64,9 @@ abstract final class AppConfig {
   // ─── App constants ────────────────────────────────────────────────
   static const String appName = 'A1 Recharge';
   static const String packageId = 'com.a1recharge.app';
-  static const String supportPhone = '1800-XXX-XXXX'; // TODO: Replace with real support number
-  static const String supportWhatsApp = '91XXXXXXXXXX'; // TODO: Replace with real WhatsApp number
-  static const String supportEmail = 'support@a1recharge.com';
+  static const String supportPhone = '+91 9975600499';
+  static const String supportWhatsApp = '919975600499';
+  static const String supportEmail = 'vasavitechsolutions06@gmail.com';
 
   // ─── Timeout durations ────────────────────────────────────────────
   // Increased to 90 seconds to generously accommodate Render's free tier cold starts

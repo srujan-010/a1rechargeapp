@@ -94,11 +94,6 @@ abstract final class RouteNames {
   static const String aboutApp = '/settings/about';
   // ─── Support ─────────────────────────────────────────────────────
   static const String support = '/support';
-  static const String raiseTicket = '/support/raise-ticket';
-  static const String ticketDetail = '/support/ticket/:ticketId';
-  static const String faq = '/support/faq';
-  static const String knowledgeBase = '/support/kb';
-  static const String kbDetail = '/support/kb/:articleId';
 
   // ─── Extension points (future modules) ───────────────────────────
   // Extension point: QR Payments — route reserved

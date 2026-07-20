@@ -163,17 +163,38 @@ const topupWallet = async (req, res, next) => {
   }
 };
 
+// Helper to get IST date boundaries
+const getISTDateBounds = (daysOffset = 0) => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(now);
+  const partMap = {};
+  parts.forEach(p => partMap[p.type] = p.value);
+  
+  const istNowStr = `${partMap.year}-${partMap.month}-${partMap.day}T00:00:00.000+05:30`;
+  const istMidnight = new Date(istNowStr);
+  
+  const targetStart = new Date(istMidnight.getTime() - daysOffset * 24 * 60 * 60 * 1000);
+  const targetEnd = new Date(targetStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+  
+  return { start: targetStart, end: targetEnd };
+};
+
 // @desc    Get dashboard summary (business metrics)
 // @route   GET /api/wallet/summary
 // @access  Private
 const getDashboardSummary = async (req, res, next) => {
   try {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const { start: todayStart, end: todayEnd } = getISTDateBounds(0);
 
     const transactions = await Transaction.find({
       userId: req.user._id,
-      createdAt: { $gte: todayStart }
+      createdAt: { $gte: todayStart, $lte: todayEnd }
     });
 
     let todayRechargeAmount = 0;
@@ -227,22 +248,26 @@ const getDashboardAnalytics = async (req, res, next) => {
     let currentStart, currentEnd, prevStart, prevEnd;
 
     if (period === 'today') {
-      currentStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      currentEnd = new Date(currentStart.getTime() + 24 * 60 * 60 * 1000);
-      prevStart = new Date(currentStart.getTime() - 24 * 60 * 60 * 1000);
-      prevEnd = currentStart;
+      const current = getISTDateBounds(0);
+      currentStart = current.start;
+      currentEnd = current.end;
+      const prev = getISTDateBounds(1);
+      prevStart = prev.start;
+      prevEnd = prev.end;
     } else if (period === 'week') {
       // Last 7 days
-      currentStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      currentEnd = now;
+      const current = getISTDateBounds(0);
+      currentStart = new Date(current.start.getTime() - 6 * 24 * 60 * 60 * 1000);
+      currentEnd = current.end;
       prevStart = new Date(currentStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-      prevEnd = currentStart;
+      prevEnd = new Date(currentStart.getTime() - 1);
     } else if (period === 'month') {
       // Last 30 days
-      currentStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      currentEnd = now;
+      const current = getISTDateBounds(0);
+      currentStart = new Date(current.start.getTime() - 29 * 24 * 60 * 60 * 1000);
+      currentEnd = current.end;
       prevStart = new Date(currentStart.getTime() - 30 * 24 * 60 * 60 * 1000);
-      prevEnd = currentStart;
+      prevEnd = new Date(currentStart.getTime() - 1);
     }
 
     const [currentTransactions, prevTransactions] = await Promise.all([

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -302,9 +303,9 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
 
                         // Transaction Reference
                         const _SectionHeader(title: 'Transaction Reference'),
-                        _ReceiptRow(label: 'Transaction ID', value: widget.receipt.transactionId),
+                        _ReceiptRow(label: 'Transaction ID', value: widget.receipt.transactionId, showCopy: true),
                         if (widget.receipt.operatorRef != null)
-                          _ReceiptRow(label: 'Operator Ref', value: widget.receipt.operatorRef!),
+                          _ReceiptRow(label: 'Operator Ref', value: widget.receipt.operatorRef!, showCopy: true),
                         _ReceiptRow(
                           label: 'Date & Time',
                           value: DateFormat('dd MMM yyyy, hh:mm a').format(widget.receipt.timestamp),
@@ -426,12 +427,14 @@ class _ReceiptRow extends StatelessWidget {
     required this.value,
     this.valueColor,
     this.isBold = false,
+    this.showCopy = false,
   });
   
   final String label;
   final String value;
   final Color? valueColor;
   final bool isBold;
+  final bool showCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -454,14 +457,33 @@ class _ReceiptRow extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             flex: 3,
-            child: Text(
-              value,
-              style: TextStyle(
-                color: valueColor ?? const Color(0xFF1E293B),
-                fontSize: 13,
-                fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-              ),
-              textAlign: TextAlign.right,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      color: valueColor ?? const Color(0xFF1E293B),
+                      fontSize: 13,
+                      fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                if (showCopy)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4.0),
+                    child: InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: value));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied!')));
+                      },
+                      child: const Icon(Icons.copy_all, size: 16, color: AppColors.primaryBlue),
+                    ),
+                  )
+              ],
             ),
           ),
         ],

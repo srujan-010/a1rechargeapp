@@ -114,12 +114,18 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     try {
       final repo = ref.read(rechargeRepositoryProvider);
       final result = await repo.resolveOperator(phone);
-      result.onSuccess((operator) {
-        if (!mounted) return;
-        ref.read(rechargeFlowProvider.notifier).setOperator(operator);
-        ref.read(rechargeFlowProvider.notifier).setCircle('Delhi NCR');
-      });
-    } catch (_) {}
+      result
+        ..onSuccess((res) {
+          if (!mounted) return;
+          ref.read(rechargeFlowProvider.notifier).setOperator(res.operator);
+          ref.read(rechargeFlowProvider.notifier).setCircle(res.circle);
+        })
+        ..onFailure((err) {
+          print('resolveOperator failed: $err');
+        });
+    } catch (e) {
+      print('resolveOperator threw exception: $e');
+    }
   }
 
   void _onRecentTap(String phone) {
@@ -202,6 +208,75 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     );
   }
 
+  void _selectCircle() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) {
+          return Consumer(
+            builder: (context, ref, child) {
+              final circlesAsync = ref.watch(circlesProvider);
+              
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Text('Select Circle', style: AppTextTheme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                  ),
+                  Expanded(
+                    child: circlesAsync.when(
+                      loading: () => ListView.builder(
+                        itemCount: 5,
+                        itemBuilder: (_, __) => const ListTile(
+                          leading: SkeletonBox(width: 40, height: 40, borderRadius: 20),
+                          title: SkeletonBox(width: 100, height: 16),
+                        ),
+                      ),
+                      error: (e, _) => Center(child: Text('Error: $e')),
+                      data: (circles) => ListView.separated(
+                        controller: scrollController,
+                        itemCount: circles.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                        itemBuilder: (context, i) {
+                          final circle = circles[i];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.orange.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.location_on, color: Colors.orange, size: 20),
+                            ),
+                            title: Text(circle.state, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            onTap: () {
+                              ref.read(rechargeFlowProvider.notifier).setCircle(circle);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(rechargeFlowProvider);
@@ -360,17 +435,29 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(state.operator!.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                          Text('${state.circle} • Prepaid', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                                          Text('${state.circle?.state ?? 'Unknown'} • Prepaid', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                                         ],
                                       ),
                                     ),
-                                    InkWell(
-                                      onTap: _selectOperator,
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: const Padding(
-                                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        child: Text('EDIT', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12)),
-                                      ),
+                                    Row(
+                                      children: [
+                                        InkWell(
+                                          onTap: _selectOperator,
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            child: Text('CHANGE OP', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
+                                          ),
+                                        ),
+                                        InkWell(
+                                          onTap: _selectCircle,
+                                          borderRadius: BorderRadius.circular(4),
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            child: Text('CHANGE CIRCLE', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
+                                          ),
+                                        ),
+                                      ],
                                     )
                                   ],
                                 ),
@@ -448,7 +535,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                     ),
                     Consumer(
                       builder: (context, ref, child) {
-                        final plansAsync = ref.watch(plansProvider((operatorId: state.operator!.id, circle: state.circle!)));
+                        final plansAsync = ref.watch(plansProvider((operatorId: state.operator!.id, circle: state.circle!.id)));
                         
                         return plansAsync.when(
                           loading: () => SliverList(

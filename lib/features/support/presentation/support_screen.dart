@@ -120,11 +120,98 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   void _callSupport() => _launchUrl(Uri.parse('tel:+919975600499'));
-  void _emailSupport() => _launchUrl(Uri.parse('mailto:support@a1recharge.com?subject=Support%20Request'));
-  void _whatsappSupport() => _launchUrl(Uri.parse('https://wa.me/919975600499'));
+  void _emailSupport() => _launchUrl(Uri.parse('mailto:vasavitechsolutions06@gmail.com?subject=Support%20Request'));
+  void _whatsappSupport() => _launchUrl(Uri.parse('https://wa.me/919975600499?text=Hello%20A1Recharge%20Support,%20I%20need%20assistance.'));
   
   void _showComingSoon(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$feature coming soon')));
+  }
+
+  void _downloadUserGuide() {
+    // Placeholder URL for user guide
+    _launchUrl(Uri.parse('https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'));
+  }
+
+  void _showReportIssueSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Report an Issue', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              const Text('Please describe the issue you are facing. We will get back to you shortly.', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              TextField(
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: 'Describe your issue here...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Issue reported successfully')));
+                },
+                child: const Text('Submit Report', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showRateExperienceSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Rate your experience', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(5, (index) => IconButton(
+                  icon: const Icon(Icons.star_border, size: 40, color: Colors.amber),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thank you for your feedback!', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
+                  },
+                )),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -242,7 +329,7 @@ class _SupportScreenState extends State<SupportScreen> {
                           title: 'Report Issue',
                           subtitle: 'Failed transactions',
                           color: Colors.red,
-                          onTap: () => context.push(RouteNames.raiseTicket),
+                          onTap: _showReportIssueSheet,
                         ),
                       ],
                     ),
@@ -266,14 +353,14 @@ class _SupportScreenState extends State<SupportScreen> {
                             leading: const Icon(Icons.picture_as_pdf, color: AppColors.primaryBlue),
                             title: const Text('Download User Guide'),
                             trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => _showComingSoon('User Guide PDF Download'),
+                            onTap: _downloadUserGuide,
                           ),
                           const Divider(height: 1, indent: 56),
                           ListTile(
                             leading: const Icon(Icons.star_rate, color: Colors.amber),
                             title: const Text('Rate your support experience'),
                             trailing: const Icon(Icons.chevron_right, size: 20),
-                            onTap: () => _showComingSoon('App Rating'),
+                            onTap: _showRateExperienceSheet,
                           ),
                         ],
                       ),
@@ -382,10 +469,10 @@ class _SupportScreenState extends State<SupportScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text('Phone', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                              Text('+91 99756 00499', style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text('+91 9975600499', style: TextStyle(fontWeight: FontWeight.w600)),
                               SizedBox(height: 12),
                               Text('Email', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                              Text('support@a1recharge.com', style: TextStyle(fontWeight: FontWeight.w600)),
+                              Text('vasavitechsolutions06@gmail.com', style: TextStyle(fontWeight: FontWeight.w600)),
                             ],
                           ),
                         ),

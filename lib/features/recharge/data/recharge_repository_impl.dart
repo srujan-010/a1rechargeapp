@@ -9,22 +9,73 @@ import '../domain/models/recharge_result.dart';
 import '../domain/recharge_repository.dart';
 import '../domain/models/recent_contact.dart';
 import '../../../core/services/local_cache_service.dart';
-import 'recharge_repository_mock.dart';
+import '../domain/models/circle.dart';
 
 class RechargeRepositoryImpl implements RechargeRepository {
   RechargeRepositoryImpl({required this.apiClient});
 
   final ApiClient apiClient;
-  final _mock = RechargeRepositoryMock();
 
   @override
   Future<Result<List<Operator>, AppException>> getOperators({required String serviceType}) async {
-    return _mock.getOperators(serviceType: serviceType);
+    try {
+      // e.g. /master/operators?service=mobile
+      final response = await apiClient.get<List<dynamic>>(
+        '/master/operators?service=$serviceType',
+        fromJson: (json) => json as List<dynamic>,
+      );
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        final operators = data.map((json) => Operator.fromJson(json as Map<String, dynamic>)).toList();
+        return Success(operators);
+      }
+      return Failure(ServerException(message: response.message));
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e) {
+      return Failure(UnknownException.from(e));
+    }
   }
 
   @override
-  Future<Result<Operator, AppException>> resolveOperator(String phoneNumber) async {
-    return _mock.resolveOperator(phoneNumber);
+  Future<Result<List<Circle>, AppException>> getCircles() async {
+    try {
+      final response = await apiClient.get<List<dynamic>>(
+        '/master/circles',
+        fromJson: (json) => json as List<dynamic>,
+      );
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        final circles = data.map((json) => Circle.fromJson(json as Map<String, dynamic>)).toList();
+        return Success(circles);
+      }
+      return Failure(ServerException(message: response.message));
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e) {
+      return Failure(UnknownException.from(e));
+    }
+  }
+
+  @override
+  Future<Result<OperatorResolveResult, AppException>> resolveOperator(String phoneNumber) async {
+    try {
+      final response = await apiClient.get<Map<String, dynamic>>(
+        '/master/resolve?mobile=$phoneNumber',
+        fromJson: (json) => json as Map<String, dynamic>,
+      );
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        final operator = Operator.fromJson(data['operator'] as Map<String, dynamic>);
+        final circle = Circle.fromJson(data['circle'] as Map<String, dynamic>);
+        return Success(OperatorResolveResult(operator: operator, circle: circle));
+      }
+      return Failure(ServerException(message: response.message));
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e) {
+      return Failure(UnknownException.from(e));
+    }
   }
 
   @override
@@ -32,7 +83,20 @@ class RechargeRepositoryImpl implements RechargeRepository {
     required String operatorId,
     required String circle,
   }) async {
-    return _mock.getPlans(operatorId: operatorId, circle: circle);
+    // A1 Topup doesn't provide a plan API directly yet, so we return generic dummy plans or a single dummy plan.
+    // In production, this should hit a plan API if available.
+    try {
+      // Simulate network delay
+      await Future.delayed(const Duration(milliseconds: 500));
+      return const Success([
+        RechargePlan(id: 'p1', pricePaise: 29900, category: PlanCategory.unlimited, description: '2GB/day, Unlimited Calls, 100 SMS/day', validity: '28 Days'),
+        RechargePlan(id: 'p2', pricePaise: 66600, category: PlanCategory.unlimited, description: '1.5GB/day, Unlimited Calls, 100 SMS/day', validity: '84 Days'),
+        RechargePlan(id: 'p5', pricePaise: 1500, category: PlanCategory.data, description: '1GB Data Add-on', validity: 'Base Plan Validity'),
+        RechargePlan(id: 'p8', pricePaise: 1000, category: PlanCategory.topup, description: '₹7.47 Talktime', validity: 'Unlimited'),
+      ]);
+    } catch (e) {
+      return Failure(UnknownException.from(e));
+    }
   }
 
   @override
@@ -40,6 +104,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
     required String phoneNumber,
     required String operatorId,
     required String operatorName,
+    required String circleId,
     required String serviceType,
     required int amountPaise,
     String? mpin,
@@ -52,6 +117,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
           'mobileNumber': phoneNumber,
           'operatorId': operatorId,
           'operatorName': operatorName,
+          'circleId': circleId,
           'serviceType': serviceType,
           'amountPaise': amountPaise,
           if (mpin != null) 'mpin': mpin,

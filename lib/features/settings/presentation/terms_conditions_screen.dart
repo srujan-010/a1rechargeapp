@@ -58,7 +58,7 @@ class TermsConditionsScreen extends StatelessWidget {
             _buildSection('17. Changes to Terms', 'A1Recharge reserves the right to modify these Terms & Conditions at any time. Continued use of the application after changes are published constitutes acceptance of the revised Terms.'),
             _buildSection('18. Governing Law', 'These Terms & Conditions shall be governed by the laws of India. Any disputes shall be subject to the jurisdiction of the competent courts where the company is registered.'),
             
-            _buildSection('Contact Information', 'For any questions or grievances regarding these Terms & Conditions, please contact:\nA1Recharge\nEmail: vasavitechsolutions06@gmail.com\nPhone: 9975600499\nAddress: Ankisa, sironcha, gadchiroli'),
+            _buildSection('Contact Information', 'A1Recharge\n\nEmail:\nvasavitechsolutions06@gmail.com\n\nPhone:\n+91 9975600499\n\nAddress:\nAnkisa, Sironcha, Gadchiroli, Maharashtra, India'),
           ],
         ),
       ),

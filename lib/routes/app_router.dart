@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../config/auth_provider.dart';
 import '../core/constants/route_names.dart';
 import '../core/providers/core_providers.dart';
 
@@ -14,6 +15,8 @@ import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/otp_screen.dart';
 import '../features/auth/screens/registration_screen.dart';
+import '../features/auth_msg91/screens/msg91_login_screen.dart';
+import '../features/auth_msg91/screens/msg91_otp_screen.dart';
 // import '../features/authentication/presentation/mpin_setup_screen.dart';
 // import '../features/authentication/presentation/biometric_prompt_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
@@ -122,7 +125,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'otp-login',
         pageBuilder: (context, state) => _slideUpPage(
           state: state,
-          child: const LoginScreen(),
+          child: AppAuthConfig.provider == AuthProviderType.msg91 
+              ? const Msg91LoginScreen() 
+              : const LoginScreen(),
         ),
         routes: [
           GoRoute(
@@ -130,12 +135,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'otp-verify',
             pageBuilder: (context, state) {
               final extra = state.extra as Map<String, dynamic>? ?? {};
-              final verificationId = extra['verificationId'] as String? ?? '';
-              final phone = extra['phone'] as String? ?? '';
-              return _slideRightPage(
-                state: state,
-                child: OtpScreen(verificationId: verificationId, phone: phone),
-              );
+              
+              if (AppAuthConfig.provider == AuthProviderType.msg91) {
+                final phone = extra['phone'] as String? ?? '';
+                return _slideRightPage(
+                  state: state,
+                  child: Msg91OtpScreen(phone: phone),
+                );
+              } else {
+                final verificationId = extra['verificationId'] as String? ?? '';
+                final phone = extra['phone'] as String? ?? '';
+                return _slideRightPage(
+                  state: state,
+                  child: OtpScreen(verificationId: verificationId, phone: phone),
+                );
+              }
             },
           ),
         ],

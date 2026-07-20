@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -27,6 +28,20 @@ class _NeedHelpScreenState extends State<NeedHelpScreen> {
       ),
     );
   }
+
+  Future<void> _launchUrl(Uri url) async {
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not perform this action.')));
+      }
+    }
+  }
+
+  void _callSupport() => _launchUrl(Uri.parse('tel:+919975600499'));
+  void _emailSupport() => _launchUrl(Uri.parse('mailto:vasavitechsolutions06@gmail.com?subject=Support%20Request'));
+  void _whatsappSupport() => _launchUrl(Uri.parse('https://wa.me/919975600499?text=Hello%20A1Recharge%20Support,%20I%20need%20assistance.'));
 
   @override
   Widget build(BuildContext context) {
@@ -190,27 +205,21 @@ class _NeedHelpScreenState extends State<NeedHelpScreen> {
                     leading: const Icon(Icons.chat_rounded, color: Color(0xFF25D366)),
                     title: const Text('WhatsApp Support'),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opening WhatsApp...')));
-                    },
+                    onTap: _whatsappSupport,
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.email_rounded, color: AppColors.primaryBlue),
                     title: const Text('Email Support'),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opening Email...')));
-                    },
+                    onTap: _emailSupport,
                   ),
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.phone_rounded, color: Color(0xFF3B82F6)),
                     title: const Text('Call Support'),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Calling Support...')));
-                    },
+                    onTap: _callSupport,
                   ),
                   const Divider(height: 1),
                   ListTile(

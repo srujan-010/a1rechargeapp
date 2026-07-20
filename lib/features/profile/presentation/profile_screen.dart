@@ -158,24 +158,10 @@ class ProfileScreen extends ConsumerWidget {
                     _ProfileMenuCard(
                       children: [
                         _ProfileMenuItem(
-                          icon: Icons.help_outline,
-                          label: 'Help Center',
-                          subtitle: 'Browse FAQs',
-                          onTap: () => context.push(RouteNames.faq),
-                        ),
-                        const _Divider(),
-                        _ProfileMenuItem(
                           icon: Icons.support_agent_outlined,
-                          label: 'Contact Support',
-                          subtitle: 'Reach out to our team',
+                          label: 'Help & Support',
+                          subtitle: 'Contact our team, view FAQs & report issues',
                           onTap: () => context.push(RouteNames.support),
-                        ),
-                        const _Divider(),
-                        _ProfileMenuItem(
-                          icon: Icons.report_problem_outlined,
-                          label: 'Report an Issue',
-                          subtitle: 'Raise a support ticket',
-                          onTap: () => context.push(RouteNames.raiseTicket),
                         ),
                       ],
                     ),

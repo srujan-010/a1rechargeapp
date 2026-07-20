@@ -123,7 +123,7 @@ class BankDetailsScreen extends ConsumerWidget {
         children: [
           const SizedBox(height: AppSpacing.md),
           Text(
-            'Manage the bank account used for settlements, wallet withdrawals and commission payments.',
+            'Manage the bank account used for settlements and commission payments.',
             style: AppTextTheme.textTheme.bodyMedium?.copyWith(
               color: AppColors.textSecondary,
               height: 1.5,

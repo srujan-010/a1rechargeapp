@@ -51,6 +51,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
             _buildSection('10. Data Retention', 'We retain your personal and transaction data for as long as your account is active, or as long as necessary to fulfill the purposes outlined in this policy, comply with our legal and regulatory obligations, resolve disputes, and enforce our agreements.'),
             _buildSection('11. Children\'s Privacy', 'Our services are not intended for individuals under the age of 18. We do not knowingly collect personal information from children. If we become aware that a child has provided us with personal data, we will take steps to delete such information immediately.'),
             _buildSection('12. Policy Updates', 'We may update this Privacy Policy periodically to reflect changes in our practices or regulatory requirements. We encourage you to review this page regularly. Continued use of A1Recharge after changes are published constitutes your acceptance of the revised policy.'),
+            _buildSection('Contact Information', 'A1Recharge\n\nEmail:\nvasavitechsolutions06@gmail.com\n\nPhone:\n+91 9975600499\n\nAddress:\nAnkisa, Sironcha, Gadchiroli, Maharashtra, India'),
           ],
         ),
       ),

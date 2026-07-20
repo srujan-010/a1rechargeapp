@@ -429,19 +429,12 @@ class _QuickActionsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _ActionButton(
           icon: Icons.add,
           label: 'Add Money',
           onTap: () => context.push(RouteNames.walletTopup),
-        ),
-        _ActionButton(
-          icon: Icons.arrow_downward,
-          label: 'Withdraw',
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Withdraw feature coming soon')));
-          },
         ),
         _ActionButton(
           icon: Icons.description_outlined,

@@ -8,6 +8,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../recharge/domain/models/circle.dart';
 import '../../recharge/presentation/recharge_providers.dart';
 
 class DthRechargeScreen extends ConsumerStatefulWidget {
@@ -87,7 +88,7 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                             onTap: () {
                               ref.read(rechargeFlowProvider.notifier).setOperator(op);
                               // We use a dummy circle for DTH usually
-                              ref.read(rechargeFlowProvider.notifier).setCircle('All India'); 
+                              ref.read(rechargeFlowProvider.notifier).setCircle(Circle(id: 'dummy', code: 'ALL', state: 'All India', isActive: true)); 
                               Navigator.pop(context);
                             },
                           );
