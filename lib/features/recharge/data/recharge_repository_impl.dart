@@ -92,18 +92,40 @@ class RechargeRepositoryImpl implements RechargeRepository {
         endpoint = '/plans/dth/packs';
       }
 
+      print('Fetching plans from endpoint: $endpoint');
+
       final response = await apiClient.get<Map<String, dynamic>>(
         endpoint,
         queryParameters: {
           'operatorId': operatorId,
           'circleId': circle,
         },
-        fromJson: (json) => json as Map<String, dynamic>,
+        fromJson: (json) {
+          print('[RAW RESPONSE] $json');
+          return json as Map<String, dynamic>;
+        },
       );
+
+      print('[DECODED JSON] ${response.data}');
 
       if (response.success && response.data != null) {
         final List<dynamic> plansData = response.data!['plans'] ?? [];
-        final plans = plansData.map((json) => RechargePlan.fromJson(json as Map<String, dynamic>)).toList();
+        print('Found ${plansData.length} plans in response.data["plans"]');
+        
+        final List<RechargePlan> plans = [];
+        for (var i = 0; i < plansData.length; i++) {
+          final json = plansData[i] as Map<String, dynamic>;
+          try {
+            print('Parsing step for plan $i: $json');
+            final plan = RechargePlan.fromJson(json);
+            plans.add(plan);
+          } catch (e, stackTrace) {
+            print('[PARSE EXCEPTION] for plan $i: $e');
+            print('[STACK TRACE] $stackTrace');
+          }
+        }
+        
+        print('Loaded ${plans.length} plans');
         return Success(plans);
       }
       return Failure(ServerException(message: response.message));

@@ -33,14 +33,16 @@ class RechargePlan extends Equatable {
   final String? talktime; // for topup plans
 
   factory RechargePlan.fromJson(Map<String, dynamic> json) => RechargePlan(
-        id: json['id'] as String? ?? json['_id'] as String? ?? (json['amount']?.toString() ?? ''),
-        category: _parseCategory(json['category'] as String?),
-        pricePaise: (json['amount'] != null ? (json['amount'] as num).toInt() * 100 : ((json['price'] as num?)?.toInt() ?? 0)),
-        validity: json['validity'] as String? ?? '',
-        description: json['description'] as String? ?? json['benefit'] as String? ?? '',
-        data: json['data'] as String?,
-        sms: json['sms'] as String?,
-        voice: json['voice'] as String? ?? json['calls'] as String?,
+        id: json['id']?.toString() ?? json['_id']?.toString() ?? json['amount']?.toString() ?? '',
+        category: _parseCategory(json['category']?.toString()),
+        pricePaise: (json['amount'] != null 
+            ? (num.tryParse(json['amount'].toString())?.toInt() ?? 0) * 100 
+            : (num.tryParse(json['price']?.toString() ?? '0')?.toInt() ?? 0)),
+        validity: json['validity']?.toString() ?? '',
+        description: json['description']?.toString() ?? json['benefit']?.toString() ?? '',
+        data: json['data']?.toString(),
+        sms: json['sms']?.toString(),
+        voice: json['voice']?.toString() ?? json['calls']?.toString(),
         tags: (json['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? (json['subscriptions'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
         isPopular: json['isPopular'] as bool? ?? false,
         isBestValue: json['isBestValue'] as bool? ?? false,
