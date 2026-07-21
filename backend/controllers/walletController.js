@@ -211,7 +211,7 @@ const getDashboardSummary = async (req, res, next) => {
         if (tx.status === 'failed') failedTransactions++;
         if (tx.status === 'pending') pendingTransactions++;
         
-        if (tx.type === 'debit') {
+        if (tx.type === 'debit' && tx.status === 'success') {
           todayRechargeAmount += tx.amountPaise;
         }
       }
@@ -290,7 +290,7 @@ const getDashboardAnalytics = async (req, res, next) => {
           commission += tx.amountPaise;
         } else if (tx.service !== 'wallet_topup' && tx.service !== 'commission') {
           count++;
-          if (tx.type === 'debit') {
+          if (tx.type === 'debit' && tx.status === 'success') {
             recharge += tx.amountPaise;
           }
         }

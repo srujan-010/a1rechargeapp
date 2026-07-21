@@ -107,31 +107,50 @@ const executeRecharge = async (req, res, next) => {
     let { mobileNumber, amount, operatorId, circleId, amountPaise, mpin, paymentMode = 'wallet' } = req.body;
     const userId = req.user._id;
 
+    console.log("STEP 1: Request Payload");
+    console.log(req.body);
+    console.log("amount =", amount);
+    console.log("amountPaise =", amountPaise);
+
     // Convert amountPaise to amount (INR) if provided
     if (amountPaise && !amount) {
       amount = amountPaise / 100;
     }
+    console.log("amount after conversion =", amount);
 
     if (!mobileNumber || !amount || !operatorId) {
-      res.status(400);
-      throw new Error('Missing required fields');
+      return res.status(400).json({
+        step: "Payload Validation",
+        error: "Missing required fields",
+        details: { mobileNumber, amount, operatorId }
+      });
     }
 
     if (amount <= 0) {
-      res.status(400);
-      throw new Error('Invalid amount');
+      return res.status(400).json({
+        step: "Amount Validation",
+        error: "Invalid amount",
+        details: { amount }
+      });
     }
 
     // MPIN Validation (Required if paymentMode is wallet)
     if (paymentMode === 'wallet') {
       if (!mpin) {
-        res.status(400);
-        throw new Error('Missing MPIN');
+        return res.status(400).json({
+          step: "MPIN Validation",
+          error: "Missing MPIN",
+          details: null
+        });
       }
+      console.log("STEP 2: MPIN Check");
       const isMatch = await req.user.matchMpin(mpin);
       if (!isMatch) {
-        res.status(400);
-        throw new Error('Invalid MPIN');
+        return res.status(400).json({
+          step: "MPIN Validation",
+          error: "Invalid MPIN",
+          details: null
+        });
       }
     }
 
@@ -146,13 +165,22 @@ const executeRecharge = async (req, res, next) => {
       operator = await ProviderOperator.findOne({ code: mappedCode, provider: 'A1Topup' });
     }
 
+    console.log("STEP 3: Operator Resolved");
+    console.log(operator);
+
     if (!operator) {
-      res.status(400);
-      throw new Error('Invalid operator');
+      return res.status(400).json({
+        step: "Operator Validation",
+        error: "Invalid operator",
+        details: { operatorId }
+      });
     }
     if (!operator.status) {
-      res.status(400);
-      throw new Error('Operator is currently disabled');
+      return res.status(400).json({
+        step: "Operator Validation",
+        error: "Operator is currently disabled",
+        details: { operatorId }
+      });
     }
 
     let circle;
@@ -164,20 +192,56 @@ const executeRecharge = async (req, res, next) => {
       if (!circle) circle = await ProviderCircle.findOne({ status: true });
     }
 
+    console.log("STEP 4: Circle Resolved");
+    console.log(circle);
+
     if (!circle) {
-      res.status(400);
-      throw new Error('Invalid circle');
+      return res.status(400).json({
+        step: "Circle Validation",
+        error: "Invalid circle",
+        details: { circleId }
+      });
     }
     if (!circle.status) {
-      res.status(400);
-      throw new Error('Circle is currently disabled');
+      return res.status(400).json({
+        step: "Circle Validation",
+        error: "Circle is currently disabled",
+        details: { circleId }
+      });
     }
 
-    const operatorCode = operator.code;
+    let operatorCode = operator.code;
     const circleCode = circle.code;
+
+    // Dynamic BSNL Routing
+    if (operator.name.toUpperCase() === 'BSNL') {
+      const PlanCache = require('../models/PlanCache');
+      const cache = await PlanCache.findOne({ operatorId: operator._id, circleId: circle._id }).sort({ createdAt: -1 });
+      if (cache && cache.plans) {
+        const plan = cache.plans.find(p => Number(p.amount) === Number(amount));
+        if (plan) {
+           const category = (plan.category || '').toLowerCase();
+           if (category.includes('top up') || category.includes('talktime')) {
+             operatorCode = 'BT';
+           } else {
+             operatorCode = 'BR';
+           }
+           console.log(`[Recharge] Dynamic BSNL Routing: Amount ${amount} -> Category "${category}" -> Code ${operatorCode}`);
+        } else {
+           operatorCode = 'BR';
+           console.log(`[Recharge] Dynamic BSNL Routing: Amount ${amount} not found in cache -> Defaulting to BR`);
+        }
+      } else {
+         operatorCode = 'BR';
+         console.log(`[Recharge] Dynamic BSNL Routing: No cache found -> Defaulting to BR`);
+      }
+    }
 
     // 1. Generate Order ID
     orderId = `A1R${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    console.log("STEP 5: Wallet Check");
+    console.log("Reserving wallet amount:", amount);
 
     // 2. Reserve Wallet Balance
     amountForRollback = amount;
@@ -211,6 +275,17 @@ const executeRecharge = async (req, res, next) => {
       paymentMethod: paymentMode,
     });
 
+    console.log("======================");
+    console.log("A1 REQUEST");
+    console.log({
+      orderId,
+      mobileNumber,
+      amount,
+      operatorCode,
+      circleCode,
+    });
+    console.log("======================");
+
     // 4. Call Provider
     const providerResponse = await a1TopupProvider.recharge({
       orderId,
@@ -219,6 +294,9 @@ const executeRecharge = async (req, res, next) => {
       operatorCode,
       circleCode,
     });
+
+    console.log("A1 RESPONSE");
+    console.log(providerResponse);
 
     // 5. Update Transaction with Provider Response
     transaction.providerTransactionId = providerResponse.providerTransactionId;
@@ -244,10 +322,10 @@ const executeRecharge = async (req, res, next) => {
       });
 
       // Calculate & Credit Commission
-      const commission = await commissionService.calculateCommission(operatorCode, amount);
+      const commission = await commissionService.calculateCommission(operatorCode, amount, operator.name);
       if (commission.retailerCommissionAmount > 0) {
         // Credit retailer
-        await walletService.releaseReservation(userId, commission.retailerCommissionAmount); // Effectively adds to balance
+        await walletService.addBalance(userId, commission.retailerCommissionAmount); // Effectively adds to balance
         await ledgerService.logTransaction({
           userId,
           type: 'CREDIT',
@@ -339,7 +417,14 @@ const executeRecharge = async (req, res, next) => {
          await RechargeTransaction.updateOne({ orderId }, { status: 'FAILED', failureReason: error.message }).catch(e => console.error(e));
       }
     }
-    next(error);
+    console.log("STEP ERROR: Catch Block");
+    console.log(error);
+    
+    return res.status(400).json({
+       step: "Exception Catch Block",
+       error: error.message,
+       details: error.stack
+    });
   }
 };
 
@@ -390,7 +475,7 @@ const checkStatus = async (req, res, next) => {
       // Calculate & Credit Commission
       const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
       if (commission.retailerCommissionAmount > 0) {
-        await walletService.releaseReservation(transaction.userId, commission.retailerCommissionAmount);
+        await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
         await ledgerService.logTransaction({
           userId: transaction.userId,
           type: 'CREDIT',
@@ -425,11 +510,23 @@ const checkStatus = async (req, res, next) => {
         companyProfitPercentage: commission.companyProfitPercentage,
         companyProfitAmount: commission.companyProfitAmount,
       });
+
+      await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+        status: 'success', 
+        apiReference: statusResponse.providerTransactionId,
+        commissionEarnedPaise: commission.retailerCommissionAmount * 100 
+      });
+
       transaction.commissionCalculated = true;
     } else if (transaction.status === 'PENDING' && statusResponse.status === 'FAILED') {
       transaction.status = 'FAILED';
       transaction.failureReason = statusResponse.message;
       await walletService.releaseReservation(transaction.userId, transaction.amount);
+      
+      await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+        status: 'failed', 
+        apiReference: statusResponse.providerTransactionId 
+      });
     }
     
     await transaction.save();
@@ -498,7 +595,7 @@ const providerCallback = async (req, res, next) => {
 
       const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
       if (commission.retailerCommissionAmount > 0) {
-        await walletService.releaseReservation(transaction.userId, commission.retailerCommissionAmount);
+        await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
         await ledgerService.logTransaction({
           userId: transaction.userId,
           type: 'CREDIT',

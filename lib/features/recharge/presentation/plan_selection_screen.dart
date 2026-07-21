@@ -113,7 +113,7 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
             return p.description.toLowerCase().contains(_searchQuery) ||
                    p.pricePaise.toString().contains(_searchQuery) ||
                    p.validity.toLowerCase().contains(_searchQuery) ||
-                   p.category.name.toLowerCase().contains(_searchQuery) ||
+                   p.categoryName.toLowerCase().contains(_searchQuery) ||
                    (p.data != null && p.data!.toLowerCase().contains(_searchQuery)) ||
                    (p.voice != null && p.voice!.toLowerCase().contains(_searchQuery)) ||
                    (p.sms != null && p.sms!.toLowerCase().contains(_searchQuery));
@@ -126,7 +126,7 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
             );
           }
 
-          final categories = filteredPlans.map((p) => p.category.name).toSet().toList();
+          final categories = filteredPlans.map((p) => p.categoryName).toSet().toList();
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -146,7 +146,7 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
                   Expanded(
                     child: TabBarView(
                       children: categories.map((category) {
-                        final categoryPlans = filteredPlans.where((p) => p.category.name == category).toList();
+                        final categoryPlans = filteredPlans.where((p) => p.categoryName == category).toList();
                         return ListView.builder(
                           padding: const EdgeInsets.all(AppSpacing.sm),
                           itemCount: categoryPlans.length,

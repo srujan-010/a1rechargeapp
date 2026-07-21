@@ -23,6 +23,11 @@ const providerOperatorSchema = new mongoose.Schema(
       enum: ['Mobile', 'DTH', 'PostPaid', 'Electricity', 'Gas', 'Insurance', 'Money Transfer', 'Data Card', 'Fastag', 'Other'],
       index: true,
     },
+    plansInfoCode: {
+      type: String,
+      required: false,
+      index: true,
+    },
     status: {
       type: Boolean,
       default: true,

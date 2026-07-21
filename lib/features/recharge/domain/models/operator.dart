@@ -26,7 +26,7 @@ class Operator extends Equatable {
         id: json['id'] as String? ?? json['_id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         logoUrl: json['logoUrl'] as String? ?? '',
-        type: _parseType(json['type'] as String?),
+        type: _parseType((json['type'] ?? json['serviceType']) as String?),
         circle: json['circle'] as String?,
         shortCode: json['shortCode'] as String?,
         isActive: json['isActive'] as bool? ?? true,

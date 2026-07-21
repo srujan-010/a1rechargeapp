@@ -8,7 +8,23 @@ import 'bootstrap.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
 
-void main() => bootstrap(const ProviderScope(child: A1RechargeApp()));
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+
+void main() {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[GLOBAL FLUTTER ERROR] ${details.exceptionAsString()}');
+    debugPrintStack(stackTrace: details.stack);
+  };
+
+  runZonedGuarded(() {
+    bootstrap(const ProviderScope(child: A1RechargeApp()));
+  }, (error, stack) {
+    debugPrint("[UNCAUGHT ZONED ERROR]: $error");
+    debugPrintStack(stackTrace: stack);
+  });
+}
 
 class A1RechargeApp extends ConsumerWidget {
   const A1RechargeApp({super.key});

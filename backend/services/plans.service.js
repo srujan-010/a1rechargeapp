@@ -2,7 +2,7 @@ const plansInfoProvider = require('../providers/plansInfo.provider');
 const ProviderOperator = require('../models/ProviderOperator');
 const ProviderCircle = require('../models/ProviderCircle');
 const PlanCache = require('../models/PlanCache');
-const { getPlansInfoOperator, getPlansInfoCircle } = require('../utils/plansMapper');
+const { getPlansInfoCircle } = require('../utils/plansMapper');
 
 class PlansService {
   _inferCategory(plan) {
@@ -141,22 +141,40 @@ class PlansService {
     if (plans) {
       console.log(`[PlansInfo] CACHE HIT - Prepaid: ${operator.name} | ${circle.state}`);
     } else {
-      const opCode = getPlansInfoOperator(operator.code);
+      const opCode = operator.plansInfoCode;
       const circleCode = getPlansInfoCircle(circle.code);
+      
+      console.log('\n===== PLANS REQUEST =====');
+      console.log({
+        operatorId: operator._id,
+        operatorName: operator.name,
+        plansOperatorCode: opCode,
+        circleId: circle._id,
+        circleName: circle.state,
+        plansCircleCode: circleCode
+      });
+
       if (!opCode || !circleCode) return []; // Missing mapping
 
       const startTime = Date.now();
-      console.log(`[PlansInfo] CACHE MISS - Prepaid: ${opCode} | ${circleCode}`);
+      console.log(`Exact Request URL: /v4/mobile-plans.php?operator=${opCode}&circle=${circleCode}`);
       
       const rawData = await plansInfoProvider.getMobilePrepaid(opCode, circleCode);
-      console.log(`[PlansInfo] API TIME - ${Date.now() - startTime}ms`);
+      console.log('RAW RESPONSE DATA:', JSON.stringify(rawData, null, 2));
       
+      console.log('Plans before normalization (raw length):', rawData?.data?.length || rawData?.categories?.length || 'Unknown');
       const normalized = this._parseV5Categories(rawData);
+      console.log('Plans after normalization:', normalized.length);
+      
       plans = this._sortPlans(normalized);
+      console.log('Plans after category mapping (sorting):', plans.length);
       await this._saveToCache(cacheQuery, plans);
     }
     
-    return this._filterPlans(plans, search);
+    const finalPlans = this._filterPlans(plans, search);
+    console.log('Plans returned to Flutter:', finalPlans.length);
+    console.log('------------------------\n');
+    return finalPlans;
   }
 
   // 2. Mobile Postpaid
@@ -169,7 +187,7 @@ class PlansService {
     if (plans) {
       console.log(`[PlansInfo] CACHE HIT - Postpaid: ${operator.name} | ${circle.state}`);
     } else {
-      const opCode = getPlansInfoOperator(operator.code);
+      const opCode = operator.plansInfoCode;
       const circleCode = getPlansInfoCircle(circle.code);
       if (!opCode || !circleCode) return [];
 
@@ -197,7 +215,7 @@ class PlansService {
     if (plans) {
       console.log(`[PlansInfo] CACHE HIT - DTH Packs: ${operator.name}`);
     } else {
-      const opCode = getPlansInfoOperator(operator.code);
+      const opCode = operator.plansInfoCode;
       if (!opCode) return [];
 
       const startTime = Date.now();
@@ -224,7 +242,7 @@ class PlansService {
     if (plans) {
       console.log(`[PlansInfo] CACHE HIT - DTH Pack Details: ${operator.name} | ${packId}`);
     } else {
-      const opCode = getPlansInfoOperator(operator.code);
+      const opCode = operator.plansInfoCode;
       if (!opCode) return [];
 
       const startTime = Date.now();
@@ -262,7 +280,7 @@ class PlansService {
     if (plans) {
       console.log(`[PlansInfo] CACHE HIT - DTH Ala Carte: ${operator.name}`);
     } else {
-      const opCode = getPlansInfoOperator(operator.code);
+      const opCode = operator.plansInfoCode;
       if (!opCode) return [];
 
       const startTime = Date.now();

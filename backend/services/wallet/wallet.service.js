@@ -15,6 +15,11 @@ class WalletService {
         throw new Error('Wallet not found');
       }
 
+      console.log({
+        amount,
+        walletBalancePaise: wallet.balancePaise
+      });
+
       if (wallet.balancePaise < amount * 100) {
         throw new Error('Insufficient wallet balance');
       }
@@ -28,7 +33,7 @@ class WalletService {
       // We will deduct the amount from balancePaise, and keep it conceptually reserved. On failure we refund it.
       // Or we can dynamically add `reservedPaise` to the Wallet document.
       wallet.balancePaise -= amount * 100;
-      wallet.reservedPaise = (wallet.reservedPaise || 0) + amount * 100;
+      wallet.onHoldPaise = (wallet.onHoldPaise || 0) + amount * 100;
       await wallet.save({ session });
 
       await session.commitTransaction();
@@ -51,6 +56,10 @@ class WalletService {
   async _reserveAmountAtomic(userId, amount) {
     const wallet = await Wallet.findOne({ userId });
     if (!wallet) throw new Error('Wallet not found');
+    console.log({
+      amount,
+      walletBalancePaise: wallet.balancePaise
+    });
     if (wallet.balancePaise < amount * 100) throw new Error('Insufficient wallet balance');
 
     const result = await Wallet.updateOne(
@@ -58,7 +67,7 @@ class WalletService {
       { 
         $inc: { 
           balancePaise: -amount * 100,
-          reservedPaise: amount * 100
+          onHoldPaise: amount * 100
         }
       }
     );
@@ -77,7 +86,7 @@ class WalletService {
       { userId },
       { 
         $inc: { 
-          reservedPaise: -amount * 100
+          onHoldPaise: -amount * 100
         }
       }
     );
@@ -93,7 +102,22 @@ class WalletService {
       { 
         $inc: { 
           balancePaise: amount * 100,
-          reservedPaise: -amount * 100
+          onHoldPaise: -amount * 100
+        }
+      }
+    );
+    return result.modifiedCount > 0;
+  }
+
+  /**
+   * Adds balance directly to the wallet (e.g. for commission)
+   */
+  async addBalance(userId, amount) {
+    const result = await Wallet.updateOne(
+      { userId },
+      { 
+        $inc: { 
+          balancePaise: amount * 100
         }
       }
     );

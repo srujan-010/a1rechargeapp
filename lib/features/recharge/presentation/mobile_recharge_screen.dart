@@ -26,23 +26,8 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   final _phoneController = TextEditingController();
   final FocusNode _phoneFocusNode = FocusNode();
 
-  final List<int> _quickAmounts = [19, 199, 299, 479, 666, 719];
-  
+
   String _selectedCategory = '⭐ Recommended';
-  final List<String> _categories = [
-    '⭐ Recommended',
-    '♾ Unlimited',
-    '📶 Data',
-    '⚡ Data Booster',
-    '🎬 Content Packs',
-    '5️⃣ Unlimited 5G',
-    '💰 Talktime',
-    '🌍 International Roaming',
-    '📅 Yearly Plans',
-  ];
-
-  bool _hasContactPermission = false;
-
   final List<String> _quickFilters = [
     '28 Days', '56 Days', '84 Days', '365 Days', 
     '1GB/day', '1.5GB/day', '2GB/day', 'Unlimited 5G'
@@ -50,24 +35,6 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   String _searchQuery = '';
   String _selectedQuickFilter = '';
   final TextEditingController _searchController = TextEditingController();
-
-  String _categorizePlan(RechargePlan plan) {
-    final desc = plan.description.toLowerCase();
-    final data = plan.data?.toLowerCase() ?? '';
-    final voice = plan.voice?.toLowerCase() ?? '';
-    final validity = plan.validity.toLowerCase();
-    
-    if (plan.tags.isNotEmpty || desc.contains('hotstar') || desc.contains('prime') || desc.contains('netflix')) return '🎬 Content Packs';
-    if (validity.contains('365') || validity.contains('year')) return '📅 Yearly Plans';
-    if (desc.contains('isd') || desc.contains('roaming')) return '🌍 International Roaming';
-    if (desc.contains('5g') || plan.tags.any((t) => t.toLowerCase().contains('5g'))) return '5️⃣ Unlimited 5G';
-    if (voice.contains('unlimited') || desc.contains('unlimited calls')) return '♾ Unlimited';
-    if (data.isNotEmpty && (voice.isEmpty || voice == 'na' || voice == 'none')) return '⚡ Data Booster';
-    if (data.isNotEmpty) return '📶 Data';
-    if (plan.talktime != null || desc.contains('talktime')) return '💰 Talktime';
-    
-    return '♾ Unlimited'; // Fallback
-  }
 
   @override
   void initState() {
@@ -86,16 +53,10 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
 
   Future<void> _checkPermissionStatus() async {
     if (kIsWeb) {
-      setState(() {
-        _hasContactPermission = false;
-      });
       return;
     }
     
-    final status = await Permission.contacts.status;
-    setState(() {
-      _hasContactPermission = status.isGranted;
-    });
+    await Permission.contacts.status;
   }
 
   Future<void> _requestContactPermission() async {
@@ -109,10 +70,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     }
 
     try {
-      final status = await Permission.contacts.request();
-      setState(() {
-        _hasContactPermission = status.isGranted;
-      });
+      await Permission.contacts.request();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -132,37 +90,40 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   }
 
   void _onPhoneChanged(String value) {
+    debugPrint('[FLOW] Mobile entered: $value');
     ref.read(rechargeFlowProvider.notifier).setPhoneNumber(value);
     
     // Auto-resolve operator when 10 digits are entered
     if (value.length >= 10) {
+      debugPrint('[FLOW] Starting operator resolution for number');
+      ref.read(rechargeFlowProvider.notifier).setDetecting(true);
       _resolveOperator(value.substring(value.length - 10)); // Take last 10 in case of +91
       _phoneFocusNode.unfocus();
-    } else {
-      // Clear operator if length is less than 10
-      final state = ref.read(rechargeFlowProvider);
-      if (state.operator != null) {
-        ref.read(rechargeFlowProvider.notifier).reset();
-        ref.read(rechargeFlowProvider.notifier).setPhoneNumber(value);
-      }
     }
   }
 
   Future<void> _resolveOperator(String phone) async {
+    debugPrint('[FLOW] Calling resolve API for phone: $phone');
     try {
       final repo = ref.read(rechargeRepositoryProvider);
       final result = await repo.resolveOperator(phone);
+      debugPrint('[FLOW] Response received from resolve API');
+      
       result
         ..onSuccess((res) {
+          debugPrint('[FLOW] Parsing JSON successful. Updating operator and circle.');
           if (!mounted) return;
-          ref.read(rechargeFlowProvider.notifier).setOperator(res.operator);
-          ref.read(rechargeFlowProvider.notifier).setCircle(res.circle);
+          ref.read(rechargeFlowProvider.notifier).setAutoDetection(res.operator, res.circle);
+          debugPrint('[FLOW] State updated. Starting plans fetch automatically via plansProvider.');
         })
         ..onFailure((err) {
-          print('resolveOperator failed: $err');
+          debugPrint('[FLOW] resolveOperator failed: $err');
+          ref.read(rechargeFlowProvider.notifier).setDetecting(false);
         });
-    } catch (e) {
-      print('resolveOperator threw exception: $e');
+    } catch (e, st) {
+      debugPrint('[FLOW] resolveOperator threw exception: $e');
+      debugPrintStack(stackTrace: st);
+      ref.read(rechargeFlowProvider.notifier).setDetecting(false);
     }
   }
 
@@ -177,20 +138,17 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   }
 
   void _selectOperator() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          return DefaultTabController(
+    try {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+        ),
+        builder: (context) => SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: DefaultTabController(
             length: 2,
             child: Column(
               children: [
@@ -210,23 +168,28 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                 Expanded(
                   child: TabBarView(
                     children: [
-                      _buildOperatorList('mobile', scrollController),
-                      _buildOperatorList('postpaid', scrollController),
+                      _buildOperatorList('mobile'),
+                      _buildOperatorList('postpaid'),
                     ],
                   ),
                 ),
               ],
             ),
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('Change Operator Error: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
 
-  Widget _buildOperatorList(String serviceType, ScrollController scrollController) {
+  Widget _buildOperatorList(String serviceType) {
     return Consumer(
       builder: (context, ref, child) {
         final opsAsync = ref.watch(operatorsProvider(serviceType));
+        final state = ref.watch(rechargeFlowProvider);
+        
         return opsAsync.when(
           loading: () => ListView.builder(
             itemCount: 5,
@@ -236,51 +199,89 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
             ),
           ),
           error: (e, _) => Center(child: Text('Error: $e')),
-          data: (ops) => ListView.separated(
-            controller: scrollController,
-            itemCount: ops.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-            itemBuilder: (context, i) {
-              final op = ops[i];
+          data: (ops) {
+            debugPrint('==========================');
+            debugPrint('STEP 5 - UI');
+            debugPrint('==========================');
+            debugPrint('operators.length = ${ops.length}');
+            if (ops.isEmpty) {
+              return const Center(child: Text('No operators found'));
+            }
+            return ListView.separated(
+              itemCount: ops.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+              itemBuilder: (context, i) {
+                final op = ops[i];
+                final isSelected = state.operator?.id == op.id;
+                
+                Color opColor = AppColors.primaryBlue;
+                String opInitials = op.name.isNotEmpty ? op.name.substring(0, 1).toUpperCase() : 'O';
+              
+              final nameLower = op.name.toLowerCase();
+              if (nameLower.contains('airtel')) {
+                opColor = Colors.red;
+                opInitials = 'A';
+              } else if (nameLower.contains('jio')) {
+                opColor = Colors.blue;
+                opInitials = 'J';
+              } else if (nameLower.contains('vi') || nameLower.contains('vodafone') || nameLower.contains('idea')) {
+                opColor = Colors.redAccent;
+                opInitials = 'V';
+              } else if (nameLower.contains('bsnl') || nameLower.contains('mtnl')) {
+                opColor = Colors.orange;
+                opInitials = 'B';
+              }
+
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
+                tileColor: isSelected ? AppColors.primaryBlue.withValues(alpha: 0.05) : null,
                 leading: Container(
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: AppColors.primaryBlue.withValues(alpha: 0.1),
+                    color: opColor.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.cell_tower, color: AppColors.primaryBlue, size: 20),
+                  child: Center(
+                    child: Text(
+                      opInitials,
+                      style: TextStyle(color: opColor, fontWeight: FontWeight.bold, fontSize: 18),
+                    )
+                  ),
                 ),
-                title: Text(op.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                title: Text(
+                  op.name, 
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? AppColors.primaryBlue : AppColors.textPrimary,
+                  )
+                ),
+                trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.primaryBlue) : null,
                 onTap: () {
                   ref.read(rechargeFlowProvider.notifier).setOperator(op);
                   Navigator.pop(context);
                 },
               );
             },
-          ),
+          );
+          },
         );
       },
     );
   }
 
   void _selectCircle() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.4,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (context, scrollController) {
-          return Consumer(
+    try {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+        ),
+        builder: (context) => SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: Consumer(
             builder: (context, ref, child) {
               final circlesAsync = ref.watch(circlesProvider);
               
@@ -300,40 +301,45 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                         ),
                       ),
                       error: (e, _) => Center(child: Text('Error: $e')),
-                      data: (circles) => ListView.separated(
-                        controller: scrollController,
-                        itemCount: circles.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-                        itemBuilder: (context, i) {
-                          final circle = circles[i];
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
-                            leading: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
+                      data: (circles) {
+                        if (circles.isEmpty) return const Center(child: Text('No circles found'));
+                        return ListView.separated(
+                          itemCount: circles.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                          itemBuilder: (context, i) {
+                            final circle = circles[i];
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 4),
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.location_on, color: Colors.orange, size: 20),
                               ),
-                              child: const Icon(Icons.location_on, color: Colors.orange, size: 20),
-                            ),
-                            title: Text(circle.state, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            onTap: () {
-                              ref.read(rechargeFlowProvider.notifier).setCircle(circle);
-                              Navigator.pop(context);
-                            },
-                          );
-                        },
-                      ),
+                              title: Text(circle.state, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              onTap: () {
+                                ref.read(rechargeFlowProvider.notifier).setCircle(circle);
+                                Navigator.pop(context);
+                              },
+                            );
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
               );
             },
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('Change Circle Error: $e');
+      debugPrintStack(stackTrace: st);
+    }
   }
   @override
   Widget build(BuildContext context) {
@@ -386,45 +392,105 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                     ),
                   ),
 
-                  // ── Compact Customer Card or Phone Input ──
-                  if (hasOperator)
+                  if (state.isDetecting)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(AppSpacing.lg),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    )
+                  else if (hasOperator)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
-                        child: InkWell(
-                          onTap: () {
-                            ref.read(rechargeFlowProvider.notifier).clearOperator();
-                            _phoneController.clear();
-                          },
-                          borderRadius: BorderRadius.circular(AppRadius.lg),
-                          child: Container(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(AppRadius.lg),
-                              border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: AppColors.primaryBlueLight.withValues(alpha: 0.2),
-                                  radius: 18,
-                                  child: const Icon(Icons.sim_card, color: AppColors.primaryBlue, size: 20),
-                                ),
-                                const SizedBox(width: AppSpacing.md),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Container(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(AppRadius.lg),
+                            border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
                                     children: [
+                                      CircleAvatar(
+                                        backgroundColor: AppColors.primaryBlueLight.withValues(alpha: 0.2),
+                                        radius: 14,
+                                        child: const Icon(Icons.phone_android, color: AppColors.primaryBlue, size: 14),
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
                                       Text(_phoneController.text, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                      Text('${state.operator!.name} • ${state.circle?.state ?? 'Unknown'}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                                     ],
                                   ),
+                                  InkWell(
+                                    onTap: () {
+                                      ref.read(rechargeFlowProvider.notifier).clearOperator();
+                                      _phoneController.clear();
+                                      _phoneFocusNode.requestFocus();
+                                    },
+                                    child: const Text('EDIT NUMBER', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 11)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              Container(
+                                padding: const EdgeInsets.all(AppSpacing.sm),
+                                decoration: BoxDecoration(
+                                  color: AppColors.background,
+                                  borderRadius: BorderRadius.circular(AppRadius.md),
                                 ),
-                                const Text('CHANGE', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 12)),
-                              ],
-                            ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (state.isAutoDetected && !state.hasManualSelection)
+                                      const Padding(
+                                        padding: EdgeInsets.only(bottom: 4),
+                                        child: Text('Detected:', style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+                                      ),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text('${state.operator?.name ?? 'Unknown'} • ${state.circle?.state ?? 'Unknown'}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                        ),
+                                        Row(
+                                          children: [
+                                            InkWell(
+                                              onTap: _selectOperator,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(color: AppColors.primaryBlue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                                                child: const Text('Change Operator', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
+                                              )
+                                            ),
+                                            const SizedBox(width: 8),
+                                            InkWell(
+                                              onTap: _selectCircle,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(color: AppColors.primaryBlue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                                                child: const Text('Change Circle', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 10)),
+                                              )
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (state.isAutoDetected && !state.hasManualSelection)
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 8),
+                                  child: Text('Detection may be inaccurate for ported numbers. You can change the operator or circle manually.', style: TextStyle(color: AppColors.textHint, fontSize: 10, fontStyle: FontStyle.italic)),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -489,7 +555,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                     ),
 
                   // ── Recent Contacts ──
-                  if (!hasOperator)
+                  if (!hasOperator && !state.isDetecting)
                     SliverToBoxAdapter(
                       child: RecentContactsList(
                         onContactSelected: _onRecentTap,
@@ -557,9 +623,14 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                               ),
                             ),
                             
-                            Consumer(
-                              builder: (context, ref, child) {
-                                final plansAsync = ref.watch(plansProvider((operatorId: state.operator!.id, circle: state.circle!.id, serviceType: state.operator!.type.name)));
+                              Consumer(
+                                builder: (context, ref, child) {
+                                  final operator = state.operator;
+                                  final circle = state.circle;
+                                  if (operator == null || circle == null) {
+                                    return const SliverToBoxAdapter(child: SizedBox());
+                                  }
+                                  final plansAsync = ref.watch(plansProvider((operatorId: operator.id, circle: circle.id, serviceType: operator.type.name)));
                                 
                                 return plansAsync.when(
                                   loading: () => SliverList(
@@ -578,49 +649,63 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                     ),
                                   ),
                                   data: (allPlans) {
-                                    // Apply Search & Filters
-                                    var plans = allPlans.where((p) {
-                                      if (_searchQuery.isNotEmpty) {
-                                        final q = _searchQuery;
-                                        if (!p.pricePaise.toString().contains(q) &&
-                                            !p.validity.toLowerCase().contains(q) &&
-                                            !p.description.toLowerCase().contains(q) &&
-                                            !(p.data?.toLowerCase().contains(q) ?? false)) {
-                                          return false;
-                                        }
-                                      }
-                                      if (_selectedQuickFilter.isNotEmpty) {
-                                        final f = _selectedQuickFilter.toLowerCase();
-                                        if (f.contains('day') && !f.contains('gb')) {
-                                          if (!p.validity.toLowerCase().contains(f)) return false;
-                                        } else if (f.contains('gb')) {
-                                          if (!(p.data?.toLowerCase().contains(f) ?? false)) return false;
-                                        } else if (f.contains('5g')) {
-                                          if (!p.description.toLowerCase().contains('5g') && !p.tags.any((t) => t.toLowerCase().contains('5g'))) return false;
-                                        }
-                                      }
-                                      return true;
-                                    }).toList();
-                            final categoriesMap = <String, List<RechargePlan>>{};
-                            for (final cat in _categories) { categoriesMap[cat] = []; }
-                            
-                            for (final p in plans) {
-                              final cat = _categorizePlan(p);
-                              if (categoriesMap.containsKey(cat)) { categoriesMap[cat]!.add(p); }
-                            }
-                            
-                            final recommended = plans.where((p) => p.isPopular || p.isBestValue).toList();
-                            categoriesMap['⭐ Recommended'] = recommended.isNotEmpty ? recommended : plans.take(15).toList();
+                                    debugPrint('\n========== PLANS DEBUG ==========');
+                                    debugPrint('inside build()');
+                                    debugPrint('plansProvider has ${allPlans.length} plans');
+                                    debugPrint('Plans from provider: ${allPlans.length}');
 
-                            final activeCategories = _categories.where((c) => c == '⭐ Recommended' || (categoriesMap[c]?.isNotEmpty ?? false)).toList();
-                            
-                            if (!activeCategories.contains(_selectedCategory)) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) setState(() => _selectedCategory = '⭐ Recommended');
-                              });
-                            }
+                                    // Apply Search
+                                    final searchQuery = _searchController.text.toLowerCase().trim();
+                                    var plans = allPlans;
+                                    
+                                    if (searchQuery.isNotEmpty) {
+                                      plans = allPlans.where((p) {
+                                        final amountStr = (p.pricePaise ~/ 100).toString();
+                                        return amountStr.contains(searchQuery) ||
+                                               p.categoryName.toLowerCase().contains(searchQuery) ||
+                                               p.description.toLowerCase().contains(searchQuery) ||
+                                               p.validity.toLowerCase().contains(searchQuery) ||
+                                               (p.data?.toLowerCase().contains(searchQuery) ?? false);
+                                      }).toList();
+                                    }
 
-                            final selectedPlans = categoriesMap[_selectedCategory] ?? [];
+                                    // Apply Validity/Quick Filters
+                                    if (_selectedQuickFilter.isNotEmpty) {
+                                      final qf = _selectedQuickFilter.toLowerCase();
+                                      plans = plans.where((p) {
+                                        if (qf.contains('day') || qf.contains('year')) return p.validity.toLowerCase().contains(qf);
+                                        if (qf.contains('gb')) return (p.data?.toLowerCase().contains(qf) ?? false);
+                                        if (qf.contains('5g')) return (p.tags.any((t) => t.toLowerCase().contains('5g')) || p.description.toLowerCase().contains('5g'));
+                                        return true;
+                                      }).toList();
+                                    }
+
+                                    // Categorize dynamically
+                                    final categoriesMap = <String, List<RechargePlan>>{};
+                                    for (final p in plans) {
+                                      final cat = p.categoryName;
+                                      if (!categoriesMap.containsKey(cat)) categoriesMap[cat] = [];
+                                      categoriesMap[cat]!.add(p);
+                                    }
+                                    
+                                    final recommended = plans.where((p) => p.isPopular || p.isBestValue).toList();
+                                    if (recommended.isNotEmpty) {
+                                      categoriesMap['⭐ Recommended'] = recommended;
+                                    } else if (plans.isNotEmpty) {
+                                      categoriesMap['⭐ Recommended'] = plans.take(15).toList();
+                                    }
+
+                                    final activeCategories = ['⭐ Recommended'];
+                                    final otherCats = categoriesMap.keys.where((c) => c != '⭐ Recommended').toList()..sort();
+                                    activeCategories.addAll(otherCats);
+                                    
+                                    if (!activeCategories.contains(_selectedCategory)) {
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        if (mounted) setState(() => _selectedCategory = activeCategories.isNotEmpty ? activeCategories.first : '⭐ Recommended');
+                                      });
+                                    }
+
+                                    final selectedPlans = categoriesMap[_selectedCategory] ?? [];
 
                             return SliverMainAxisGroup(
                               slivers: [
@@ -690,33 +775,36 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('Amount Payable', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 2),
-                          Text(
-                            CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise ?? state.selectedPlan?.pricePaise ?? 0),
-                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                          ),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Amount Payable', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 2),
+                            Text(
+                              CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise ?? state.selectedPlan?.pricePaise ?? 0),
+                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.lg),
-                      Expanded(
-                        child: SizedBox(
-                          height: 52,
-                          child: ElevatedButton(
-                            onPressed: () => context.push(RouteNames.rechargeConfirm),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryBlue,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              minimumSize: const Size(120, 52), // Override global double.infinity
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text('PROCEED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
+                      SizedBox(
+                        height: 52,
+                        width: 140,
+                        child: ElevatedButton(
+                          onPressed: () => context.push(RouteNames.rechargeConfirm),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryBlue,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
+                          child: const Text('PROCEED', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
                         ),
                       ),
                     ],
@@ -898,24 +986,33 @@ class _PremiumPlanCard extends StatelessWidget {
               children: [
                 // Top Row: Price, Badges, Action Button
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '\u20B9${plan.pricePaise ~/ 100}',
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          Text(
+                            '\u20B9${plan.pricePaise ~/ 100}',
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          ),
+                          if (plan.isBestValue || plan.isPopular)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(plan.isBestValue ? 'Best Value' : 'Popular', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+                            ),
+                        ],
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    if (plan.isBestValue || plan.isPopular)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(plan.isBestValue ? 'Best Value' : 'Popular', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
-                      ),
-                    const Spacer(),
                     SizedBox(
+                      width: 95,
                       height: 36,
                       child: ElevatedButton(
                         onPressed: onTap,
@@ -923,12 +1020,11 @@ class _PremiumPlanCard extends StatelessWidget {
                           backgroundColor: isSelected ? AppColors.primaryBlue : Colors.white,
                           foregroundColor: isSelected ? Colors.white : AppColors.primaryBlue,
                           elevation: 0,
-                          minimumSize: const Size(64, 36), // Override global double.infinity
+                          padding: EdgeInsets.zero, // Important for fixed small width
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
                             side: const BorderSide(color: AppColors.primaryBlue),
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
                         ),
                         child: const Text('Recharge', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
@@ -1005,7 +1101,15 @@ class _InfoChip extends StatelessWidget {
         children: [
           Text(icon, style: const TextStyle(fontSize: 12)),
           const SizedBox(width: 4),
-          Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          Flexible(
+            child: Text(
+              text, 
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
@@ -1026,11 +1130,14 @@ class _MetaText extends StatelessWidget {
       children: [
         Text(icon, style: const TextStyle(fontSize: 12)),
         const SizedBox(width: 4),
-        Text(
-          text, 
-          style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
-          maxLines: 1, 
-          overflow: TextOverflow.ellipsis
+        Flexible(
+          child: Text(
+            text, 
+            style: TextStyle(fontSize: 12, color: textColor, fontWeight: FontWeight.w500),
+            maxLines: 2, 
+            softWrap: true,
+            overflow: TextOverflow.ellipsis
+          ),
         ),
       ],
     );
@@ -1094,9 +1201,11 @@ class _PlanDetailsSheet extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '\u20B9${plan.pricePaise ~/ 100}',
-                    style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  Expanded(
+                    child: Text(
+                      '\u20B9${plan.pricePaise ~/ 100}',
+                      style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
                   ),
                   if (plan.isBestValue)
                     Container(

@@ -14,17 +14,33 @@ exports.getOperators = async (req, res) => {
     let query = { status: true };
     
     if (service) {
-      query.serviceType = service;
+      query.serviceType = new RegExp(`^${service}$`, 'i');
     }
+
+    console.log('req.query:', req.query);
+    console.log('MongoDB query:', query);
 
     const operators = await ProviderOperator.find(query)
       .sort({ displayOrder: 1, name: 1 })
-      .select('name serviceType provider code displayOrder');
+      .select('name serviceType provider code displayOrder plansInfoCode');
+      
+    // Deduplicate operators by name so the UI only sees one entry per operator name
+    const uniqueOperators = [];
+    const seenNames = new Set();
+    
+    for (const op of operators) {
+      if (!seenNames.has(op.name)) {
+        seenNames.add(op.name);
+        uniqueOperators.push(op);
+      }
+    }
+
+    console.log('Number of unique documents returned:', uniqueOperators.length);
 
     res.json({
       success: true,
-      count: operators.length,
-      data: operators
+      count: uniqueOperators.length,
+      data: uniqueOperators
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });

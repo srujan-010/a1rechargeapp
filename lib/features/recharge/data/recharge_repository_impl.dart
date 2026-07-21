@@ -1,4 +1,4 @@
-// lib/features/recharge/data/recharge_repository_impl.dart
+import 'package:flutter/foundation.dart';
 import '../../../core/models/app_exception.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/utils/logger.dart';
@@ -19,14 +19,49 @@ class RechargeRepositoryImpl implements RechargeRepository {
   @override
   Future<Result<List<Operator>, AppException>> getOperators({required String serviceType}) async {
     try {
-      // e.g. /master/operators?service=mobile
+      debugPrint('==========================');
+      debugPrint('STEP 1 - API REQUEST');
+      debugPrint('==========================');
+      debugPrint('Calling GET /api/master/operators');
+      debugPrint('Request URL: /master/operators?service=$serviceType');
+      
+      int? statusCode;
       final response = await apiClient.get<List<dynamic>>(
         '/master/operators?service=$serviceType',
-        fromJson: (json) => json as List<dynamic>,
+        fromJson: (json) {
+          debugPrint('Raw JSON Response: $json');
+          return json as List<dynamic>;
+        },
       );
+      
+      debugPrint('Status Code: ${response.success ? "200 (Success)" : "Error"}');
+
+      debugPrint('==========================');
+      debugPrint('STEP 2 - PARSE');
+      debugPrint('==========================');
       if (response.success && response.data != null) {
-        final data = response.data!;
-        final operators = data.map((json) => Operator.fromJson(json as Map<String, dynamic>)).toList();
+        final List<dynamic> data = (response.data as List?) ?? [];
+        debugPrint('Raw JSON count: ${data.length}');
+        
+        final List<Operator> operators = [];
+        for (var item in data) {
+          if (item is Map) {
+            final Map<String, dynamic> jsonMap = Map<String, dynamic>.from(item);
+            final op = Operator.fromJson(jsonMap);
+            operators.add(op);
+            debugPrint('${op.name}\ncode=${op.shortCode}\nserviceType=${jsonMap['serviceType']}\ntype=${op.type}\n');
+          }
+        }
+        
+        debugPrint('Parsed operators count: ${operators.length}');
+        
+        debugPrint('==========================');
+        debugPrint('STEP 3 - FILTER');
+        debugPrint('==========================');
+        debugPrint('Before filtering:\noperators.length = ${operators.length}');
+        // We do not have any internal repository filtering here.
+        debugPrint('After filtering:\nprepaid.length = ${operators.where((o) => o.type == OperatorType.prepaid).length}\npostpaid.length = ${operators.where((o) => o.type == OperatorType.postpaid).length}');
+        
         return Success(operators);
       }
       return Failure(ServerException(message: response.message));
@@ -45,8 +80,8 @@ class RechargeRepositoryImpl implements RechargeRepository {
         fromJson: (json) => json as List<dynamic>,
       );
       if (response.success && response.data != null) {
-        final data = response.data!;
-        final circles = data.map((json) => Circle.fromJson(json as Map<String, dynamic>)).toList();
+        final List<dynamic> data = (response.data as List?) ?? [];
+        final circles = data.whereType<Map<String, dynamic>>().map((json) => Circle.fromJson(json)).toList();
         return Success(circles);
       }
       return Failure(ServerException(message: response.message));
@@ -65,9 +100,9 @@ class RechargeRepositoryImpl implements RechargeRepository {
         fromJson: (json) => json as Map<String, dynamic>,
       );
       if (response.success && response.data != null) {
-        final data = response.data!;
-        final operator = Operator.fromJson(data['operator'] as Map<String, dynamic>);
-        final circle = Circle.fromJson(data['circle'] as Map<String, dynamic>);
+        final data = response.data ?? {};
+        final operator = Operator.fromJson(data['operator'] is Map ? Map<String, dynamic>.from(data['operator']) : {});
+        final circle = Circle.fromJson(data['circle'] is Map ? Map<String, dynamic>.from(data['circle']) : {});
         return Success(OperatorResolveResult(operator: operator, circle: circle));
       }
       return Failure(ServerException(message: response.message));
@@ -92,8 +127,9 @@ class RechargeRepositoryImpl implements RechargeRepository {
         endpoint = '/plans/dth/packs';
       }
 
-      print('Fetching plans from endpoint: $endpoint');
+      AppLogger.debug('Fetching plans from endpoint: $endpoint', tag: 'RechargeRepo');
 
+      debugPrint("STEP 2: Awaiting apiClient.get");
       final response = await apiClient.get<Map<String, dynamic>>(
         endpoint,
         queryParameters: {
@@ -101,31 +137,30 @@ class RechargeRepositoryImpl implements RechargeRepository {
           'circleId': circle,
         },
         fromJson: (json) {
-          print('[RAW RESPONSE] $json');
           return json as Map<String, dynamic>;
         },
       );
-
-      print('[DECODED JSON] ${response.data}');
+      debugPrint("STEP 3: Response received from apiClient");
 
       if (response.success && response.data != null) {
-        final List<dynamic> plansData = response.data!['plans'] ?? [];
-        print('Found ${plansData.length} plans in response.data["plans"]');
+        final List<dynamic> plansData = (response.data?['plans'] as List?) ?? [];
+        debugPrint("STEP 4: Processing ${plansData.length} plans");
+        AppLogger.debug('Found ${plansData.length} plans in response.data["plans"]', tag: 'RechargeRepo');
         
         final List<RechargePlan> plans = [];
         for (var i = 0; i < plansData.length; i++) {
-          final json = plansData[i] as Map<String, dynamic>;
+          if (plansData[i] is! Map) continue;
+          final json = Map<String, dynamic>.from(plansData[i]);
           try {
-            print('Parsing step for plan $i: $json');
             final plan = RechargePlan.fromJson(json);
             plans.add(plan);
           } catch (e, stackTrace) {
-            print('[PARSE EXCEPTION] for plan $i: $e');
-            print('[STACK TRACE] $stackTrace');
+            AppLogger.error('[PARSE EXCEPTION] for plan $i: $e', tag: 'RechargeRepo');
+            AppLogger.error('[STACK TRACE] $stackTrace', tag: 'RechargeRepo');
           }
         }
         
-        print('Loaded ${plans.length} plans');
+        AppLogger.debug('Loaded ${plans.length} plans', tag: 'RechargeRepo');
         return Success(plans);
       }
       return Failure(ServerException(message: response.message));
@@ -160,7 +195,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
           if (mpin != null) 'mpin': mpin,
           if (paymentMode != null) 'paymentMode': paymentMode,
         },
-        fromJson: (json) => RechargeReceipt.fromJson(json as Map<String, dynamic>),
+        fromJson: (json) => RechargeReceipt.fromJson(json is Map ? Map<String, dynamic>.from(json) : {}),
       );
       if (!response.success || response.data == null) {
         return Failure(ServerException(message: response.message));

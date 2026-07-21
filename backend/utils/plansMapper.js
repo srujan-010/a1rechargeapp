@@ -4,32 +4,7 @@
  * Maps internal A1 Topup operator and circle codes to PlansInfo API codes.
  */
 
-// A1 Topup Operator Code -> PlansInfo Operator Code
-const operatorMap = {
-  // Mobile Prepaid
-  'A': 'AT',   // Airtel
-  'RC': 'RJ',  // RELIANCE - JIO
-  'V': 'VF',   // Vodafone
-  'I': 'ID',   // Idea
-  'BT': 'BS',  // BSNL - TOPUP
-  'BR': 'BS',  // BSNL - STV
-  'MTT': 'MT', // MTNL - TOPUP
-  'MTR': 'MT', // MTNL - Recharge
-
-  // Mobile Postpaid
-  'PAT': 'AT', // Airtel Postpaid
-  'IP': 'ID',  // Idea Postpaid
-  'VP': 'VF',  // Vodafone Postpaid
-  'BP': 'BS',  // BSNL Postpaid
-  'JPP': 'RJ', // JIO Postpaid
-
-  // DTH
-  'TTV': 'TS', // Tata Play (Tata Sky)
-  'DTV': 'DT', // Dish TV
-  'ATV': 'AD', // Airtel Digital TV
-  'VTV': 'VD', // Videocon d2h
-  'STV': 'SD', // Sun Direct
-};
+// Removed: operatorMap is now database-driven via ProviderOperator.plansInfoCode
 
 // A1 Topup Circle Code -> PlansInfo Circle Code
 const circleMap = {
@@ -60,15 +35,7 @@ const circleMap = {
   '2': 'WB',  // West Bengal
 };
 
-/**
- * Get PlansInfo Operator Code from A1 Topup Operator Code
- * @param {String} internalCode 
- * @returns {String|null}
- */
-const getPlansInfoOperator = (internalCode) => {
-  return operatorMap[internalCode] || null;
-};
-
+// Removed: getPlansInfoOperator is now database-driven
 /**
  * Get PlansInfo Circle Code from A1 Topup Circle Code
  * @param {String} internalCode 
@@ -79,8 +46,6 @@ const getPlansInfoCircle = (internalCode) => {
 };
 
 module.exports = {
-  getPlansInfoOperator,
   getPlansInfoCircle,
-  operatorMap,
   circleMap
 };

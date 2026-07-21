@@ -5,6 +5,7 @@ const walletService = require('../services/wallet/wallet.service');
 const commissionService = require('../services/commission/commission.service');
 const ledgerService = require('../services/ledger/ledger.service');
 const CommissionHistory = require('../models/CommissionHistory');
+const Transaction = require('../models/Transaction');
 
 class PendingRechargeWorker {
   constructor() {
@@ -73,7 +74,7 @@ class PendingRechargeWorker {
             // Calculate & Credit Commission
             const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
             if (commission.retailerCommissionAmount > 0) {
-              await walletService.releaseReservation(transaction.userId, commission.retailerCommissionAmount);
+              await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
               await ledgerService.logTransaction({
                 userId: transaction.userId,
                 type: 'CREDIT',
@@ -81,6 +82,18 @@ class PendingRechargeWorker {
                 referenceType: 'COMMISSION',
                 referenceId: transaction._id,
                 description: `Commission for Recharge ${transaction.orderId}`,
+              });
+
+              await Transaction.create({
+                userId: transaction.userId,
+                type: 'credit',
+                amountPaise: commission.retailerCommissionAmount * 100,
+                status: 'success',
+                service: 'commission',
+                referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+                description: `Commission for Recharge ${transaction.orderId}`,
+                apiReference: transaction._id.toString(),
+                paymentMethod: 'wallet',
               });
             }
 
@@ -97,6 +110,12 @@ class PendingRechargeWorker {
               companyProfitAmount: commission.companyProfitAmount,
             });
 
+            await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+              status: 'success', 
+              apiReference: statusResponse.providerTransactionId,
+              commissionEarnedPaise: commission.retailerCommissionAmount * 100 
+            });
+
             transaction.commissionCalculated = true;
             await transaction.save();
             console.log(`[Worker] Transaction ${transaction.orderId} marked SUCCESS`);
@@ -105,6 +124,12 @@ class PendingRechargeWorker {
             transaction.status = 'FAILED';
             transaction.failureReason = statusResponse.message;
             await walletService.releaseReservation(transaction.userId, transaction.amount);
+            
+            await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+              status: 'failed', 
+              apiReference: statusResponse.providerTransactionId 
+            });
+
             await transaction.save();
             console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED. Funds refunded.`);
           }

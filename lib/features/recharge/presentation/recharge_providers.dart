@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/config/app_config.dart';
@@ -20,7 +21,13 @@ final rechargeRepositoryProvider = Provider<RechargeRepository>((ref) {
 final operatorsProvider = FutureProvider.family<List<Operator>, String>((ref, serviceType) async {
   final repo = ref.watch(rechargeRepositoryProvider);
   final result = await repo.getOperators(serviceType: serviceType);
-  return result.getOrElseCompute((e) => throw e);
+  final ops = result.getOrElseCompute((e) => throw e);
+  debugPrint('==========================');
+  debugPrint('STEP 4 - PROVIDER');
+  debugPrint('==========================');
+  debugPrint('OperatorProvider state (serviceType=$serviceType):');
+  debugPrint('Number of operators stored: ${ops.length}');
+  return ops;
 });
 
 // A provider to fetch all circles
@@ -32,45 +39,73 @@ final circlesProvider = FutureProvider<List<Circle>>((ref) async {
 
 // A provider to fetch plans based on operatorId, circle, and serviceType
 final plansProvider = FutureProvider.family<List<RechargePlan>, ({String operatorId, String circle, String serviceType})>((ref, params) async {
-  final repo = ref.watch(rechargeRepositoryProvider);
-  final result = await repo.getPlans(
-    operatorId: params.operatorId,
-    circle: params.circle,
-    serviceType: params.serviceType,
-  );
-  return result.getOrElseCompute((e) => throw e);
+  try {
+    debugPrint("STEP 1: Calling getPlans in recharge_providers.dart");
+    final repo = ref.watch(rechargeRepositoryProvider);
+    final result = await repo.getPlans(
+      operatorId: params.operatorId,
+      circle: params.circle,
+      serviceType: params.serviceType,
+    );
+    debugPrint("STEP 5: Plans Loaded in recharge_providers.dart");
+    return result.getOrElseCompute((e) => throw e);
+  } catch (e, st) {
+    debugPrint("PLANS CRASH: recharge_providers.dart, plansProvider");
+    debugPrint(e.toString());
+    debugPrintStack(stackTrace: st);
+    rethrow;
+  }
 });
 
 // State classes for the recharge flow
 class RechargeState {
   final String? phoneNumber;
-  final Operator? operator;
-  final Circle? circle;
+  final Operator? autoOperator;
+  final Circle? autoCircle;
+  final Operator? manualOperator;
+  final Circle? manualCircle;
   final RechargePlan? selectedPlan;
   final int? customAmountPaise;
+  final bool isDetecting;
+
+  Operator? get operator => manualOperator ?? autoOperator;
+  Circle? get circle => manualCircle ?? autoCircle;
+  bool get hasManualSelection => manualOperator != null || manualCircle != null;
+  bool get isAutoDetected => autoOperator != null && autoCircle != null;
 
   const RechargeState({
     this.phoneNumber,
-    this.operator,
-    this.circle,
+    this.autoOperator,
+    this.autoCircle,
+    this.manualOperator,
+    this.manualCircle,
     this.selectedPlan,
     this.customAmountPaise,
+    this.isDetecting = false,
   });
 
   RechargeState copyWith({
     String? phoneNumber,
-    Operator? operator,
-    Circle? circle,
+    Operator? autoOperator,
+    Circle? autoCircle,
+    Operator? manualOperator,
+    Circle? manualCircle,
     RechargePlan? selectedPlan,
     int? customAmountPaise,
+    bool? isDetecting,
     bool clearPlan = false,
+    bool clearManual = false,
+    bool clearAuto = false,
   }) {
     return RechargeState(
       phoneNumber: phoneNumber ?? this.phoneNumber,
-      operator: operator ?? this.operator,
-      circle: circle ?? this.circle,
+      autoOperator: clearAuto ? null : (autoOperator ?? this.autoOperator),
+      autoCircle: clearAuto ? null : (autoCircle ?? this.autoCircle),
+      manualOperator: clearManual ? null : (manualOperator ?? this.manualOperator),
+      manualCircle: clearManual ? null : (manualCircle ?? this.manualCircle),
       selectedPlan: clearPlan ? null : (selectedPlan ?? this.selectedPlan),
-      customAmountPaise: customAmountPaise ?? this.customAmountPaise,
+      customAmountPaise: clearPlan ? null : (customAmountPaise ?? this.customAmountPaise),
+      isDetecting: isDetecting ?? this.isDetecting,
     );
   }
 }
@@ -81,11 +116,26 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
   RechargeState build() => const RechargeState();
 
   void setPhoneNumber(String number) {
-    state = state.copyWith(phoneNumber: number);
+    if (state.phoneNumber != number) {
+      state = state.copyWith(
+        phoneNumber: number,
+        clearManual: true,
+        clearAuto: true,
+        clearPlan: true,
+      );
+    }
+  }
+
+  void setDetecting(bool detecting) {
+    state = state.copyWith(isDetecting: detecting);
+  }
+
+  void setAutoDetection(Operator op, Circle c) {
+    state = state.copyWith(autoOperator: op, autoCircle: c, isDetecting: false, clearPlan: true);
   }
 
   void setOperator(Operator op) {
-    state = state.copyWith(operator: op, clearPlan: true);
+    state = state.copyWith(manualOperator: op, clearPlan: true);
   }
 
   void clearOperator() {
@@ -93,7 +143,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
   }
 
   void setCircle(Circle circle) {
-    state = state.copyWith(circle: circle, clearPlan: true);
+    state = state.copyWith(manualCircle: circle, clearPlan: true);
   }
 
   void setPlan(RechargePlan plan) {

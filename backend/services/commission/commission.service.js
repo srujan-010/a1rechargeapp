@@ -1,14 +1,37 @@
 const OperatorCommission = require('../../models/OperatorCommission');
+const ProviderOperator = require('../../models/ProviderOperator');
+const { calculateCommission: calculateCommissionFallback } = require('../../utils/commissionEngine');
 
 class CommissionService {
   /**
    * Calculate commissions for a given operator and amount
    */
-  async calculateCommission(operatorCode, amount) {
+  async calculateCommission(operatorCode, amount, operatorName = '', serviceType = 'mobile') {
     const commissionRule = await OperatorCommission.findOne({ operatorCode, status: 'ACTIVE' });
 
     if (!commissionRule) {
-      // If no dynamic rule, default to 0 commission to be safe
+      let resolvedOperatorName = operatorName;
+      if (!resolvedOperatorName) {
+        const providerOp = await ProviderOperator.findOne({ code: operatorCode });
+        if (providerOp) {
+          resolvedOperatorName = providerOp.name;
+          serviceType = providerOp.type === 'dth' ? 'dth' : 'mobile';
+        }
+      }
+
+      if (resolvedOperatorName) {
+        const fallback = calculateCommissionFallback(serviceType, resolvedOperatorName, amount * 100);
+        return {
+          providerCommissionPercentage: fallback.commissionPercentage,
+          providerCommissionAmount: fallback.commissionAmountPaise / 100,
+          retailerCommissionPercentage: fallback.commissionPercentage,
+          retailerCommissionAmount: fallback.commissionAmountPaise / 100,
+          companyProfitPercentage: 0,
+          companyProfitAmount: 0,
+        };
+      }
+
+      // If no dynamic rule and no fallback possible, default to 0 commission to be safe
       return {
         providerCommissionPercentage: 0,
         providerCommissionAmount: 0,

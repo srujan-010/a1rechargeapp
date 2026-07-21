@@ -53,8 +53,8 @@ abstract final class AppConfig {
       return;
     }
 
-    // Default to the live Render backend for all environments
-    _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+    // Default to the local backend for debugging
+    _initializedBaseUrl = 'http://localhost:5000/api';
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }

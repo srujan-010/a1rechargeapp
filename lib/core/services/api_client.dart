@@ -51,77 +51,93 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final token = await secureStorage.getAccessToken();
-          if (token != null && token.isNotEmpty) {
-            options.headers['Authorization'] = 'Bearer $token';
+          try {
+            final token = await secureStorage.getAccessToken();
+            if (token != null && token.isNotEmpty) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
+            AppLogger.debug('==================== REQUEST ====================', tag: 'HTTP');
+            AppLogger.debug('URL: ${options.uri}', tag: 'HTTP');
+            AppLogger.debug('Method: ${options.method}', tag: 'HTTP');
+            AppLogger.debug('Headers: ${options.headers}', tag: 'HTTP');
+            AppLogger.debug('Body: ${options.data}', tag: 'HTTP');
+            AppLogger.debug('=================================================', tag: 'HTTP');
+            handler.next(options);
+          } catch (e, st) {
+            debugPrint("INTERCEPTOR ERROR (onRequest): $e");
+            debugPrintStack(stackTrace: st);
+            rethrow;
           }
-          AppLogger.debug('==================== REQUEST ====================', tag: 'HTTP');
-          AppLogger.debug('URL: ${options.uri}', tag: 'HTTP');
-          AppLogger.debug('Method: ${options.method}', tag: 'HTTP');
-          AppLogger.debug('Headers: ${options.headers}', tag: 'HTTP');
-          AppLogger.debug('Body: ${options.data}', tag: 'HTTP');
-          AppLogger.debug('=================================================', tag: 'HTTP');
-          handler.next(options);
         },
         onResponse: (response, handler) {
-          AppLogger.debug('==================== RESPONSE ====================', tag: 'HTTP');
-          AppLogger.debug('URL: ${response.requestOptions.uri}', tag: 'HTTP');
-          AppLogger.debug('Status: ${response.statusCode}', tag: 'HTTP');
-          AppLogger.debug('Body: ${response.data}', tag: 'HTTP');
-          AppLogger.debug('==================================================', tag: 'HTTP');
-          handler.next(response);
+          try {
+            AppLogger.debug('==================== RESPONSE ====================', tag: 'HTTP');
+            AppLogger.debug('URL: ${response.requestOptions.uri}', tag: 'HTTP');
+            AppLogger.debug('Status: ${response.statusCode}', tag: 'HTTP');
+            // Do NOT print response.data here directly to prevent large JSON freezes
+            AppLogger.debug('Body: [OMITTED FROM INTERCEPTOR TO PREVENT CRASH]', tag: 'HTTP');
+            AppLogger.debug('==================================================', tag: 'HTTP');
+            handler.next(response);
+          } catch (e, st) {
+            debugPrint("INTERCEPTOR ERROR (onResponse): $e");
+            debugPrintStack(stackTrace: st);
+            rethrow;
+          }
         },
         onError: (error, handler) async {
-          AppLogger.error('==================== ERROR ====================', tag: 'HTTP');
-          AppLogger.error('URL: ${error.requestOptions.uri}', tag: 'HTTP');
-          AppLogger.error('Method: ${error.requestOptions.method}', tag: 'HTTP');
-          AppLogger.error('Exception: ${error.message}', tag: 'HTTP');
-          AppLogger.error('Timeout Type: ${error.type.name}', tag: 'HTTP');
-          AppLogger.error('Stack Trace: ${error.stackTrace}', tag: 'HTTP');
-          AppLogger.error('Response Status: ${error.response?.statusCode}', tag: 'HTTP');
-          AppLogger.error('Response Body: ${error.response?.data}', tag: 'HTTP');
-          AppLogger.error('===============================================', tag: 'HTTP');
+          try {
+            AppLogger.error('==================== ERROR ====================', tag: 'HTTP');
+            AppLogger.error('URL: ${error.requestOptions.uri}', tag: 'HTTP');
+            AppLogger.error('Method: ${error.requestOptions.method}', tag: 'HTTP');
+            AppLogger.error('Exception: ${error.message}', tag: 'HTTP');
+            AppLogger.error('Timeout Type: ${error.type.name}', tag: 'HTTP');
+            AppLogger.error('Stack Trace: ${error.stackTrace}', tag: 'HTTP');
+            AppLogger.error('Response Status: ${error.response?.statusCode}', tag: 'HTTP');
+            // Do NOT print response.data here directly
+            AppLogger.error('Response Body: [OMITTED]', tag: 'HTTP');
+            AppLogger.error('===============================================', tag: 'HTTP');
 
-          // Silent 401 token refresh — retry exactly once
-          if (error.response?.statusCode == 401 && !_isRefreshing) {
-            _isRefreshing = true;
-            try {
-              final refreshed = await _refreshToken();
-              _isRefreshing = false;
-              if (refreshed) {
-                // Retry the original request with the new token
-                final token = await secureStorage.getAccessToken();
-                error.requestOptions.headers['Authorization'] = 'Bearer $token';
+            if (error.response?.statusCode == 401 && !_isRefreshing) {
+              _isRefreshing = true;
+              try {
+                final refreshed = await _refreshToken();
+                _isRefreshing = false;
+                if (refreshed) {
+                  final token = await secureStorage.getAccessToken();
+                  error.requestOptions.headers['Authorization'] = 'Bearer $token';
+                  final retryResponse = await _dio.fetch(error.requestOptions);
+                  return handler.resolve(retryResponse);
+                }
+              } catch (_) {
+                _isRefreshing = false;
+              }
+            }
+
+            final isColdStartError = 
+                error.type == DioExceptionType.connectionTimeout || 
+                error.type == DioExceptionType.receiveTimeout ||
+                (error.response?.statusCode != null && [502, 503, 504].contains(error.response?.statusCode));
+                
+            final hasRetried = error.requestOptions.extra['retried'] == true;
+
+            if (isColdStartError && !hasRetried) {
+              AppLogger.warning('Detected possible Render cold start. Retrying request in 2 seconds...', tag: 'HTTP');
+              error.requestOptions.extra['retried'] = true;
+              await Future.delayed(const Duration(seconds: 2));
+              try {
                 final retryResponse = await _dio.fetch(error.requestOptions);
                 return handler.resolve(retryResponse);
+              } catch (retryError) {
+                return handler.next(retryError is DioException ? retryError : error);
               }
-            } catch (_) {
-              _isRefreshing = false;
             }
+
+            handler.next(error);
+          } catch (e, st) {
+            debugPrint("INTERCEPTOR ERROR (onError): $e");
+            debugPrintStack(stackTrace: st);
+            rethrow;
           }
-
-          // Render Cold Start Retry Logic (Wait and retry exactly once for 5xx or timeouts)
-          final isColdStartError = 
-              error.type == DioExceptionType.connectionTimeout || 
-              error.type == DioExceptionType.receiveTimeout ||
-              (error.response?.statusCode != null && [502, 503, 504].contains(error.response?.statusCode));
-              
-          final hasRetried = error.requestOptions.extra['retried'] == true;
-
-          if (isColdStartError && !hasRetried) {
-            AppLogger.warning('Detected possible Render cold start. Retrying request in 2 seconds...', tag: 'HTTP');
-            error.requestOptions.extra['retried'] = true;
-            await Future.delayed(const Duration(seconds: 2));
-            try {
-              final retryResponse = await _dio.fetch(error.requestOptions);
-              return handler.resolve(retryResponse);
-            } catch (retryError) {
-              // If retry fails, pass the error down
-              return handler.next(retryError is DioException ? retryError : error);
-            }
-          }
-
-          handler.next(error);
         },
       ),
     );
@@ -131,7 +147,7 @@ class ApiClient {
       _dio.interceptors.add(
         LogInterceptor(
           requestBody: true,
-          responseBody: true,
+          responseBody: false,
           logPrint: (obj) => AppLogger.debug(obj.toString(), tag: 'HTTP'),
           error: true,
         ),
