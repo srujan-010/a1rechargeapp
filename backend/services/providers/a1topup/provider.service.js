@@ -213,14 +213,14 @@ class A1TopupProvider extends ProviderInterface {
   /**
    * Fetch status of a transaction
    */
-  async status(providerTransactionId) {
+  async status(orderId) {
     try {
       const response = await this.client.get('/recharge/status', {
         params: {
           username: config.username,
           pwd: config.password,
           format: config.format,
-          orderid: providerTransactionId, // Actually the docs say orderid
+          orderid: orderId, // Actually the docs say orderid
         }
       });
 

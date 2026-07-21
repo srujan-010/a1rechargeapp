@@ -20,7 +20,7 @@ class WalletService {
         walletBalancePaise: wallet.balancePaise
       });
 
-      if (wallet.balancePaise < amount * 100) {
+      if (wallet.balancePaise - (wallet.onHoldPaise || 0) < amount * 100) {
         throw new Error('Insufficient wallet balance');
       }
 
@@ -30,9 +30,8 @@ class WalletService {
       // "Deduct funds only after a successful recharge. Release the reservation if the recharge fails."
       // So we need to update the wallet's reserved amount.
       
-      // We will deduct the amount from balancePaise, and keep it conceptually reserved. On failure we refund it.
-      // Or we can dynamically add `reservedPaise` to the Wallet document.
-      wallet.balancePaise -= amount * 100;
+      // We only lock the amount by adding to onHoldPaise.
+      // balancePaise remains untouched until commit.
       wallet.onHoldPaise = (wallet.onHoldPaise || 0) + amount * 100;
       await wallet.save({ session });
 
@@ -60,13 +59,12 @@ class WalletService {
       amount,
       walletBalancePaise: wallet.balancePaise
     });
-    if (wallet.balancePaise < amount * 100) throw new Error('Insufficient wallet balance');
+    if (wallet.balancePaise - (wallet.onHoldPaise || 0) < amount * 100) throw new Error('Insufficient wallet balance');
 
     const result = await Wallet.updateOne(
-      { userId, balancePaise: { $gte: amount * 100 } },
+      { userId, $expr: { $gte: [ { $subtract: ["$balancePaise", { $ifNull: ["$onHoldPaise", 0] }] }, amount * 100 ] } },
       { 
         $inc: { 
-          balancePaise: -amount * 100,
           onHoldPaise: amount * 100
         }
       }
@@ -83,14 +81,18 @@ class WalletService {
    */
   async commitReservation(userId, amount) {
     const result = await Wallet.updateOne(
-      { userId },
+      { userId, onHoldPaise: { $gte: amount * 100 } },
       { 
         $inc: { 
+          balancePaise: -amount * 100,
           onHoldPaise: -amount * 100
         }
       }
     );
-    return result.modifiedCount > 0;
+    if (result.modifiedCount === 0) {
+      throw new Error(`Invalid wallet state: Cannot commit reservation for user ${userId}. Insufficient hold balance or wallet not found.`);
+    }
+    return true;
   }
 
   /**
@@ -98,15 +100,17 @@ class WalletService {
    */
   async releaseReservation(userId, amount) {
     const result = await Wallet.updateOne(
-      { userId },
+      { userId, onHoldPaise: { $gte: amount * 100 } },
       { 
         $inc: { 
-          balancePaise: amount * 100,
           onHoldPaise: -amount * 100
         }
       }
     );
-    return result.modifiedCount > 0;
+    if (result.modifiedCount === 0) {
+      throw new Error(`Invalid wallet state: Cannot release reservation for user ${userId}. Insufficient hold balance or wallet not found.`);
+    }
+    return true;
   }
 
   /**

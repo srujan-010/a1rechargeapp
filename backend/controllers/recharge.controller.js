@@ -368,16 +368,23 @@ const executeRecharge = async (req, res, next) => {
       globalTransaction.apiReference = providerResponse.providerTransactionId;
       globalTransaction.commissionEarnedPaise = commission.retailerCommissionAmount * 100;
       await globalTransaction.save();
+      walletReserved = false; // Mark as handled
     } else if (providerResponse.status === 'FAILED') {
       // Release Wallet Reservation
       await walletService.releaseReservation(userId, amount);
       globalTransaction.status = 'failed';
       globalTransaction.apiReference = providerResponse.providerTransactionId;
       await globalTransaction.save();
+      walletReserved = false; // Mark as handled
     } else if (providerResponse.status === 'PENDING') {
       globalTransaction.status = 'pending';
       globalTransaction.apiReference = providerResponse.providerTransactionId;
       await globalTransaction.save();
+      walletReserved = false; // Handled, background worker will take over
+      
+      // Start fast async polling
+      const rechargePoller = require('../utils/rechargePoller');
+      rechargePoller.startPolling(transaction.orderId);
     }
 
     await transaction.save();
@@ -449,17 +456,22 @@ const checkStatus = async (req, res, next) => {
       throw new Error('Transaction not found');
     }
 
-    if (!transaction.providerTransactionId) {
+    if (!transaction.providerTransactionId && !transaction.orderId) {
       res.status(400);
-      throw new Error('No provider transaction ID associated with this order.');
+      throw new Error('No valid transaction ID associated with this order.');
     }
 
-    const statusResponse = await a1TopupProvider.status(transaction.providerTransactionId);
+    const statusResponse = await a1TopupProvider.status(transaction.orderId);
 
     // If status changed to SUCCESS from PENDING, we must run commission/ledger logic
     if (transaction.status === 'PENDING' && statusResponse.status === 'SUCCESS') {
-      transaction.status = 'SUCCESS';
-      transaction.operatorReference = statusResponse.operatorReference;
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: 'PENDING' },
+        { $set: { status: 'SUCCESS', operatorReference: statusResponse.operatorReference } }
+      );
+      if (!updated) {
+        return res.status(200).json({ success: true, data: statusResponse }); // Already handled
+      }
       
       // Deduct Wallet
       await walletService.commitReservation(transaction.userId, transaction.amount);
@@ -517,19 +529,27 @@ const checkStatus = async (req, res, next) => {
         commissionEarnedPaise: commission.retailerCommissionAmount * 100 
       });
 
-      transaction.commissionCalculated = true;
+      await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
     } else if (transaction.status === 'PENDING' && statusResponse.status === 'FAILED') {
-      transaction.status = 'FAILED';
-      transaction.failureReason = statusResponse.message;
-      await walletService.releaseReservation(transaction.userId, transaction.amount);
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: 'PENDING' },
+        { $set: { status: 'FAILED', failureReason: statusResponse.message } }
+      );
+      if (!updated) {
+        return res.status(200).json({ success: true, data: statusResponse }); // Already handled
+      }
+      
+      try {
+        await walletService.releaseReservation(transaction.userId, transaction.amount);
+      } catch (walletError) {
+        console.error(`[checkStatus] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+      }
       
       await Transaction.updateOne({ referenceId: transaction.orderId }, { 
         status: 'failed', 
         apiReference: statusResponse.providerTransactionId 
       });
     }
-    
-    await transaction.save();
 
     res.status(200).json({
       success: true,
@@ -580,9 +600,12 @@ const providerCallback = async (req, res, next) => {
     else if (rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'FAILURE') normalizedStatus = 'FAILED';
 
     if (normalizedStatus === 'SUCCESS') {
-      transaction.status = 'SUCCESS';
-      if (opid) transaction.operatorReference = opid;
-      
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: 'PENDING' },
+        { $set: { status: 'SUCCESS', operatorReference: opid || transaction.operatorReference } }
+      );
+      if (!updated) return res.status(200).send('OK');
+
       await walletService.commitReservation(transaction.userId, transaction.amount);
       await ledgerService.logTransaction({
         userId: transaction.userId,
@@ -636,20 +659,25 @@ const providerCallback = async (req, res, next) => {
         companyProfitPercentage: commission.companyProfitPercentage,
         companyProfitAmount: commission.companyProfitAmount,
       });
-      transaction.commissionCalculated = true;
+      await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
     } else if (normalizedStatus === 'FAILED') {
-      transaction.status = 'FAILED';
-      transaction.failureReason = message || 'Failed at provider end';
-      
-      await walletService.releaseReservation(transaction.userId, transaction.amount);
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: 'PENDING' },
+        { $set: { status: 'FAILED', failureReason: message || 'Failed at provider end' } }
+      );
+      if (!updated) return res.status(200).send('OK');
+
+      try {
+        await walletService.releaseReservation(transaction.userId, transaction.amount);
+      } catch (walletError) {
+        console.error(`[Webhook] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+      }
       
       await Transaction.updateOne({ referenceId: transaction.orderId }, { 
          status: 'failed', 
          apiReference: actualTxId 
       });
     }
-
-    await transaction.save();
     res.status(200).send('OK'); // Must return 200 OK so provider stops retrying
 
   } catch (error) {

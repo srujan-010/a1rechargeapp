@@ -40,7 +40,6 @@ class PendingRechargeWorker {
       
       const pendingTransactions = await RechargeTransaction.find({
         status: 'PENDING',
-        providerTransactionId: { $ne: null },
         createdAt: { $lte: oneMinuteAgo }
       }).limit(50); // Process in batches
 
@@ -52,96 +51,118 @@ class PendingRechargeWorker {
       console.log(`[Worker] Found ${pendingTransactions.length} pending transactions to verify.`);
 
       for (const transaction of pendingTransactions) {
-        try {
-          const statusResponse = await a1TopupProvider.status(transaction.providerTransactionId);
-
-          if (statusResponse.status === 'SUCCESS') {
-            transaction.status = 'SUCCESS';
-            transaction.operatorReference = statusResponse.operatorReference;
-            
-            // Deduct Wallet
-            await walletService.commitReservation(transaction.userId, transaction.amount);
-            
-            await ledgerService.logTransaction({
-              userId: transaction.userId,
-              type: 'DEBIT',
-              amount: transaction.amount,
-              referenceType: 'RECHARGE',
-              referenceId: transaction._id,
-              description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
-            });
-
-            // Calculate & Credit Commission
-            const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
-            if (commission.retailerCommissionAmount > 0) {
-              await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
-              await ledgerService.logTransaction({
-                userId: transaction.userId,
-                type: 'CREDIT',
-                amount: commission.retailerCommissionAmount,
-                referenceType: 'COMMISSION',
-                referenceId: transaction._id,
-                description: `Commission for Recharge ${transaction.orderId}`,
-              });
-
-              await Transaction.create({
-                userId: transaction.userId,
-                type: 'credit',
-                amountPaise: commission.retailerCommissionAmount * 100,
-                status: 'success',
-                service: 'commission',
-                referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-                description: `Commission for Recharge ${transaction.orderId}`,
-                apiReference: transaction._id.toString(),
-                paymentMethod: 'wallet',
-              });
-            }
-
-            await CommissionHistory.create({
-              transactionId: transaction._id,
-              userId: transaction.userId,
-              operatorCode: transaction.operatorCode,
-              rechargeAmount: transaction.amount,
-              providerCommissionPercentage: commission.providerCommissionPercentage,
-              providerCommissionAmount: commission.providerCommissionAmount,
-              retailerCommissionPercentage: commission.retailerCommissionPercentage,
-              retailerCommissionAmount: commission.retailerCommissionAmount,
-              companyProfitPercentage: commission.companyProfitPercentage,
-              companyProfitAmount: commission.companyProfitAmount,
-            });
-
-            await Transaction.updateOne({ referenceId: transaction.orderId }, { 
-              status: 'success', 
-              apiReference: statusResponse.providerTransactionId,
-              commissionEarnedPaise: commission.retailerCommissionAmount * 100 
-            });
-
-            transaction.commissionCalculated = true;
-            await transaction.save();
-            console.log(`[Worker] Transaction ${transaction.orderId} marked SUCCESS`);
-
-          } else if (statusResponse.status === 'FAILED') {
-            transaction.status = 'FAILED';
-            transaction.failureReason = statusResponse.message;
-            await walletService.releaseReservation(transaction.userId, transaction.amount);
-            
-            await Transaction.updateOne({ referenceId: transaction.orderId }, { 
-              status: 'failed', 
-              apiReference: statusResponse.providerTransactionId 
-            });
-
-            await transaction.save();
-            console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED. Funds refunded.`);
-          }
-          // If still PENDING, do nothing
-        } catch (err) {
-          console.error(`[Worker] Error processing transaction ${transaction.orderId}:`, err.message);
-        }
+        await this.processTransaction(transaction);
       }
     } catch (error) {
       console.error('[Worker] Error in Pending Recharge Worker:', error.message);
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  async processTransaction(transaction) {
+    try {
+      // Fetch status directly using orderId (which provider expects as orderid)
+      const statusResponse = await a1TopupProvider.status(transaction.orderId);
+
+      if (statusResponse.status === 'SUCCESS') {
+        // Atomic State Transition
+        const updated = await RechargeTransaction.findOneAndUpdate(
+          { _id: transaction._id, status: 'PENDING' },
+          { $set: { status: 'SUCCESS', operatorReference: statusResponse.operatorReference } }
+        );
+        if (!updated) {
+          console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping.`);
+          return;
+        }
+
+        // Deduct Wallet
+        await walletService.commitReservation(transaction.userId, transaction.amount);
+        
+        await ledgerService.logTransaction({
+          userId: transaction.userId,
+          type: 'DEBIT',
+          amount: transaction.amount,
+          referenceType: 'RECHARGE',
+          referenceId: transaction._id,
+          description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
+        });
+
+        // Calculate & Credit Commission
+        const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
+        if (commission.retailerCommissionAmount > 0) {
+          await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
+          await ledgerService.logTransaction({
+            userId: transaction.userId,
+            type: 'CREDIT',
+            amount: commission.retailerCommissionAmount,
+            referenceType: 'COMMISSION',
+            referenceId: transaction._id,
+            description: `Commission for Recharge ${transaction.orderId}`,
+          });
+
+          await Transaction.create({
+            userId: transaction.userId,
+            type: 'credit',
+            amountPaise: commission.retailerCommissionAmount * 100,
+            status: 'success',
+            service: 'commission',
+            referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+            description: `Commission for Recharge ${transaction.orderId}`,
+            apiReference: transaction._id.toString(),
+            paymentMethod: 'wallet',
+          });
+        }
+
+        await CommissionHistory.create({
+          transactionId: transaction._id,
+          userId: transaction.userId,
+          operatorCode: transaction.operatorCode,
+          rechargeAmount: transaction.amount,
+          providerCommissionPercentage: commission.providerCommissionPercentage,
+          providerCommissionAmount: commission.providerCommissionAmount,
+          retailerCommissionPercentage: commission.retailerCommissionPercentage,
+          retailerCommissionAmount: commission.retailerCommissionAmount,
+          companyProfitPercentage: commission.companyProfitPercentage,
+          companyProfitAmount: commission.companyProfitAmount,
+        });
+
+        await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+          status: 'success', 
+          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+          commissionEarnedPaise: commission.retailerCommissionAmount * 100 
+        });
+
+        await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
+        console.log(`[Worker] Transaction ${transaction.orderId} marked SUCCESS`);
+
+      } else if (statusResponse.status === 'FAILED') {
+        // Atomic State Transition
+        const updated = await RechargeTransaction.findOneAndUpdate(
+          { _id: transaction._id, status: 'PENDING' },
+          { $set: { status: 'FAILED', failureReason: statusResponse.message } }
+        );
+        if (!updated) {
+          console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping.`);
+          return;
+        }
+
+        try {
+          await walletService.releaseReservation(transaction.userId, transaction.amount);
+        } catch (walletError) {
+          console.error(`[Worker] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+        }
+        
+        await Transaction.updateOne({ referenceId: transaction.orderId }, { 
+          status: 'failed', 
+          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId 
+        });
+
+        console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED. Funds refunded.`);
+      }
+      // If still PENDING, do nothing
+    } catch (err) {
+      console.error(`[Worker] Error processing transaction ${transaction.orderId}:`, err.message);
     }
   }
 }
