@@ -53,8 +53,12 @@ abstract final class AppConfig {
       return;
     }
 
-    // Default to the local backend for debugging
-    _initializedBaseUrl = 'http://localhost:5000/api';
+    // Use deployed backend in release mode, else use localhost for development
+    if (kReleaseMode) {
+      _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+    } else {
+      _initializedBaseUrl = 'http://localhost:5000/api';
+    }
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }
