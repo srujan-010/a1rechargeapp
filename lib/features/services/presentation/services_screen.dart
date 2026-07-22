@@ -58,7 +58,7 @@ class ServicesScreen extends StatelessWidget {
                 end: Alignment.bottomRight,
               ),
               // Use string replacement for the path parameter if it's defined as a path
-              onTap: () => context.push(RouteNames.bbpsBiller.replaceAll(':category', 'electricity')),
+              onTap: () => context.push(RouteNames.bbpsStateSelection.replaceAll(':category', 'electricity')),
             ),
             
             const SizedBox(height: 60),

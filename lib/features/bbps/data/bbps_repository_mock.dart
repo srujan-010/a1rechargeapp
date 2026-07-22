@@ -16,17 +16,44 @@ class BbpsRepositoryMock implements BbpsRepository {
   }
 
   @override
-  Future<Result<List<Biller>, AppException>> getBillers({required String category}) async {
+  Future<Result<List<BillerDistrict>, AppException>> getDistricts({required String operatorCode}) async {
+    await _delay();
+    
+    if (operatorCode == '443') {
+      return const Success([
+        BillerDistrict(operatorCode: 443, state: 'Uttar Pradesh', districtName: 'Agra', districtCode: 'AGRA'),
+        BillerDistrict(operatorCode: 443, state: 'Uttar Pradesh', districtName: 'Aligarh', districtCode: 'ALIGARH'),
+      ]);
+    }
+    
+    return const Success([]);
+  }
+
+  @override
+  Future<Result<List<String>, AppException>> getStates({required String category}) async {
+    await _delay();
+    return const Success([
+      'Andhra Pradesh',
+      'Karnataka',
+      'Maharashtra',
+      'Telangana',
+      'Uttar Pradesh'
+    ]);
+  }
+
+  @override
+  Future<Result<List<Biller>, AppException>> getBillers({required String category, String? state}) async {
     await _delay();
     
     // Provide some mock billers based on category
     if (category.toLowerCase() == 'electricity') {
-      return const Success([
-        Biller(
+      var allBillers = <Biller>[
+        const Biller(
           id: 'elec_msebd',
           name: 'Maharashtra State Electricity Board',
           category: 'Electricity',
           iconUrl: '',
+          sampleBillUrl: 'https://via.placeholder.com/400x600/1E3A8A/FFFFFF?text=Sample+MSEB+Bill',
           parameters: [
             BillerParameter(
               name: 'consumer_number',
@@ -34,6 +61,7 @@ class BbpsRepositoryMock implements BbpsRepository {
               regex: r'^[0-9]{12}$',
               minLength: 12,
               maxLength: 12,
+              helperText: 'Please enter your 12 digit consumer number as printed on your bill.',
             ),
             BillerParameter(
               name: 'billing_unit',
@@ -41,10 +69,20 @@ class BbpsRepositoryMock implements BbpsRepository {
               regex: r'^[0-9]{4}$',
               minLength: 4,
               maxLength: 4,
+              helperText: '4 digit BU code available on top right of your bill.',
+            ),
+            BillerParameter(
+              name: 'mobile_number',
+              displayName: 'Mobile Number',
+              regex: r'^[0-9]{10}$',
+              minLength: 10,
+              maxLength: 10,
+              isOptional: true,
+              helperText: 'For receiving payment alerts.',
             ),
           ],
         ),
-        Biller(
+        const Biller(
           id: 'elec_bescom',
           name: 'BESCOM (Bangalore)',
           category: 'Electricity',
@@ -59,7 +97,7 @@ class BbpsRepositoryMock implements BbpsRepository {
             ),
           ],
         ),
-        Biller(
+        const Biller(
           id: 'elec_torrent',
           name: 'Torrent Power',
           category: 'Electricity',
@@ -74,7 +112,13 @@ class BbpsRepositoryMock implements BbpsRepository {
             ),
           ],
         ),
-      ]);
+      ];
+
+      if (state != null && state.isNotEmpty) {
+        // mock filter
+        allBillers = allBillers.where((b) => b.name.contains(state) || b.name.contains('MSEB')).toList();
+      }
+      return Success(allBillers);
     } else if (category.toLowerCase() == 'fastag') {
       return const Success([
         Biller(
@@ -134,12 +178,14 @@ class BbpsRepositoryMock implements BbpsRepository {
     
     final billDetails = BillDetails(
       billerId: billerId,
-      billerName: billerId.contains('msebd') ? 'MSEB' : (billerId.contains('hdfc') ? 'HDFC FASTag' : 'Mock Biller'),
-      customerName: 'Srujan Akula',
+      billerName: 'Demo Provider',
+      customerName: 'Demo Customer',
       billAmountPaise: amountPaise,
-      billDate: DateTime.now().subtract(const Duration(days: 5)),
-      dueDate: DateTime.now().add(const Duration(days: 10)),
-      billNumber: billNumber,
+      rawBillDate: DateTime.now().subtract(const Duration(days: 5)).toIso8601String(),
+      rawDueDate: DateTime.now().add(const Duration(days: 5)).toIso8601String(),
+      parsedBillDate: DateTime.now().subtract(const Duration(days: 5)),
+      parsedDueDate: DateTime.now().add(const Duration(days: 5)),
+      billNumber: 'MOCK${parameters.values.first}',
     );
     
     return Success(billDetails);

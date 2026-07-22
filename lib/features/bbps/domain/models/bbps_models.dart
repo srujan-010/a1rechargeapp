@@ -8,6 +8,10 @@ class Biller extends Equatable {
     required this.iconUrl,
     required this.parameters,
     this.isFetchRequirement = true,
+    this.sampleBillUrl,
+    this.requiresDistrictCode = false,
+    this.requiresMobile = false,
+    this.requiresDOB = false,
   });
 
   final String id;
@@ -16,9 +20,30 @@ class Biller extends Equatable {
   final String iconUrl;
   final List<BillerParameter> parameters; // Parameters required to fetch the bill
   final bool isFetchRequirement; // true if bill must be fetched before paying
+  final String? sampleBillUrl;
+  final bool requiresDistrictCode;
+  final bool requiresMobile;
+  final bool requiresDOB;
 
   @override
-  List<Object?> get props => [id, name, category, parameters];
+  List<Object?> get props => [id, name, category, parameters, sampleBillUrl, requiresDistrictCode, requiresMobile, requiresDOB];
+}
+
+class BillerDistrict extends Equatable {
+  const BillerDistrict({
+    required this.operatorCode,
+    required this.state,
+    required this.districtName,
+    required this.districtCode,
+  });
+
+  final int operatorCode;
+  final String state;
+  final String districtName;
+  final String districtCode;
+
+  @override
+  List<Object?> get props => [operatorCode, state, districtName, districtCode];
 }
 
 class BillerParameter extends Equatable {
@@ -28,6 +53,8 @@ class BillerParameter extends Equatable {
     required this.regex,
     this.minLength = 1,
     this.maxLength = 20,
+    this.isOptional = false,
+    this.helperText,
   });
 
   final String name; // e.g. "consumer_number"
@@ -35,9 +62,11 @@ class BillerParameter extends Equatable {
   final String regex; // Validation regex
   final int minLength;
   final int maxLength;
+  final bool isOptional;
+  final String? helperText;
 
   @override
-  List<Object?> get props => [name, displayName, regex];
+  List<Object?> get props => [name, displayName, regex, isOptional, helperText];
 }
 
 class BillDetails extends Equatable {
@@ -46,8 +75,10 @@ class BillDetails extends Equatable {
     required this.billerName,
     required this.customerName,
     required this.billAmountPaise,
-    required this.billDate,
-    required this.dueDate,
+    required this.rawBillDate,
+    required this.rawDueDate,
+    this.parsedBillDate,
+    this.parsedDueDate,
     required this.billNumber,
   });
 
@@ -55,10 +86,20 @@ class BillDetails extends Equatable {
   final String billerName;
   final String customerName;
   final int billAmountPaise;
-  final DateTime billDate;
-  final DateTime dueDate;
+  final String rawBillDate;
+  final String rawDueDate;
+  final DateTime? parsedBillDate;
+  final DateTime? parsedDueDate;
   final String billNumber;
 
   @override
-  List<Object?> get props => [billerId, billNumber, billAmountPaise];
+  List<Object?> get props => [
+        billerId,
+        billNumber,
+        billAmountPaise,
+        rawBillDate,
+        rawDueDate,
+        parsedBillDate,
+        parsedDueDate,
+      ];
 }

@@ -816,7 +816,7 @@ class _ServiceGridItemState extends State<_ServiceGridItem> with SingleTickerPro
 
   void _onTap() {
     if (widget.service.isElectricity) {
-      context.push(RouteNames.bbpsBiller.replaceAll(':category', 'electricity'));
+      context.push(RouteNames.bbpsStateSelection.replaceAll(':category', 'electricity'));
     } else {
       context.push(widget.service.route);
     }

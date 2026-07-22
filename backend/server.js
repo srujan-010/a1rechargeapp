@@ -71,6 +71,7 @@ app.use('/api/master', require('./routes/masterData.routes'));
 app.use('/api/commission', require('./routes/commissionRoutes'));
 app.use('/api/dth', require('./routes/dth.routes'));
 app.use('/api/plans', require('./routes/planapi.routes'));
+app.use('/api/electricity', require('./routes/electricity.routes'));
 
 // Serve uploaded KYC documents statically (protected by token in production
 // via a signed-URL proxy; acceptable for local dev).

@@ -38,6 +38,7 @@ import '../features/dth/presentation/dth_plans_screen.dart';
 import '../features/dth/presentation/dth_confirmation_screen.dart';
 import '../features/dth/presentation/dth_receipt_screen.dart';
 import '../features/bbps/presentation/bbps_screen.dart';
+import '../features/bbps/presentation/bbps_state_selection_screen.dart';
 import '../features/bbps/presentation/bbps_biller_screen.dart';
 import '../features/bbps/presentation/bbps_fetch_screen.dart';
 import '../features/bbps/presentation/bbps_pay_confirm_screen.dart';
@@ -421,11 +422,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (c, s) => _slideRightPage(state: s, child: const BbpsScreen()),
       ),
       GoRoute(
+        path: RouteNames.bbpsStateSelection,
+        name: 'bbps-states',
+        pageBuilder: (c, s) {
+          final category = s.pathParameters['category'] ?? 'electricity';
+          return _slideRightPage(state: s, child: BbpsStateSelectionScreen(category: category));
+        },
+      ),
+      GoRoute(
         path: RouteNames.bbpsBiller,
         name: 'bbps-biller',
         pageBuilder: (c, s) {
           final category = s.pathParameters['category'] ?? 'electricity';
-          return _slideRightPage(state: s, child: BbpsBillerScreen(category: category));
+          final stateParam = s.uri.queryParameters['state'];
+          return _slideRightPage(state: s, child: BbpsBillerScreen(category: category, state: stateParam));
         },
       ),
       GoRoute(

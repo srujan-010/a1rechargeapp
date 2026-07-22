@@ -53,8 +53,11 @@ abstract final class AppConfig {
       return;
     }
 
-    // Use deployed backend in all environments to avoid IP whitelisting issues with PlanAPI
-    _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+    if (isDevelopment) {
+      _initializedBaseUrl = 'http://localhost:5000/api';
+    } else {
+      _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+    }
     
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }

@@ -41,6 +41,7 @@ abstract final class RouteNames {
 
   // ─── BBPS ────────────────────────────────────────────────────────
   static const String bbps = '/bbps';
+  static const String bbpsStateSelection = '/bbps/states/:category';
   static const String bbpsBiller = '/bbps/biller/:category';
   static const String bbpsBillFetch = '/bbps/fetch/:billerId';
   static const String bbpsPayConfirm = '/bbps/pay/:billerId';

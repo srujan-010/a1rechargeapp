@@ -1,39 +1,69 @@
+import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/app_exception.dart';
 import '../../recharge/domain/models/recharge_result.dart';
 import '../data/bbps_repository_mock.dart';
+import '../data/bbps_repository_impl.dart';
 import '../domain/bbps_repository.dart';
 import '../domain/models/bbps_models.dart';
 
 final bbpsRepositoryProvider = Provider<BbpsRepository>((ref) {
-  return BbpsRepositoryMock();
+  final mockFallback = BbpsRepositoryMock();
+  return BbpsRepositoryImpl(mockFallback);
 });
 
-final billersProvider = FutureProvider.family<List<Biller>, String>((ref, category) async {
+class BillerFetchParams extends Equatable {
+  final String category;
+  final String? state;
+
+  const BillerFetchParams({required this.category, this.state});
+
+  @override
+  List<Object?> get props => [category, state];
+}
+
+final billersProvider = FutureProvider.family<List<Biller>, BillerFetchParams>((ref, params) async {
   final repo = ref.watch(bbpsRepositoryProvider);
-  final result = await repo.getBillers(category: category);
+  final result = await repo.getBillers(category: params.category, state: params.state);
+  return result.getOrElseCompute((e) => throw e);
+});
+
+final statesProvider = FutureProvider.family<List<String>, String>((ref, category) async {
+  final repo = ref.watch(bbpsRepositoryProvider);
+  final result = await repo.getStates(category: category);
+  return result.getOrElseCompute((e) => throw e);
+});
+
+final billerDistrictsProvider = FutureProvider.family<List<BillerDistrict>, String>((ref, operatorCode) async {
+  final repo = ref.watch(bbpsRepositoryProvider);
+  final result = await repo.getDistricts(operatorCode: operatorCode);
   return result.getOrElseCompute((e) => throw e);
 });
 
 class BbpsState {
   final Biller? selectedBiller;
+  final BillerDistrict? selectedDistrict;
   final Map<String, String> enteredParameters;
   final BillDetails? fetchedBill;
 
   const BbpsState({
     this.selectedBiller,
+    this.selectedDistrict,
     this.enteredParameters = const {},
     this.fetchedBill,
   });
 
   BbpsState copyWith({
     Biller? selectedBiller,
+    BillerDistrict? selectedDistrict,
     Map<String, String>? enteredParameters,
     BillDetails? fetchedBill,
     bool clearBill = false,
+    bool clearDistrict = false,
   }) {
     return BbpsState(
       selectedBiller: selectedBiller ?? this.selectedBiller,
+      selectedDistrict: clearDistrict ? null : (selectedDistrict ?? this.selectedDistrict),
       enteredParameters: enteredParameters ?? this.enteredParameters,
       fetchedBill: clearBill ? null : (fetchedBill ?? this.fetchedBill),
     );
@@ -49,6 +79,13 @@ class BbpsFlowNotifier extends Notifier<BbpsState> {
       selectedBiller: biller,
       enteredParameters: {}, // reset params
       clearBill: true,
+      clearDistrict: true,
+    );
+  }
+
+  void setDistrict(BillerDistrict district) {
+    state = state.copyWith(
+      selectedDistrict: district,
     );
   }
 

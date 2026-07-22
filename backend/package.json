@@ -7,7 +7,8 @@
     "dev": "nodemon server.js",
     "test": "jest",
     "seed:operators": "node scripts/seedOperators.js",
-    "seed:circles": "node scripts/seedCircles.js"
+    "seed:circles": "node scripts/seedCircles.js",
+    "seed:states": "node scripts/seedStates.js"
   },
   "keywords": [],
   "author": "",

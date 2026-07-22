@@ -107,9 +107,12 @@ class BbpsScreen extends StatelessWidget {
                     name: cat['name'] as String,
                     icon: cat['icon'] as IconData,
                     onTap: () {
-                      context.push(
-                        RouteNames.bbpsBiller.replaceFirst(':category', cat['id'] as String),
-                      );
+                      final categoryId = cat['id'] as String;
+                      if (categoryId == 'electricity') {
+                        context.push(RouteNames.bbpsStateSelection.replaceFirst(':category', categoryId));
+                      } else {
+                        context.push(RouteNames.bbpsBiller.replaceFirst(':category', categoryId));
+                      }
                     },
                   );
                 },
