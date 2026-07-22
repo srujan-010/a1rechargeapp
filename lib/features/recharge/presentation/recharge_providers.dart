@@ -22,7 +22,7 @@ final rechargeRepositoryProvider = Provider<RechargeRepository>((ref) {
 });
 
 final planApiServiceProvider = Provider<PlanApiService>((ref) {
-  return PlanApiService();
+  return PlanApiService(ref.watch(apiClientProvider));
 });
 
 final mobilePlanRepositoryProvider = Provider<MobilePlanRepository>((ref) {

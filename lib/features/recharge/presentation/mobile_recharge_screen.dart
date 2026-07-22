@@ -660,7 +660,24 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                   if (operator == null || circle == null) {
                                     return const SliverToBoxAdapter(child: SizedBox());
                                   }
-                                  final plansAsync = ref.watch(plansProvider((operatorId: operator.shortCode ?? operator.id, circle: circle.code ?? circle.id, serviceType: operator.type.name)));
+                                  
+                                  final operatorId = operator.shortCode ?? operator.id;
+                                  final circleId = circle.code ?? circle.id;
+                                  
+                                  if (operatorId.isEmpty || circleId.isEmpty) {
+                                    return const SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(AppSpacing.lg),
+                                        child: Text(
+                                          'Please select an Operator and Circle to view plans.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(color: AppColors.textSecondary),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  
+                                  final plansAsync = ref.watch(plansProvider((operatorId: operatorId, circle: circleId, serviceType: operator.type.name)));
                                 
                                 return plansAsync.when(
                                   loading: () => SliverList(

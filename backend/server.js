@@ -70,6 +70,7 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/master', require('./routes/masterData.routes'));
 app.use('/api/commission', require('./routes/commissionRoutes'));
 app.use('/api/dth', require('./routes/dth.routes'));
+app.use('/api/plans', require('./routes/planapi.routes'));
 
 // Serve uploaded KYC documents statically (protected by token in production
 // via a signed-URL proxy; acceptable for local dev).
@@ -86,6 +87,11 @@ app.get('/', (req, res) => {
 });
 
 // Error handling middleware (must be after routes)
+// Catch 404 and forward to error handler (return JSON for APIs)
+app.use((req, res, next) => {
+  res.status(404).json({ success: false, message: `Endpoint not found: ${req.method} ${req.originalUrl}` });
+});
+
 app.use(errorHandler);
 
 // Start the background workers
