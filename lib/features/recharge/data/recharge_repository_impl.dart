@@ -4,7 +4,6 @@ import '../../../core/services/api_client.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/result.dart';
 import '../domain/models/operator.dart';
-import '../domain/models/recharge_plan.dart';
 import '../domain/models/recharge_result.dart';
 import '../domain/recharge_repository.dart';
 import '../domain/models/recent_contact.dart';
@@ -92,84 +91,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
     }
   }
 
-  @override
-  Future<Result<OperatorResolveResult, AppException>> resolveOperator(String phoneNumber) async {
-    try {
-      final response = await apiClient.get<Map<String, dynamic>>(
-        '/master/resolve?mobile=$phoneNumber',
-        fromJson: (json) => json as Map<String, dynamic>,
-      );
-      if (response.success && response.data != null) {
-        final data = response.data ?? {};
-        final operator = Operator.fromJson(data['operator'] is Map ? Map<String, dynamic>.from(data['operator']) : {});
-        final circle = Circle.fromJson(data['circle'] is Map ? Map<String, dynamic>.from(data['circle']) : {});
-        return Success(OperatorResolveResult(operator: operator, circle: circle));
-      }
-      return Failure(ServerException(message: response.message));
-    } on AppException catch (e) {
-      return Failure(e);
-    } catch (e) {
-      return Failure(UnknownException.from(e));
-    }
-  }
 
-  @override
-  Future<Result<List<RechargePlan>, AppException>> getPlans({
-    required String operatorId,
-    required String circle,
-    required String serviceType,
-  }) async {
-    try {
-      String endpoint = '/plans/mobile/prepaid';
-      if (serviceType.toLowerCase() == 'postpaid') {
-        endpoint = '/plans/mobile/postpaid';
-      } else if (serviceType.toLowerCase() == 'dth') {
-        endpoint = '/plans/dth/packs';
-      }
-
-      AppLogger.debug('Fetching plans from endpoint: $endpoint', tag: 'RechargeRepo');
-
-      debugPrint("STEP 2: Awaiting apiClient.get");
-      final response = await apiClient.get<Map<String, dynamic>>(
-        endpoint,
-        queryParameters: {
-          'operatorId': operatorId,
-          'circleId': circle,
-        },
-        fromJson: (json) {
-          return json as Map<String, dynamic>;
-        },
-      );
-      debugPrint("STEP 3: Response received from apiClient");
-
-      if (response.success && response.data != null) {
-        final List<dynamic> plansData = (response.data?['plans'] as List?) ?? [];
-        debugPrint("STEP 4: Processing ${plansData.length} plans");
-        AppLogger.debug('Found ${plansData.length} plans in response.data["plans"]', tag: 'RechargeRepo');
-        
-        final List<RechargePlan> plans = [];
-        for (var i = 0; i < plansData.length; i++) {
-          if (plansData[i] is! Map) continue;
-          final json = Map<String, dynamic>.from(plansData[i]);
-          try {
-            final plan = RechargePlan.fromJson(json);
-            plans.add(plan);
-          } catch (e, stackTrace) {
-            AppLogger.error('[PARSE EXCEPTION] for plan $i: $e', tag: 'RechargeRepo');
-            AppLogger.error('[STACK TRACE] $stackTrace', tag: 'RechargeRepo');
-          }
-        }
-        
-        AppLogger.debug('Loaded ${plans.length} plans', tag: 'RechargeRepo');
-        return Success(plans);
-      }
-      return Failure(ServerException(message: response.message));
-    } on AppException catch (e) {
-      return Failure(e);
-    } catch (e) {
-      return Failure(UnknownException.from(e));
-    }
-  }
 
   @override
   Future<Result<RechargeReceipt, AppException>> processRecharge({
@@ -327,6 +249,44 @@ class RechargeRepositoryImpl implements RechargeRepository {
       }
     } catch (e) {
       AppLogger.error('Failed to remove recent contact', tag: 'RechargeRepo', error: e);
+    }
+  }
+
+  @override
+  Future<Result<RechargeReceipt, AppException>> checkRechargeStatus(String orderId) async {
+    try {
+      final response = await apiClient.get<Map<String, dynamic>>(
+        '/provider/a1topup/status/$orderId',
+        fromJson: (json) => json as Map<String, dynamic>,
+      );
+      if (!response.success || response.data == null) {
+        return Failure(ServerException(message: response.message));
+      }
+      final data = response.data!['data'];
+      final statusStr = (data?['status'] as String? ?? 'PENDING').toLowerCase();
+      final isSuccess = statusStr == 'success';
+      final isPending = statusStr == 'pending';
+
+      final receipt = RechargeReceipt(
+        transactionId: data?['orderId'] ?? orderId,
+        referenceId: data?['orderId'] ?? orderId,
+        operatorRef: data?['operatorReference'] ?? data?['providerTransactionId'],
+        status: isSuccess
+            ? RechargeStatus.success
+            : (isPending ? RechargeStatus.pending : RechargeStatus.failed),
+        amountPaise: 0, // preserved from UI
+        mobileNumber: '',
+        operatorName: '',
+        timestamp: DateTime.now(),
+        failureReason: data?['message'],
+      );
+
+      return Success(receipt);
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e, st) {
+      AppLogger.error('checkRechargeStatus failed for orderId $orderId', tag: 'RechargeRepo', error: e, stackTrace: st);
+      return Failure(UnknownException.from(e));
     }
   }
 }

@@ -1,0 +1,32 @@
+{
+  "PREPAID": [
+    { "name": "Airtel", "code": 2, "service": "PREPAID", "active": true },
+    { "name": "BSNL TOPUP", "code": 4, "service": "PREPAID", "active": true },
+    { "name": "BSNL SPECIAL", "code": 5, "service": "PREPAID", "active": true },
+    { "name": "IDEA", "code": 6, "service": "PREPAID", "active": true },
+    { "name": "Reliance Jio", "code": 11, "service": "PREPAID", "active": true },
+    { "name": "Vodafone", "code": 23, "service": "PREPAID", "active": true },
+    { "name": "Matrix Precard", "code": 93, "service": "PREPAID", "active": true }
+  ],
+  "POSTPAID": [],
+  "DTH": [
+    { "name": "AIRTEL DTH", "code": 24, "service": "DTH", "active": true },
+    { "name": "DISH TV", "code": 25, "service": "DTH", "active": true },
+    { "name": "RELIANCE BIGTV", "code": 26, "service": "DTH", "active": true },
+    { "name": "SUN DIRECT", "code": 27, "service": "DTH", "active": true },
+    { "name": "TATA SKY", "code": 28, "service": "DTH", "active": true },
+    { "name": "VIDEOCON D2H", "code": 29, "service": "DTH", "active": true }
+  ],
+  "ELECTRICITY": [],
+  "FASTAG": [],
+  "BROADBAND": [],
+  "LPG": [],
+  "WATER": [],
+  "INSURANCE": [],
+  "CREDIT CARD": [],
+  "LOAN": [],
+  "MUNICIPAL": [],
+  "CABLE TV": [],
+  "GAS": [],
+  "GIFT CARD": []
+}

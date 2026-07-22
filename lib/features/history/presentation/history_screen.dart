@@ -115,8 +115,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       backgroundColor: const Color(0xFFF8FAFC), // Premium subtle background
       body: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          slivers: [
+        child: RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(historyTransactionsProvider);
+            await ref.read(historyTransactionsProvider.future);
+          },
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
             // ── Premium App Bar ─────────────────────────────────────────
             SliverAppBar(
               backgroundColor: const Color(0xFF1565FF),
@@ -336,8 +342,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 // ─── MultiSliver Builder ──────────────────────────────────────────────────────
@@ -654,6 +661,7 @@ class _PremiumHistoryTile extends StatelessWidget {
             context.pushNamed(
               'transaction-detail',
               pathParameters: {'txnId': txn.id},
+              extra: txn,
             );
           },
           child: Padding(

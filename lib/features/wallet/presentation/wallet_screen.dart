@@ -675,88 +675,96 @@ class _WalletTransactionTile extends StatelessWidget {
     
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () {
+          context.pushNamed(
+            'transaction-detail',
+            pathParameters: {'txnId': txn.id},
+            extra: txn,
+          );
+        },
+        child: AppCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(getIcon(), color: accentColor, size: 24),
                   ),
-                  child: Icon(getIcon(), color: accentColor, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          getTitle(),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          getSubtitle(),
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        getTitle(),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        '${isCredit ? '+' : '-'}$amountFormatted',
+                        style: TextStyle(
+                          color: accentColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        getSubtitle(),
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        timeStr,
+                        style: TextStyle(color: AppColors.textHint, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (txn.commissionEarnedPaise > 0) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.successLight.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Commission Earned',
+                        style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        '+${CurrencyFormatter.fromPaise(txn.commissionEarnedPaise)}',
+                        style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${isCredit ? '+' : '-'}$amountFormatted',
-                      style: TextStyle(
-                        color: accentColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      timeStr,
-                      style: TextStyle(color: AppColors.textHint, fontSize: 10),
-                    ),
-                  ],
-                ),
               ],
-            ),
-            
-            // Show commission sub-transaction if present and this is a recharge
-            if (txn.commissionEarnedPaise != null && txn.commissionEarnedPaise! > 0) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.successLight.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Commission Earned',
-                      style: TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      '+${CurrencyFormatter.fromPaise(txn.commissionEarnedPaise!)}',
-                      style: const TextStyle(color: AppColors.success, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-            ]
-          ],
+            ],
+          ),
         ),
       ),
     );

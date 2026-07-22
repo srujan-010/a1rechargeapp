@@ -34,6 +34,9 @@ import '../features/recharge/presentation/recharge_confirmation_screen.dart';
 import '../features/recharge/presentation/recharge_receipt_screen.dart';
 import '../features/recharge/domain/models/recharge_result.dart';
 import '../features/dth/presentation/dth_recharge_screen.dart';
+import '../features/dth/presentation/dth_plans_screen.dart';
+import '../features/dth/presentation/dth_confirmation_screen.dart';
+import '../features/dth/presentation/dth_receipt_screen.dart';
 import '../features/bbps/presentation/bbps_screen.dart';
 import '../features/bbps/presentation/bbps_biller_screen.dart';
 import '../features/bbps/presentation/bbps_fetch_screen.dart';
@@ -229,6 +232,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                       state: state,
                       child: TransactionDetailsScreen(
                         txnId: state.pathParameters['txnId'] ?? '',
+                        transaction: state.extra as WalletTransaction?,
                       ),
                     ),
                   ),
@@ -389,6 +393,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RouteNames.dthRecharge,
         name: 'dth-recharge',
         pageBuilder: (c, s) => _slideRightPage(state: s, child: const DthRechargeScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.dthPlans,
+        name: 'dth-plans',
+        pageBuilder: (c, s) => _slideRightPage(state: s, child: const DthPlansScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.dthConfirm,
+        name: 'dth-confirm',
+        pageBuilder: (c, s) => _slideUpPage(state: s, child: const DthConfirmationScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.dthReceipt,
+        name: 'dth-receipt',
+        pageBuilder: (c, s) {
+          final receipt = s.extra as RechargeReceipt?;
+          if (receipt == null) {
+            return _fadePage(state: s, child: const Scaffold(body: Center(child: Text('Invalid Receipt'))));
+          }
+          return _fadePage(state: s, child: DthReceiptScreen(receipt: receipt));
+        },
       ),
       GoRoute(
         path: RouteNames.bbps,

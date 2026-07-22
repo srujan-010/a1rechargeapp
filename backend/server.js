@@ -64,12 +64,12 @@ app.use('/api/user', require('./routes/userRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
-app.use('/api/plans', require('./routes/plans.routes'));
 app.use('/api/bank', require('./routes/bankRoutes'));
 app.use('/api/kyc', require('./routes/kycRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/master', require('./routes/masterData.routes'));
 app.use('/api/commission', require('./routes/commissionRoutes'));
+app.use('/api/dth', require('./routes/dth.routes'));
 
 // Serve uploaded KYC documents statically (protected by token in production
 // via a signed-URL proxy; acceptable for local dev).
@@ -91,6 +91,9 @@ app.use(errorHandler);
 // Start the background workers
 const pendingRechargeWorker = require('./workers/pendingRecharge.worker');
 pendingRechargeWorker.start(2 * 60 * 1000); // Check every 2 minutes
+
+const dthStatusWorker = require('./workers/dthStatus.worker');
+dthStatusWorker.start(30 * 1000); // Check every 30 seconds
 
 const PORT = process.env.PORT || 5000;
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,10 +27,15 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  late RechargeReceipt _currentReceipt;
+  Timer? _pollTimer;
+  int _pollCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _currentReceipt = widget.receipt;
+
     _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
     
     _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -45,30 +51,76 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
     );
 
     _animController.forward();
+
+    // Start auto-polling if initial status is PENDING
+    if (_currentReceipt.status == RechargeStatus.pending || _currentReceipt.status == RechargeStatus.processing) {
+      _startStatusPolling();
+    }
+  }
+
+  void _startStatusPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      _pollCount++;
+      if (_pollCount > 10) { // Poll for max 30 seconds
+        timer.cancel();
+        return;
+      }
+
+      try {
+        final result = await ref.read(rechargeRepositoryProvider).checkRechargeStatus(_currentReceipt.transactionId);
+        if (result.isSuccess) {
+          final updatedReceipt = result.valueOrNull;
+          if (updatedReceipt != null && updatedReceipt.status != RechargeStatus.pending && updatedReceipt.status != RechargeStatus.processing) {
+            timer.cancel();
+            if (mounted) {
+              setState(() {
+                _currentReceipt = _currentReceipt.copyWith(
+                  status: updatedReceipt.status,
+                  operatorRef: updatedReceipt.operatorRef ?? _currentReceipt.operatorRef,
+                  failureReason: updatedReceipt.failureReason ?? _currentReceipt.failureReason,
+                );
+              });
+              _animController.forward(from: 0.0);
+
+              // Invalidate providers so dashboard, wallet & history are synced
+              ref.invalidate(historyTransactionsProvider);
+              ref.invalidate(walletBalanceProvider);
+              ref.invalidate(recentTransactionsProvider);
+              ref.invalidate(dashboardAnalyticsProvider('today'));
+              ref.invalidate(earningsSummaryProvider);
+            }
+          }
+        }
+      } catch (e) {
+        // Silently continue polling until timeout
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _animController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isSuccess = widget.receipt.isSuccess;
-    final bool isPending = widget.receipt.status == RechargeStatus.pending || widget.receipt.status == RechargeStatus.processing;
+    final bool isSuccess = _currentReceipt.isSuccess;
+    final bool isPending = _currentReceipt.status == RechargeStatus.pending || _currentReceipt.status == RechargeStatus.processing;
     final bool isFailed = !isSuccess && !isPending;
-    final bool hasCommission = (widget.receipt.commission ?? 0) > 0;
+    final bool hasCommission = (_currentReceipt.commission ?? 0) > 0;
     
-    final String amountStr = CurrencyFormatter.fromPaise(widget.receipt.amountPaise);
+    final String amountStr = CurrencyFormatter.fromPaise(_currentReceipt.amountPaise);
     final String commissionStr = hasCommission 
-        ? '+${CurrencyFormatter.fromPaise(widget.receipt.commission!)}' 
+        ? '+${CurrencyFormatter.fromPaise(_currentReceipt.commission!)}' 
         : 'Not Available for this service';
 
-    final String walletDebitedStr = widget.receipt.walletDebitedPaise != null
-        ? CurrencyFormatter.fromPaise(widget.receipt.walletDebitedPaise!)
+    final String walletDebitedStr = _currentReceipt.walletDebitedPaise != null
+        ? CurrencyFormatter.fromPaise(_currentReceipt.walletDebitedPaise!)
         : (hasCommission 
-            ? CurrencyFormatter.fromPaise(widget.receipt.amountPaise - widget.receipt.commission!)
+            ? CurrencyFormatter.fromPaise(_currentReceipt.amountPaise - _currentReceipt.commission!)
             : amountStr);
 
     return PopScope(
@@ -138,7 +190,7 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        isSuccess ? '$amountStr ${widget.receipt.operatorName} Recharge Completed' : isPending ? 'Your recharge is processing and will complete shortly' : widget.receipt.failureReason ?? 'Transaction failed',
+                        isSuccess ? '$amountStr ${_currentReceipt.operatorName} Recharge Completed' : isPending ? 'Your recharge is processing and will complete shortly' : _currentReceipt.failureReason ?? 'Transaction failed',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.95),
                           fontSize: isSuccess || isPending ? 18 : 14,
@@ -268,12 +320,12 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                         
                         // Recharge Details
                         const _SectionHeader(title: 'Recharge Details'),
-                        _ReceiptRow(label: 'Mobile Number', value: widget.receipt.mobileNumber, isBold: true),
-                        _ReceiptRow(label: 'Operator', value: widget.receipt.operatorName),
-                        if (widget.receipt.circle != null)
-                          _ReceiptRow(label: 'Circle', value: widget.receipt.circle!),
-                        if (widget.receipt.validity != null)
-                          _ReceiptRow(label: 'Validity', value: widget.receipt.validity!),
+                        _ReceiptRow(label: 'Mobile Number', value: _currentReceipt.mobileNumber, isBold: true),
+                        _ReceiptRow(label: 'Operator', value: _currentReceipt.operatorName),
+                        if (_currentReceipt.circle != null)
+                          _ReceiptRow(label: 'Circle', value: _currentReceipt.circle!),
+                        if (_currentReceipt.validity != null)
+                          _ReceiptRow(label: 'Validity', value: _currentReceipt.validity!),
                         
                         const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
@@ -294,23 +346,23 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
                           valueColor: hasCommission ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
                           isBold: hasCommission,
                         ),
-                        if (widget.receipt.walletBalancePaise != null)
+                        if (_currentReceipt.walletBalancePaise != null)
                           _ReceiptRow(
                             label: 'Wallet Balance After',
-                            value: CurrencyFormatter.fromPaise(widget.receipt.walletBalancePaise!),
+                            value: CurrencyFormatter.fromPaise(_currentReceipt.walletBalancePaise!),
                           ),
-                        _ReceiptRow(label: 'Payment Method', value: widget.receipt.paymentMode),
+                        _ReceiptRow(label: 'Payment Method', value: _currentReceipt.paymentMode),
                         
                         const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
                         // Transaction Reference
                         const _SectionHeader(title: 'Transaction Reference'),
-                        _ReceiptRow(label: 'Transaction ID', value: widget.receipt.transactionId, showCopy: true),
-                        if (widget.receipt.operatorRef != null)
-                          _ReceiptRow(label: 'Operator Ref', value: widget.receipt.operatorRef!, showCopy: true),
+                        _ReceiptRow(label: 'Transaction ID', value: _currentReceipt.transactionId, showCopy: true),
+                        if (_currentReceipt.operatorRef != null)
+                          _ReceiptRow(label: 'Operator Ref', value: _currentReceipt.operatorRef!, showCopy: true),
                         _ReceiptRow(
                           label: 'Date & Time',
-                          value: DateFormat('dd MMM yyyy, hh:mm a').format(widget.receipt.timestamp),
+                          value: DateFormat('dd MMM yyyy, hh:mm a').format(_currentReceipt.timestamp),
                         ),
                         const SizedBox(height: AppSpacing.sm),
                       ],
@@ -390,6 +442,9 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
   }
 
   void _exitReceipt() {
+    // Completely clear recharge state
+    ref.read(rechargeFlowProvider.notifier).reset();
+
     // Invalidate history, dashboard, wallet, and recent contacts to force fresh data
     ref.invalidate(historyTransactionsProvider);
     ref.invalidate(walletBalanceProvider);

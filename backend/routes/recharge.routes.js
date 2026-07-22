@@ -22,7 +22,10 @@ router.get('/operators', protect, admin, getOperators);
 router.get('/plans', protect, admin, getPlans);
 
 // Recharge API - Retailer
-router.post('/mobile', protect, executeRecharge);
+router.post('/mobile', protect, (req, res, next) => {
+  console.log(`[${new Date().toISOString()}] [1] ROUTE ENTERED: ${req.method} ${req.originalUrl}`);
+  next();
+}, executeRecharge);
 router.get('/status/:orderId', protect, checkStatus);
 
 // Provider Webhook - Public

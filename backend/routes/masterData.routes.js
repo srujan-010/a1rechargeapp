@@ -20,7 +20,6 @@ const { protect, admin } = require('../middleware/authMiddleware');
 // ==========================
 router.get('/operators', getOperators);
 router.get('/circles', getCircles);
-router.get('/resolve', require('../controllers/masterData.controller').resolveOperatorAndCircle);
 
 // ==========================
 // ADMIN APIs (Operators)

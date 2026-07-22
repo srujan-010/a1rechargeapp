@@ -2,8 +2,9 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
 dotenv.config({ path: path.join(__dirname, '.env') });
+const connectDB = require('./config/db');
 
-mongoose.connect(process.env.MONGODB_URI).then(async () => {
+connectDB().then(async () => {
   const User = require('./models/User');
   const Wallet = require('./models/Wallet');
   

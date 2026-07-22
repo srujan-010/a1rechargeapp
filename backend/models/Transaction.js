@@ -51,6 +51,10 @@ const transactionSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     default: 'wallet',
+  },
+  completedAt: {
+    type: Date,
+    default: null,
   }
 }, {
   timestamps: true,

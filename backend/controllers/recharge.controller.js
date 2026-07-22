@@ -98,54 +98,50 @@ const ledgerService = require('../services/ledger/ledger.service');
 // @route   POST /api/recharge/mobile
 // @access  Private (Retailer)
 const executeRecharge = async (req, res, next) => {
+  console.log(`[${new Date().toISOString()}] [2] CONTROLLER ENTERED: executeRecharge`);
   let orderId;
   let amountForRollback = 0;
   let walletReserved = false;
 
   try {
-    // Compatibility Layer for Flutter legacy payload
-    let { mobileNumber, amount, operatorId, circleId, amountPaise, mpin, paymentMode = 'wallet' } = req.body;
+    // Compatibility Layer for Flutter payload (accept mobileNumber, phoneNumber, or subscriberNumber)
+    let mobileNumber = req.body.mobileNumber || req.body.phoneNumber || req.body.subscriberNumber;
+    let { amount, operatorId, circleId, amountPaise, mpin, paymentMode = 'wallet' } = req.body;
     const userId = req.user._id;
-
-    console.log("STEP 1: Request Payload");
-    console.log(req.body);
-    console.log("amount =", amount);
-    console.log("amountPaise =", amountPaise);
 
     // Convert amountPaise to amount (INR) if provided
     if (amountPaise && !amount) {
       amount = amountPaise / 100;
     }
-    console.log("amount after conversion =", amount);
 
-    if (!mobileNumber || !amount || !operatorId) {
+    // Step 3: BEFORE payload validation
+    console.log(`[${new Date().toISOString()}] [3] BEFORE payload validation:`, { mobileNumber, amount, amountPaise, operatorId, serviceType: req.body.serviceType });
+
+    if (!mobileNumber || !amount || !operatorId || amount <= 0) {
+      console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nLine: 125\nReason: Payload Validation Failed (mobileNumber=${mobileNumber}, amount=${amount}, operatorId=${operatorId})\n`);
       return res.status(400).json({
         step: "Payload Validation",
-        error: "Missing required fields",
+        error: "Missing or invalid required fields",
         details: { mobileNumber, amount, operatorId }
       });
     }
 
-    if (amount <= 0) {
-      return res.status(400).json({
-        step: "Amount Validation",
-        error: "Invalid amount",
-        details: { amount }
-      });
-    }
+    // Step 4: AFTER payload validation
+    console.log(`[${new Date().toISOString()}] [4] AFTER payload validation: PASS`);
 
     // MPIN Validation (Required if paymentMode is wallet)
     if (paymentMode === 'wallet') {
       if (!mpin) {
+        console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nLine: 145\nReason: Missing MPIN\n`);
         return res.status(400).json({
           step: "MPIN Validation",
           error: "Missing MPIN",
           details: null
         });
       }
-      console.log("STEP 2: MPIN Check");
       const isMatch = await req.user.matchMpin(mpin);
       if (!isMatch) {
+        console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nLine: 155\nReason: Invalid MPIN\n`);
         return res.status(400).json({
           step: "MPIN Validation",
           error: "Invalid MPIN",
@@ -154,64 +150,64 @@ const executeRecharge = async (req, res, next) => {
       }
     }
 
-    // Resolve Provider Mapping (Compatibility for Flutter string operatorIds)
+    // Step 5: AFTER MPIN validation
+    console.log(`[${new Date().toISOString()}] [5] AFTER MPIN validation: PASS`);
+
+    // Resolve Provider Mapping
     let operator;
     if (mongoose.Types.ObjectId.isValid(operatorId)) {
       operator = await ProviderOperator.findById(operatorId);
     } else {
-      // Legacy string ID mapping (jio -> RC, airtel -> A, vi -> V, bsnl -> BT)
       const legacyMap = { 'jio': 'RC', 'airtel': 'A', 'vi': 'V', 'bsnl': 'BT', 'dth_tata': 'TTV', 'dth_airtel': 'ATV', 'dth_dish': 'DTV' };
-      const mappedCode = legacyMap[operatorId.toLowerCase()] || 'RC';
+      const mappedCode = legacyMap[String(operatorId).toLowerCase()] || 'RC';
       operator = await ProviderOperator.findOne({ code: mappedCode, provider: 'A1Topup' });
     }
 
-    console.log("STEP 3: Operator Resolved");
-    console.log(operator);
+    if (!operator || !operator.status) {
+      console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nLine: 180\nReason: Invalid or disabled operator ID '${operatorId}'\n`);
+      return res.status(400).json({
+        step: "Operator Validation",
+        error: "Invalid or disabled operator",
+        details: { operatorId }
+      });
+    }
 
-    if (!operator) {
-      return res.status(400).json({
-        step: "Operator Validation",
-        error: "Invalid operator",
-        details: { operatorId }
-      });
-    }
-    if (!operator.status) {
-      return res.status(400).json({
-        step: "Operator Validation",
-        error: "Operator is currently disabled",
-        details: { operatorId }
-      });
-    }
+    // Step 7: AFTER operator lookup
+    console.log(`[${new Date().toISOString()}] [7] AFTER operator lookup: PASS`, { name: operator.name, code: operator.code, serviceType: operator.serviceType });
 
     let circle;
     if (circleId && mongoose.Types.ObjectId.isValid(circleId)) {
       circle = await ProviderCircle.findById(circleId);
     } else {
-      // Fallback: Default to a valid circle (e.g., Maharashtra - code '4') since Flutter doesn't send it yet
       circle = await ProviderCircle.findOne({ code: '4', provider: 'A1Topup' });
       if (!circle) circle = await ProviderCircle.findOne({ status: true });
     }
 
-    console.log("STEP 4: Circle Resolved");
-    console.log(circle);
-
-    if (!circle) {
-      return res.status(400).json({
-        step: "Circle Validation",
-        error: "Invalid circle",
-        details: { circleId }
-      });
-    }
-    if (!circle.status) {
-      return res.status(400).json({
-        step: "Circle Validation",
-        error: "Circle is currently disabled",
-        details: { circleId }
-      });
-    }
-
     let operatorCode = operator.code;
-    const circleCode = circle.code;
+    const circleCode = circle ? circle.code : '4';
+
+    const isDthService = (operator.serviceType && operator.serviceType.toUpperCase() === 'DTH') || 
+                        ['dth_tata', 'dth_airtel', 'dth_dish', 'dth_videocon', 'dth_sun'].includes(String(operatorId).toLowerCase()) ||
+                        req.body.serviceType === 'dth';
+
+    const transactionService = isDthService ? 'dth' : (req.body.serviceType || 'mobile_recharge');
+
+    if (isDthService) {
+      const dthMappingService = require('../services/dthMapping.service');
+      try {
+        operatorCode = dthMappingService.getA1DthOperatorCode(operator);
+      } catch (mapErr) {
+        console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/services/dthMapping.service.js\nFunction: getA1DthOperatorCode\nLine: 57\nReason: DTH Operator Mapping Error - ${mapErr.message}\n`);
+        return res.status(400).json({
+          step: "DTH Operator Mapping",
+          error: mapErr.message,
+          details: { operatorId, operatorName: operator.name, plansInfoCode: operator.plansInfoCode }
+        });
+      }
+    }
+
+    // Step 8: AFTER DTH mapping
+    console.log(`[${new Date().toISOString()}] [8] AFTER DTH mapping: PASS`, { isDthService, operatorCode, circleCode });
 
     // Dynamic BSNL Routing
     if (operator.name.toUpperCase() === 'BSNL') {
@@ -226,29 +222,28 @@ const executeRecharge = async (req, res, next) => {
            } else {
              operatorCode = 'BR';
            }
-           console.log(`[Recharge] Dynamic BSNL Routing: Amount ${amount} -> Category "${category}" -> Code ${operatorCode}`);
         } else {
            operatorCode = 'BR';
-           console.log(`[Recharge] Dynamic BSNL Routing: Amount ${amount} not found in cache -> Defaulting to BR`);
         }
       } else {
          operatorCode = 'BR';
-         console.log(`[Recharge] Dynamic BSNL Routing: No cache found -> Defaulting to BR`);
       }
     }
 
-    // 1. Generate Order ID
     orderId = `A1R${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
-    console.log("STEP 5: Wallet Check");
-    console.log("Reserving wallet amount:", amount);
-
-    // 2. Reserve Wallet Balance
     amountForRollback = amount;
-    await walletService.reserveAmount(userId, amount);
-    walletReserved = true;
+    try {
+      await walletService.reserveAmount(userId, amount);
+      walletReserved = true;
+    } catch (resErr) {
+      console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nLine: 272\nReason: Wallet Reservation Error - ${resErr.message}\n`);
+      throw resErr;
+    }
 
-    // 3. Create Pending Transaction
+    // Step 6: AFTER wallet reservation
+    console.log(`[${new Date().toISOString()}] [6] AFTER wallet reservation: PASS (amount=${amount})`);
+
     const transaction = await RechargeTransaction.create({
       orderId,
       userId,
@@ -266,7 +261,7 @@ const executeRecharge = async (req, res, next) => {
       type: 'debit',
       amountPaise: amount * 100,
       status: 'pending',
-      service: 'mobile_recharge',
+      service: transactionService,
       referenceId: orderId,
       description: `Recharge for ${mobileNumber} - ${operator.name}`,
       recipientName: mobileNumber,
@@ -275,16 +270,15 @@ const executeRecharge = async (req, res, next) => {
       paymentMethod: paymentMode,
     });
 
-    console.log("======================");
-    console.log("A1 REQUEST");
-    console.log({
+    // Step 9: IMMEDIATELY BEFORE calling a1TopupProvider.recharge()
+    console.log(`[${new Date().toISOString()}] [9] IMMEDIATELY BEFORE calling a1TopupProvider.recharge()`, {
       orderId,
       mobileNumber,
       amount,
       operatorCode,
       circleCode,
+      serviceType: operator.serviceType,
     });
-    console.log("======================");
 
     // 4. Call Provider
     const providerResponse = await a1TopupProvider.recharge({
@@ -293,20 +287,26 @@ const executeRecharge = async (req, res, next) => {
       amount,
       operatorCode,
       circleCode,
+      serviceType: operator.serviceType,
     });
 
-    console.log("A1 RESPONSE");
-    console.log(providerResponse);
+    console.log(`[9] A1 Response received: status=${providerResponse.status}, msg=${providerResponse.message || 'N/A'}`);
+    console.log(`A1 Status: ${providerResponse.status}`);
+    console.log(`A1 Remark: ${providerResponse.message || 'N/A'}`);
 
     // 5. Update Transaction with Provider Response
     transaction.providerTransactionId = providerResponse.providerTransactionId;
     transaction.operatorReference = providerResponse.operatorReference;
     transaction.status = providerResponse.status;
+    transaction.providerStatus = providerResponse.status;
+    if (providerResponse.status === 'SUCCESS' || providerResponse.status === 'FAILED') {
+      transaction.completedAt = new Date();
+    }
     if (providerResponse.status === 'FAILED') {
-      transaction.failureReason = providerResponse.message;
+      transaction.failureReason = providerResponse.message || 'Recharge failed at provider';
     }
 
-    // 6. Handle Success / Failure
+    // 6. Handle Success / Failure / Pending
     if (providerResponse.status === 'SUCCESS') {
       // Deduct Wallet
       await walletService.commitReservation(userId, amount);
@@ -325,7 +325,7 @@ const executeRecharge = async (req, res, next) => {
       const commission = await commissionService.calculateCommission(operatorCode, amount, operator.name);
       if (commission.retailerCommissionAmount > 0) {
         // Credit retailer
-        await walletService.addBalance(userId, commission.retailerCommissionAmount); // Effectively adds to balance
+        await walletService.addBalance(userId, commission.retailerCommissionAmount);
         await ledgerService.logTransaction({
           userId,
           type: 'CREDIT',
@@ -367,54 +367,56 @@ const executeRecharge = async (req, res, next) => {
       globalTransaction.status = 'success';
       globalTransaction.apiReference = providerResponse.providerTransactionId;
       globalTransaction.commissionEarnedPaise = commission.retailerCommissionAmount * 100;
+      globalTransaction.completedAt = new Date();
       await globalTransaction.save();
-      walletReserved = false; // Mark as handled
+      walletReserved = false;
     } else if (providerResponse.status === 'FAILED') {
-      // Release Wallet Reservation
+      // Immediate Release of Wallet Reservation
       await walletService.releaseReservation(userId, amount);
       globalTransaction.status = 'failed';
       globalTransaction.apiReference = providerResponse.providerTransactionId;
+      globalTransaction.completedAt = new Date();
       await globalTransaction.save();
-      walletReserved = false; // Mark as handled
+      walletReserved = false;
     } else if (providerResponse.status === 'PENDING') {
       globalTransaction.status = 'pending';
       globalTransaction.apiReference = providerResponse.providerTransactionId;
       await globalTransaction.save();
-      walletReserved = false; // Handled, background worker will take over
+      walletReserved = false;
       
-      // Start fast async polling
       const rechargePoller = require('../utils/rechargePoller');
       rechargePoller.startPolling(transaction.orderId);
     }
 
     await transaction.save();
+    console.log(`Database Status After: ${transaction.status}`);
+    console.log('--- END RECHARGE LIFECYCLE TRACE ---\n');
 
-    // Send 200 OK for both SUCCESS and PENDING, but send accurate status inside payload
-    if (providerResponse.status === 'SUCCESS' || providerResponse.status === 'PENDING') {
-      const isPending = providerResponse.status === 'PENDING';
-      res.status(200).json({
-        success: true,
-        message: isPending ? 'Recharge pending verification' : 'Recharge successful',
-        data: {
-          transactionId: transaction.orderId,
-          referenceId: transaction.orderId, // Flutter uses this
-          operatorRef: transaction.operatorReference || transaction.providerTransactionId || 'Processing...',
-          status: isPending ? 'pending' : 'success',
-          amountPaise: transaction.amount * 100,
-          commissionEarnedPaise: transaction.commissionCalculated ? (await CommissionHistory.findOne({ transactionId: transaction._id })).retailerCommissionAmount * 100 : 0,
-          walletDebitedPaise: paymentMode === 'wallet' ? transaction.amount * 100 : 0,
-          walletBalanceAfterPaise: 0, // Optionally lookup wallet balance
-          mobileNumber: transaction.mobileNumber,
-          operatorName: operator.name.toUpperCase(),
-          timestamp: transaction.createdAt
-        }
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        message: providerResponse.message || 'Recharge failed at provider',
-      });
-    }
+    // Return HTTP 200 for all completed states so Flutter can display the receipt with clean status
+    const statusLower = transaction.status.toLowerCase();
+    const isSuccess = statusLower === 'success';
+    const isPending = statusLower === 'pending';
+
+    res.status(200).json({
+      success: isSuccess || isPending,
+      message: isSuccess 
+        ? 'Recharge successful' 
+        : (isPending ? 'Recharge pending verification' : (transaction.failureReason || 'Recharge failed')),
+      data: {
+        transactionId: transaction.orderId,
+        referenceId: transaction.orderId,
+        operatorRef: transaction.operatorReference || transaction.providerTransactionId || (isPending ? 'Processing...' : 'N/A'),
+        status: statusLower, // 'success', 'failed', 'pending'
+        amountPaise: transaction.amount * 100,
+        commissionEarnedPaise: transaction.commissionCalculated ? ((await CommissionHistory.findOne({ transactionId: transaction._id }))?.retailerCommissionAmount || 0) * 100 : 0,
+        walletDebitedPaise: (isSuccess && paymentMode === 'wallet') ? transaction.amount * 100 : 0,
+        walletBalanceAfterPaise: 0,
+        mobileNumber: transaction.mobileNumber,
+        operatorName: operator.name.toUpperCase(),
+        timestamp: transaction.createdAt,
+        failureReason: transaction.failureReason || null,
+      }
+    });
 
   } catch (error) {
     if (walletReserved) {
@@ -465,9 +467,10 @@ const checkStatus = async (req, res, next) => {
 
     // If status changed to SUCCESS from PENDING, we must run commission/ledger logic
     if (transaction.status === 'PENDING' && statusResponse.status === 'SUCCESS') {
+      const now = new Date();
       const updated = await RechargeTransaction.findOneAndUpdate(
         { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'SUCCESS', operatorReference: statusResponse.operatorReference } }
+        { $set: { status: 'SUCCESS', providerStatus: 'SUCCESS', operatorReference: statusResponse.operatorReference, providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId, completedAt: now } }
       );
       if (!updated) {
         return res.status(200).json({ success: true, data: statusResponse }); // Already handled
@@ -507,6 +510,7 @@ const checkStatus = async (req, res, next) => {
           description: `Commission for Recharge ${transaction.orderId}`,
           apiReference: transaction._id.toString(),
           paymentMethod: 'wallet',
+          completedAt: now,
         });
       }
       
@@ -525,15 +529,17 @@ const checkStatus = async (req, res, next) => {
 
       await Transaction.updateOne({ referenceId: transaction.orderId }, { 
         status: 'success', 
-        apiReference: statusResponse.providerTransactionId,
-        commissionEarnedPaise: commission.retailerCommissionAmount * 100 
+        apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+        commissionEarnedPaise: commission.retailerCommissionAmount * 100,
+        completedAt: now,
       });
 
       await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
     } else if (transaction.status === 'PENDING' && statusResponse.status === 'FAILED') {
+      const now = new Date();
       const updated = await RechargeTransaction.findOneAndUpdate(
         { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'FAILED', failureReason: statusResponse.message } }
+        { $set: { status: 'FAILED', providerStatus: 'FAILED', failureReason: statusResponse.message, completedAt: now } }
       );
       if (!updated) {
         return res.status(200).json({ success: true, data: statusResponse }); // Already handled
@@ -547,7 +553,8 @@ const checkStatus = async (req, res, next) => {
       
       await Transaction.updateOne({ referenceId: transaction.orderId }, { 
         status: 'failed', 
-        apiReference: statusResponse.providerTransactionId 
+        apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+        completedAt: now,
       });
     }
 

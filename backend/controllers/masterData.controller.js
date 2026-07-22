@@ -1,5 +1,7 @@
 const ProviderOperator = require('../models/ProviderOperator');
 const ProviderCircle = require('../models/ProviderCircle');
+const fs = require('fs');
+const path = require('path');
 
 // ==========================================
 // PUBLIC APIs (For Retailers/Flutter App)
@@ -11,31 +13,49 @@ const ProviderCircle = require('../models/ProviderCircle');
 exports.getOperators = async (req, res) => {
   try {
     const { service } = req.query;
-    let query = { status: true };
+    console.log('req.query:', req.query);
+    
+    // Load central operator registry
+    const registryPath = path.join(__dirname, '../../assets/operator_registry.json');
+    let operatorsData = {};
+    if (fs.existsSync(registryPath)) {
+      const raw = fs.readFileSync(registryPath, 'utf8');
+      operatorsData = JSON.parse(raw);
+    } else {
+      console.log('operator_registry.json not found at:', registryPath);
+    }
+
+    let uniqueOperators = [];
     
     if (service) {
-      query.serviceType = new RegExp(`^${service}$`, 'i');
-    }
-
-    console.log('req.query:', req.query);
-    console.log('MongoDB query:', query);
-
-    const operators = await ProviderOperator.find(query)
-      .sort({ displayOrder: 1, name: 1 })
-      .select('name serviceType provider code displayOrder plansInfoCode');
-      
-    // Deduplicate operators by name so the UI only sees one entry per operator name
-    const uniqueOperators = [];
-    const seenNames = new Set();
-    
-    for (const op of operators) {
-      if (!seenNames.has(op.name)) {
-        seenNames.add(op.name);
-        uniqueOperators.push(op);
+      let serviceKey = service.toUpperCase();
+      if (serviceKey === 'MOBILE') {
+        serviceKey = 'PREPAID';
       }
+      
+      if (operatorsData[serviceKey]) {
+        uniqueOperators = operatorsData[serviceKey].filter(op => op.active !== false);
+      }
+    } else {
+      // Flatten all categories
+      Object.keys(operatorsData).forEach(key => {
+        const activeOps = operatorsData[key].filter(op => op.active !== false);
+        uniqueOperators.push(...activeOps);
+      });
     }
 
-    console.log('Number of unique documents returned:', uniqueOperators.length);
+    // Map the JSON structure to match what the frontend expects
+    // Frontend expects: { name, serviceType, code, _id/id }
+    uniqueOperators = uniqueOperators.map(op => ({
+      name: op.name,
+      serviceType: op.service,
+      code: op.code,
+      shortCode: op.code.toString(),
+      status: op.active,
+      id: op.name.toLowerCase().replace(/\s+/g, '-')
+    }));
+
+    console.log('Number of unique operators returned:', uniqueOperators.length);
 
     res.json({
       success: true,
@@ -43,6 +63,7 @@ exports.getOperators = async (req, res) => {
       data: uniqueOperators
     });
   } catch (error) {
+    console.error('Error fetching operators:', error);
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });
   }
 };
@@ -52,9 +73,48 @@ exports.getOperators = async (req, res) => {
 // @access  Public / Retailer
 exports.getCircles = async (req, res) => {
   try {
-    const circles = await ProviderCircle.find({ status: true })
-      .sort({ state: 1 })
-      .select('state provider code');
+    // Define a basic Circle Registry map for PlanAPI based on provided list
+    const circleRegistry = {
+      'manipur': '106',
+      'jharkhand': '105',
+      'mizzoram': '104',
+      'meghalay': '103',
+      'goa': '102',
+      'chhatisgarh': '101', 
+      'tripura': '100',
+      'sikkim': '99',
+      'andhra pradesh': '49',
+      'kerala': '95',
+      'tamil nadu': '94', 
+      'chennai': '40',
+      'karnataka': '06',
+      'bihar': '52', 
+      'north east': '16',
+      'assam': '56',
+      'orissa': '53',
+      'west bengal': '51',
+      'kolkata': '31',
+      'rajasthan': '70',
+      'madhya pradesh': '93',
+      'gujarat': '98',
+      'maharashtra': '90',
+      'mumbai': '92',
+      'up east': '54',
+      'jammu & kashmir': '55',
+      'haryana': '96',
+      'himachal pradesh': '03',
+      'punjab': '02',
+      'up west': '97',
+      'delhi': '10',
+    };
+
+    const circles = Object.entries(circleRegistry).map(([state, code]) => ({
+      id: state.replace(/\s+/g, '-'),
+      state: state.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      code: code,
+      provider: 'PlanAPI',
+      status: true
+    }));
 
     res.json({
       success: true,
@@ -66,50 +126,7 @@ exports.getCircles = async (req, res) => {
   }
 };
 
-// @desc    Offline resolver to auto-guess Operator and Circle by phone number prefix
-// @route   GET /api/master/resolve?mobile=...
-// @access  Public / Retailer
-exports.resolveOperatorAndCircle = async (req, res) => {
-  try {
-    const { mobile } = req.query;
-    if (!mobile || mobile.length < 10) {
-      return res.status(400).json({ success: false, message: 'Invalid mobile number' });
-    }
 
-    // Default Fallbacks
-    let operatorCode = 'RC'; // Jio
-    let circleCode = '4'; // Maharashtra
-
-    // Simple heuristic offline resolver (for demonstration in lieu of live HLR)
-    const prefix = mobile.substring(0, 4);
-    const firstDigit = mobile.charAt(0);
-
-    if (firstDigit === '9') {
-      operatorCode = 'A'; // Airtel
-      circleCode = '1'; // Delhi
-    } else if (firstDigit === '8') {
-      operatorCode = 'V'; // Vi
-      circleCode = '3'; // Kolkata
-    } else if (firstDigit === '7') {
-      operatorCode = 'RC'; // Jio
-      circleCode = '4'; // Maharashtra
-    }
-
-    // Look them up in DB
-    const operator = await ProviderOperator.findOne({ code: operatorCode, provider: 'A1Topup', status: true });
-    const circle = await ProviderCircle.findOne({ code: circleCode, provider: 'A1Topup', status: true });
-
-    res.json({
-      success: true,
-      data: {
-        operator: operator || await ProviderOperator.findOne({ status: true }),
-        circle: circle || await ProviderCircle.findOne({ status: true }),
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
-  }
-};
 
 // ==========================================
 // ADMIN APIs (CRUD Operations)

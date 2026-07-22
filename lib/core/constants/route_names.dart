@@ -36,6 +36,8 @@ abstract final class RouteNames {
   // ─── DTH ─────────────────────────────────────────────────────────
   static const String dthRecharge = '/recharge/dth';
   static const String dthPlans = '/recharge/dth/plans';
+  static const String dthConfirm = '/recharge/dth/confirm';
+  static const String dthReceipt = '/recharge/dth/receipt/:txnId';
 
   // ─── BBPS ────────────────────────────────────────────────────────
   static const String bbps = '/bbps';

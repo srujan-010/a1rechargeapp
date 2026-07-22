@@ -12,7 +12,10 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import 'recharge_providers.dart';
-import '../domain/models/recharge_plan.dart';
+import '../../../models/mobile_plan.dart';
+import '../../../models/plan_category.dart';
+import '../domain/models/operator.dart';
+import '../domain/models/circle.dart';
 import 'widgets/recent_contacts_list.dart';
 
 class MobileRechargeScreen extends ConsumerStatefulWidget {
@@ -27,7 +30,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   final FocusNode _phoneFocusNode = FocusNode();
 
 
-  String _selectedCategory = '⭐ Recommended';
+  String _selectedCategory = '';
   final List<String> _quickFilters = [
     '28 Days', '56 Days', '84 Days', '365 Days', 
     '1GB/day', '1.5GB/day', '2GB/day', 'Unlimited 5G'
@@ -43,7 +46,13 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final state = ref.read(rechargeFlowProvider);
-      if (state.phoneNumber != null) {
+      // If previous state was DTH or stale, reset it
+      if (state.operator != null && state.operator!.type == OperatorType.dth) {
+        ref.read(rechargeFlowProvider.notifier).reset();
+        _phoneController.clear();
+        _searchController.clear();
+        _phoneFocusNode.requestFocus();
+      } else if (state.phoneNumber != null) {
         _phoneController.text = state.phoneNumber!;
       } else {
         _phoneFocusNode.requestFocus();
@@ -105,15 +114,36 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   Future<void> _resolveOperator(String phone) async {
     debugPrint('[FLOW] Calling resolve API for phone: $phone');
     try {
-      final repo = ref.read(rechargeRepositoryProvider);
-      final result = await repo.resolveOperator(phone);
+      final repo = ref.read(mobilePlanRepositoryProvider);
+      final result = await repo.detectOperator(phone);
       debugPrint('[FLOW] Response received from resolve API');
       
       result
-        ..onSuccess((res) {
+        ..onSuccess((res) async {
           debugPrint('[FLOW] Parsing JSON successful. Updating operator and circle.');
           if (!mounted) return;
-          ref.read(rechargeFlowProvider.notifier).setAutoDetection(res.operator, res.circle);
+          
+          final operatorName = res.operatorName;
+          final circleName = res.circleName;
+          
+          // Wait for providers to be ready to avoid silently failing on first use
+          final operators = await ref.read(operatorsProvider('mobile').future);
+          final opResult = operators.firstWhere(
+            (op) => op.name.toLowerCase() == operatorName.toLowerCase() || (op.shortCode != null && op.shortCode!.toLowerCase() == res.operatorCode?.toLowerCase()),
+            orElse: () => Operator(id: '', name: operatorName, logoUrl: '', type: OperatorType.prepaid, shortCode: res.operatorCode),
+          );
+          
+          final circles = await ref.read(circlesProvider.future);
+          final circleResult = circles.firstWhere(
+            (c) => c.state.toLowerCase() == circleName.toLowerCase() || (c.code != null && c.code!.toLowerCase() == res.circleCode?.toLowerCase()),
+            orElse: () => Circle(id: '', state: circleName, code: res.circleCode ?? ''),
+          );
+
+          if (opResult != null && circleResult != null) {
+            ref.read(rechargeFlowProvider.notifier).setAutoDetection(opResult, circleResult);
+          } else {
+            ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+          }
           debugPrint('[FLOW] State updated. Starting plans fetch automatically via plansProvider.');
         })
         ..onFailure((err) {
@@ -630,7 +660,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                   if (operator == null || circle == null) {
                                     return const SliverToBoxAdapter(child: SizedBox());
                                   }
-                                  final plansAsync = ref.watch(plansProvider((operatorId: operator.id, circle: circle.id, serviceType: operator.type.name)));
+                                  final plansAsync = ref.watch(plansProvider((operatorId: operator.shortCode ?? operator.id, circle: circle.code ?? circle.id, serviceType: operator.type.name)));
                                 
                                 return plansAsync.when(
                                   loading: () => SliverList(
@@ -648,60 +678,58 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                       child: Text('Failed to load plans: $err', style: const TextStyle(color: AppColors.error)),
                                     ),
                                   ),
-                                  data: (allPlans) {
+                                  data: (allCategories) {
                                     debugPrint('\n========== PLANS DEBUG ==========');
                                     debugPrint('inside build()');
-                                    debugPrint('plansProvider has ${allPlans.length} plans');
-                                    debugPrint('Plans from provider: ${allPlans.length}');
+                                    debugPrint('plansProvider returned ${allCategories.length} categories');
 
-                                    // Apply Search
+                                    // Categorize dynamically based on actual API response and filtering
+                                    final categoriesMap = <String, List<MobilePlan>>{};
+                                    final activeCategories = <String>[];
+                                    
                                     final searchQuery = _searchController.text.toLowerCase().trim();
-                                    var plans = allPlans;
                                     
-                                    if (searchQuery.isNotEmpty) {
-                                      plans = allPlans.where((p) {
-                                        final amountStr = (p.pricePaise ~/ 100).toString();
-                                        return amountStr.contains(searchQuery) ||
-                                               p.categoryName.toLowerCase().contains(searchQuery) ||
-                                               p.description.toLowerCase().contains(searchQuery) ||
-                                               p.validity.toLowerCase().contains(searchQuery) ||
-                                               (p.data?.toLowerCase().contains(searchQuery) ?? false);
-                                      }).toList();
+                                    for (final category in allCategories) {
+                                      var plans = category.plans;
+                                      
+                                      // Apply Search
+                                      if (searchQuery.isNotEmpty) {
+                                        plans = plans.where((p) {
+                                          final amountStr = (double.tryParse(p.rs ?? '0') ?? 0).toString();
+                                          return amountStr.contains(searchQuery) ||
+                                                 (p.desc ?? '').toLowerCase().contains(searchQuery) ||
+                                                 (p.validity ?? '').toLowerCase().contains(searchQuery);
+                                        }).toList();
+                                      }
+
+                                      // Apply Validity/Quick Filters
+                                      if (_selectedQuickFilter.isNotEmpty) {
+                                        final qf = _selectedQuickFilter.toLowerCase();
+                                        plans = plans.where((p) {
+                                          if (qf.contains('day') || qf.contains('year')) return (p.validity ?? '').toLowerCase().contains(qf);
+                                          return true;
+                                        }).toList();
+                                      }
+                                      
+                                      if (plans.isNotEmpty) {
+                                        activeCategories.add(category.name);
+                                        categoriesMap[category.name] = plans;
+                                      }
                                     }
 
-                                    // Apply Validity/Quick Filters
-                                    if (_selectedQuickFilter.isNotEmpty) {
-                                      final qf = _selectedQuickFilter.toLowerCase();
-                                      plans = plans.where((p) {
-                                        if (qf.contains('day') || qf.contains('year')) return p.validity.toLowerCase().contains(qf);
-                                        if (qf.contains('gb')) return (p.data?.toLowerCase().contains(qf) ?? false);
-                                        if (qf.contains('5g')) return (p.tags.any((t) => t.toLowerCase().contains('5g')) || p.description.toLowerCase().contains('5g'));
-                                        return true;
-                                      }).toList();
+                                    if (activeCategories.isEmpty) {
+                                       return SliverToBoxAdapter(
+                                         child: Padding(
+                                           padding: const EdgeInsets.all(AppSpacing.lg),
+                                           child: const Center(child: Text('No plans match your search.')),
+                                         ),
+                                       );
                                     }
 
-                                    // Categorize dynamically
-                                    final categoriesMap = <String, List<RechargePlan>>{};
-                                    for (final p in plans) {
-                                      final cat = p.categoryName;
-                                      if (!categoriesMap.containsKey(cat)) categoriesMap[cat] = [];
-                                      categoriesMap[cat]!.add(p);
-                                    }
-                                    
-                                    final recommended = plans.where((p) => p.isPopular || p.isBestValue).toList();
-                                    if (recommended.isNotEmpty) {
-                                      categoriesMap['⭐ Recommended'] = recommended;
-                                    } else if (plans.isNotEmpty) {
-                                      categoriesMap['⭐ Recommended'] = plans.take(15).toList();
-                                    }
-
-                                    final activeCategories = ['⭐ Recommended'];
-                                    final otherCats = categoriesMap.keys.where((c) => c != '⭐ Recommended').toList()..sort();
-                                    activeCategories.addAll(otherCats);
-                                    
+                                    // Auto-select first category if current is invalid
                                     if (!activeCategories.contains(_selectedCategory)) {
                                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                                        if (mounted) setState(() => _selectedCategory = activeCategories.isNotEmpty ? activeCategories.first : '⭐ Recommended');
+                                        if (mounted) setState(() => _selectedCategory = activeCategories.first);
                                       });
                                     }
 
@@ -724,7 +752,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                     delegate: SliverChildBuilderDelegate(
                                       (context, index) {
                                         final plan = selectedPlans[index];
-                                        final isSelected = state.selectedPlan?.id == plan.id || state.customAmountPaise == plan.pricePaise;
+                                        final isSelected = state.selectedPlan?.id == plan.id || state.customAmountPaise == ((double.tryParse(plan.rs ?? '0') ?? 0) * 100).toInt();
                                         
                                         return Padding(
                                           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
@@ -783,7 +811,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                             const Text('Amount Payable', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 2),
                             Text(
-                              CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise ?? state.selectedPlan?.pricePaise ?? 0),
+                              CurrencyFormatter.fromPaiseNoDecimal(state.customAmountPaise ?? ((double.tryParse(state.selectedPlan?.rs ?? '0') ?? 0) * 100).toInt()),
                               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -827,7 +855,7 @@ class _CategorySelectorDelegate extends SliverPersistentHeaderDelegate {
   });
 
   final List<String> categories;
-  final Map<String, List<RechargePlan>> categoriesMap;
+  final Map<String, List<MobilePlan>> categoriesMap;
   final String selectedCategory;
   final ValueChanged<String> onSelected;
 
@@ -937,23 +965,23 @@ class _PremiumPlanCard extends StatelessWidget {
     required this.onDetailsTap,
   });
 
-  final RechargePlan plan;
+  final MobilePlan plan;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onDetailsTap;
 
   @override
   Widget build(BuildContext context) {
-    final hasOtt = plan.description.toLowerCase().contains('hotstar') || plan.description.toLowerCase().contains('prime') || plan.description.toLowerCase().contains('netflix');
+    final hasOtt = (plan.desc ?? '').toLowerCase().contains('hotstar') || (plan.desc ?? '').toLowerCase().contains('prime') || (plan.desc ?? '').toLowerCase().contains('netflix');
     
     // Calculate Rs/day
     String? rsPerDay;
-    if (plan.validity.toLowerCase().contains('day')) {
-      final daysMatch = RegExp(r'(\d+)').firstMatch(plan.validity);
+    if ((plan.validity ?? '').toLowerCase().contains('day')) {
+      final daysMatch = RegExp(r'(\d+)').firstMatch(plan.validity ?? '');
       if (daysMatch != null) {
         final days = int.tryParse(daysMatch.group(1)!);
         if (days != null && days > 0) {
-          final ppd = (plan.pricePaise / 100) / days;
+          final ppd = (double.tryParse(plan.rs ?? '0') ?? 0) / days;
           rsPerDay = '\u20B9${ppd.toStringAsFixed(1)}/day';
         }
       }
@@ -995,18 +1023,9 @@ class _PremiumPlanCard extends StatelessWidget {
                         runSpacing: 4,
                         children: [
                           Text(
-                            '\u20B9${plan.pricePaise ~/ 100}',
+                            '\u20B9${plan.rs ?? '0'}',
                             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
-                          if (plan.isBestValue || plan.isPopular)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(plan.isBestValue ? 'Best Value' : 'Popular', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
-                            ),
                         ],
                       ),
                     ),
@@ -1038,9 +1057,7 @@ class _PremiumPlanCard extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _InfoChip(icon: '🗓', text: plan.validity),
-                    if (plan.data != null && plan.data != 'NA') _InfoChip(icon: '📶', text: plan.data!),
-                    if (plan.voice != null && plan.voice != 'NA') _InfoChip(icon: '📞', text: plan.voice!),
+                    _InfoChip(icon: '🗓', text: plan.validity ?? 'NA'),
                   ],
                 ),
                 
@@ -1056,8 +1073,6 @@ class _PremiumPlanCard extends StatelessWidget {
                         runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          if (plan.sms != null && plan.sms!.isNotEmpty)
-                            _MetaText(icon: '💬', text: plan.sms!),
                           if (hasOtt)
                             const _MetaText(icon: '🎬', text: 'OTT Included', color: Colors.purple),
                           if (rsPerDay != null)
@@ -1169,14 +1184,14 @@ class _SheetStat extends StatelessWidget {
 }
 
 class _PlanDetailsSheet extends StatelessWidget {
-  final RechargePlan plan;
+  final MobilePlan plan;
   final VoidCallback onRecharge;
 
   const _PlanDetailsSheet({required this.plan, required this.onRecharge});
 
   @override
   Widget build(BuildContext context) {
-    final bullets = plan.description.split('. ').where((s) => s.trim().isNotEmpty).toList();
+    final bullets = (plan.desc ?? '').split('. ').where((s) => s.trim().isNotEmpty).toList();
 
     return Container(
       decoration: const BoxDecoration(
@@ -1203,19 +1218,11 @@ class _PlanDetailsSheet extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '\u20B9${plan.pricePaise ~/ 100}',
+                      '\u20B9${plan.rs ?? '0'}',
                       style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                     ),
                   ),
-                  if (plan.isBestValue)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text('Best Value', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange)),
-                    ),
+
                 ],
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -1228,9 +1235,7 @@ class _PlanDetailsSheet extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _SheetStat(label: 'VALIDITY', value: plan.validity)),
-                    Expanded(child: _SheetStat(label: 'DATA', value: plan.data ?? 'NA')),
-                    Expanded(child: _SheetStat(label: 'VOICE', value: plan.voice ?? 'NA')),
+                    Expanded(child: _SheetStat(label: 'VALIDITY', value: plan.validity ?? 'NA')),
                   ],
                 ),
               ),
@@ -1252,7 +1257,7 @@ class _PlanDetailsSheet extends StatelessWidget {
                   ),
                 ))
               else
-                Text(plan.description, style: const TextStyle(color: AppColors.textSecondary, height: 1.4)),
+                Text(plan.desc ?? '', style: const TextStyle(color: AppColors.textSecondary, height: 1.4)),
               
               const SizedBox(height: AppSpacing.xxl),
               SizedBox(

@@ -160,35 +160,54 @@ class A1TopupProvider extends ProviderInterface {
    * Execute Recharge
    */
   async recharge(options) {
-    const { orderId, mobileNumber, amount, operatorCode, circleCode } = options;
-    
+    const { orderId, mobileNumber, amount, operatorCode, circleCode, serviceType } = options;
+    const finalCircleCode = (circleCode && String(circleCode).trim() !== '') ? String(circleCode).trim() : '4';
+
     try {
       const payload = {
         username: config.username,
         pwd: config.password,
-        format: config.format,
+        format: config.format || 'json',
         number: mobileNumber,
         amount: amount,
         operatorcode: operatorCode,
-        circlecode: circleCode,
+        circlecode: finalCircleCode,
         orderid: orderId,
       };
 
-      console.log('\n--- A1 TOPUP RECHARGE API LOG ---');
-      console.log(`URL: ${config.baseUrl}/recharge/api`);
-      console.log(`Method: GET`);
-      console.log(`Payload: ${JSON.stringify({ ...payload, pwd: '***' })}`);
+      const safeParams = {
+        username: config.username || '***',
+        circlecode: finalCircleCode,
+        operatorcode: operatorCode,
+        number: mobileNumber,
+        amount: amount,
+        orderid: orderId,
+        format: config.format || 'json',
+      };
+
+      if (serviceType === 'DTH' || (orderId && String(orderId).startsWith('A1DTH'))) {
+        console.log('\n[DTH] Final Provider Request:');
+        console.log(JSON.stringify(safeParams, null, 2));
+      }
+
+      console.log(`[DTH] Final request URL: ${config.baseUrl}/recharge/api`);
+      console.log(`[${new Date().toISOString()}] [11] IMMEDIATELY BEFORE axios.get()`, { url: `${config.baseUrl}/recharge/api`, params: safeParams });
 
       // Most Indian topup APIs strictly use GET with query parameters
       const response = await this.client.get('/recharge/api', { params: payload });
 
-      console.log(`Status Code: ${response.status}`);
-      console.log(`Raw Response: ${JSON.stringify(response.data)}`);
-      console.log('---------------------------------\n');
+      console.log(`[DTH] Raw response from A1:`, JSON.stringify(response.data));
+      console.log(`[${new Date().toISOString()}] [12] IMMEDIATELY AFTER axios.get()`, { status: response.status, data: response.data });
 
       return this._normalizeResponse(response.data, orderId);
     } catch (error) {
-      console.error('[A1TopupProvider] Recharge failed:', error.message);
+      console.error('[A1TopupProvider] Recharge failed with exception:');
+      console.error(`Error Message: ${error.message}`);
+      if (error.response) {
+        console.error(`HTTP Error Status: ${error.response.status}`);
+        console.error(`HTTP Error Data: ${JSON.stringify(error.response.data)}`);
+      }
+      
       // Determine if error is a timeout or reachability issue to mark as PENDING instead of FAILED
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
         return {
@@ -274,6 +293,7 @@ class A1TopupProvider extends ProviderInterface {
       providerTransactionId: data.txid || data.txnid || data.provider_id || null,
       operatorReference: (status === 'FAILED') ? null : (data.opid || data.operator_ref || null), // Only map opid to operatorReference if SUCCESS. Otherwise it's an error message.
       orderId: data.orderid || data.client_id || orderId,
+      rawResponse: data,
     };
   }
 }

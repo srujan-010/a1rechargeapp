@@ -7,7 +7,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/widgets/loading_skeleton.dart';
-import '../domain/models/recharge_plan.dart';
+import '../../../models/mobile_plan.dart';
 import 'recharge_providers.dart';
 
 class PlanSelectionScreen extends ConsumerStatefulWidget {
@@ -38,7 +38,7 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
       );
     }
 
-    final providerParam = (operatorId: state.operator!.id, circle: state.circle!.id, serviceType: state.operator!.type.name);
+    final providerParam = (operatorId: state.operator!.shortCode ?? state.operator!.id, circle: state.circle!.code ?? state.circle!.id, serviceType: state.operator!.type.name);
     final plansAsync = ref.watch(plansProvider(providerParam));
 
     return Scaffold(
@@ -107,16 +107,14 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
             ],
           ),
         ),
-        data: (plans) {
-          final filteredPlans = plans.where((p) {
+        data: (categories) {
+          final allPlans = categories.expand((c) => c.plans).toList();
+          
+          final filteredPlans = allPlans.where((p) {
             if (_searchQuery.isEmpty) return true;
-            return p.description.toLowerCase().contains(_searchQuery) ||
-                   p.pricePaise.toString().contains(_searchQuery) ||
-                   p.validity.toLowerCase().contains(_searchQuery) ||
-                   p.categoryName.toLowerCase().contains(_searchQuery) ||
-                   (p.data != null && p.data!.toLowerCase().contains(_searchQuery)) ||
-                   (p.voice != null && p.voice!.toLowerCase().contains(_searchQuery)) ||
-                   (p.sms != null && p.sms!.toLowerCase().contains(_searchQuery));
+            return (p.desc ?? '').toLowerCase().contains(_searchQuery) ||
+                   (p.rs ?? '').contains(_searchQuery) ||
+                   (p.validity ?? '').toLowerCase().contains(_searchQuery);
           }).toList();
 
           if (filteredPlans.isEmpty) {
@@ -126,39 +124,16 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
             );
           }
 
-          final categories = filteredPlans.map((p) => p.categoryName).toSet().toList();
-
           return RefreshIndicator(
             onRefresh: () async {
               return ref.refresh(plansProvider(providerParam));
             },
-            child: DefaultTabController(
-              length: categories.length,
-              child: Column(
-                children: [
-                  TabBar(
-                    isScrollable: true,
-                    labelColor: AppColors.primaryBlue,
-                    unselectedLabelColor: AppColors.textSecondary,
-                    indicatorColor: AppColors.primaryBlue,
-                    tabs: categories.map((c) => Tab(text: c)).toList(),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: categories.map((category) {
-                        final categoryPlans = filteredPlans.where((p) => p.categoryName == category).toList();
-                        return ListView.builder(
-                          padding: const EdgeInsets.all(AppSpacing.sm),
-                          itemCount: categoryPlans.length,
-                          itemBuilder: (context, index) {
-                            return _PlanTile(plan: categoryPlans[index]);
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              itemCount: filteredPlans.length,
+              itemBuilder: (context, index) {
+                return _PlanTile(plan: filteredPlans[index]);
+              },
             ),
           );
         },
@@ -169,10 +144,13 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
 
 class _PlanTile extends ConsumerWidget {
   const _PlanTile({required this.plan});
-  final RechargePlan plan;
+  final MobilePlan plan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final rsVal = double.tryParse(plan.rs ?? '0') ?? 0;
+    final paiseVal = (rsVal * 100).toInt();
+
     return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: InkWell(
@@ -190,7 +168,7 @@ class _PlanTile extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    CurrencyFormatter.fromPaise(plan.pricePaise),
+                    CurrencyFormatter.fromPaise(paiseVal),
                     style: AppTextTheme.textTheme.headlineMedium?.copyWith(
                       color: AppColors.primaryBlue,
                       fontWeight: FontWeight.w700,
@@ -203,7 +181,7 @@ class _PlanTile extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
-                      'Validity: ${plan.validity}',
+                      'Validity: ${plan.validity ?? "NA"}',
                       style: AppTextTheme.textTheme.labelSmall?.copyWith(
                         color: AppColors.textSecondary,
                         fontWeight: FontWeight.w600,
@@ -214,40 +192,13 @@ class _PlanTile extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                plan.description,
+                plan.desc ?? '',
                 style: AppTextTheme.textTheme.bodyMedium,
               ),
-              if (plan.data != null || plan.voice != null || plan.sms != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                const Divider(height: 1, color: AppColors.surfaceVariant),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    if (plan.data != null && plan.data!.isNotEmpty)
-                      _buildFeature(Icons.data_usage, 'Data', plan.data!),
-                    if (plan.voice != null && plan.voice!.isNotEmpty)
-                      _buildFeature(Icons.phone, 'Calls', plan.voice!),
-                    if (plan.sms != null && plan.sms!.isNotEmpty)
-                      _buildFeature(Icons.message, 'SMS', plan.sms!),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildFeature(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, size: 20, color: AppColors.primaryBlue),
-        const SizedBox(height: 4),
-        Text(value, style: AppTextTheme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold)),
-        Text(label, style: AppTextTheme.textTheme.labelSmall?.copyWith(color: AppColors.textSecondary)),
-      ],
     );
   }
 }

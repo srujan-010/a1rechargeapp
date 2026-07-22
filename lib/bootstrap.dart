@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import '../core/services/local_cache_service.dart';
 import '../core/utils/logger.dart';
 import '../core/config/app_config.dart';
+import '../core/constants/operator_registry.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -23,6 +24,8 @@ Future<void> bootstrap(Widget app) async {
   // Initialize environment and base URLs
   await AppConfig.init();
 
+  // Initialize Operator Registry
+  await OperatorRegistry.instance.initialize();
 
   // Lock orientation to portrait
   await SystemChrome.setPreferredOrientations([

@@ -4,6 +4,8 @@ const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { calculateCommission } = require('../utils/commissionEngine');
+require('dotenv').config({ path: '../.env' });
+const connectDB = require('../config/db');
 
 jest.mock('../utils/commissionEngine', () => ({
   calculateCommission: jest.fn(),
@@ -16,11 +18,11 @@ describe('Recharge Flow Atomicity Tests', () => {
   let mockUser;
 
   beforeAll(async () => {
-    await mongoose.connect('mongodb://localhost:27017/a1_recharge_test');
+    await connectDB();
   });
 
   afterAll(async () => {
-    await mongoose.connection.dropDatabase();
+    // Note: Removed dropDatabase() to prevent wiping the main DB if testing against it
     await mongoose.connection.close();
   });
 

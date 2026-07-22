@@ -25,8 +25,7 @@ const providerOperatorSchema = new mongoose.Schema(
     },
     plansInfoCode: {
       type: String,
-      required: false,
-      index: true,
+      default: '',
     },
     status: {
       type: Boolean,

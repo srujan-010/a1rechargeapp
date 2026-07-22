@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 dotenv.config();
+const connectDB = require('./config/db');
 
-mongoose.connect(process.env.MONGODB_URI).then(async () => {
+connectDB().then(async () => {
   console.log('Connected to MongoDB');
   const ProviderOperator = require('./models/ProviderOperator');
   

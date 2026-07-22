@@ -58,6 +58,18 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    providerStatus: {
+      type: String,
+      default: null,
+    },
+    serviceType: {
+      type: String,
+      default: 'mobile',
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

@@ -11,6 +11,7 @@ class Operator extends Equatable {
     required this.type,
     this.circle,
     this.shortCode,
+    this.planApiCode,
     this.isActive = true,
   });
 
@@ -20,7 +21,10 @@ class Operator extends Equatable {
   final OperatorType type;
   final String? circle;
   final String? shortCode;
+  final String? planApiCode;
   final bool isActive;
+
+  String? get code => shortCode;
 
   factory Operator.fromJson(Map<String, dynamic> json) => Operator(
         id: json['id'] as String? ?? json['_id'] as String? ?? '',
@@ -28,8 +32,9 @@ class Operator extends Equatable {
         logoUrl: json['logoUrl'] as String? ?? '',
         type: _parseType((json['type'] ?? json['serviceType']) as String?),
         circle: json['circle'] as String?,
-        shortCode: json['shortCode'] as String?,
-        isActive: json['isActive'] as bool? ?? true,
+        shortCode: json['shortCode'] as String? ?? json['code'] as String?,
+        planApiCode: json['plansInfoCode'] as String? ?? json['planApiCode'] as String?,
+        isActive: json['isActive'] as bool? ?? json['status'] as bool? ?? true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -39,10 +44,11 @@ class Operator extends Equatable {
         'type': type.name,
         'circle': circle,
         'shortCode': shortCode,
+        'planApiCode': planApiCode,
         'isActive': isActive,
       };
 
-  static OperatorType _parseType(String? raw) => switch (raw) {
+  static OperatorType _parseType(String? raw) => switch (raw?.trim().toLowerCase()) {
         'postpaid' => OperatorType.postpaid,
         'dth' => OperatorType.dth,
         _ => OperatorType.prepaid,

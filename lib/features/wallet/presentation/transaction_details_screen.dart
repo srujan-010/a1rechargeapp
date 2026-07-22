@@ -5,41 +5,116 @@ import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/app_text_theme.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/app_button.dart';
 import '../domain/models/wallet_transaction.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
+import '../../history/presentation/history_providers.dart';
 import 'widgets/share_receipt_bottom_sheet.dart';
 
 class TransactionDetailsScreen extends ConsumerWidget {
-  const TransactionDetailsScreen({super.key, required this.txnId});
+  const TransactionDetailsScreen({
+    super.key,
+    required this.txnId,
+    this.transaction,
+  });
   
   final String txnId;
+  final WalletTransaction? transaction;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recentTxns = ref.watch(recentTransactionsProvider).valueOrNull ?? [];
-    
-    // Find transaction by ID. If not found in recent, it might be in full history,
-    // but for this demo we assume it's loaded.
-    final WalletTransaction? txn = recentTxns.firstWhere(
-      (t) => t.id == txnId,
-      orElse: () => WalletTransaction.fakeList().firstWhere(
-        (t) => t.id == txnId,
-        orElse: () => WalletTransaction.fakeList().first,
-      ),
-    );
+    // 1. Resolve transaction: directly passed object first, then historyProvider, then recentProvider
+    WalletTransaction? txn = transaction;
 
     if (txn == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Transaction Details')),
-        body: const Center(child: Text('Transaction not found')),
+      final historyTxns = ref.watch(historyTransactionsProvider).valueOrNull ?? [];
+      txn = historyTxns.cast<WalletTransaction?>().firstWhere(
+        (t) => t?.id == txnId || t?.referenceId == txnId,
+        orElse: () => null,
       );
     }
 
-    final bool isSuccess = txn.status == TransactionStatus.success;
+    if (txn == null) {
+      final recentTxns = ref.watch(recentTransactionsProvider).valueOrNull ?? [];
+      txn = recentTxns.cast<WalletTransaction?>().firstWhere(
+        (t) => t?.id == txnId || t?.referenceId == txnId,
+        orElse: () => null,
+      );
+    }
+
+    // If transaction is null, show clear Error UI without fallback mocks!
+    if (txn == null) {
+      debugPrint('[TRANSACTION DETAILS] Error: Transaction not found for ID: $txnId');
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          title: const Text('Transaction Details'),
+          centerTitle: true,
+          backgroundColor: Colors.white,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.error_outline, size: 48, color: Color(0xFFDC2626)),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  'Transaction Not Found',
+                  style: AppTextTheme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'The requested transaction (ID: $txnId) could not be loaded.',
+                  textAlign: TextAlign.center,
+                  style: AppTextTheme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                AppButton(
+                  label: 'Back to History',
+                  onPressed: () => context.pop(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Print runtime details as requested
+    debugPrint('''
+[TRANSACTION DETAILS] Navigation Received:
+Selected Transaction:
+id: ${txn.id}
+type: ${txn.serviceType}
+amount: ₹${txn.amountPaise / 100}
+operator: ${txn.operatorName}
+mobile: ${txn.customerIdentifier}
+status: ${txn.status.name}
+reference: ${txn.referenceId}
+apiReference: ${txn.apiReference ?? 'N/A'}
+serviceType: ${txn.serviceType}
+''');
+
     final String amountStr = CurrencyFormatter.fromPaise(txn.amountPaise);
-    
+    final String readableServiceType = _formatServiceType(txn.serviceType);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -49,9 +124,10 @@ class TransactionDetailsScreen extends ConsumerWidget {
         centerTitle: true,
       ),
       body: SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: 120),
         child: Column(
           children: [
-            // Top Section
+            // Top Header Card
             Container(
               width: double.infinity,
               color: Colors.white,
@@ -81,10 +157,10 @@ class TransactionDetailsScreen extends ConsumerWidget {
                       type: MaterialType.transparency,
                       child: Text(
                         '${txn.isCredit ? '+' : '-'}$amountStr',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                          color: txn.isCredit ? const Color(0xFF10B981) : AppColors.textPrimary,
                         ),
                       ),
                     ),
@@ -121,7 +197,7 @@ class TransactionDetailsScreen extends ConsumerWidget {
             
             const SizedBox(height: AppSpacing.md),
 
-            // Details Card
+            // Main Details Card
             Container(
               margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
               decoration: BoxDecoration(
@@ -131,28 +207,31 @@ class TransactionDetailsScreen extends ConsumerWidget {
               ),
               child: Column(
                 children: [
-                  // Dynamic fields based on data existence
+                  _DetailRow(label: 'Recharge / Service Type', value: readableServiceType, isBold: true),
                   if (txn.operatorName.isNotEmpty)
                     _DetailRow(label: 'Operator / Biller', value: txn.operatorName),
                   if (txn.customerIdentifier.isNotEmpty)
-                    _DetailRow(label: 'Identifier / Mobile', value: txn.customerIdentifier, isBold: true),
+                    _DetailRow(label: 'Mobile / Subscriber ID', value: txn.customerIdentifier, isBold: true),
+                  _DetailRow(label: 'Amount', value: amountStr, isBold: true),
+                  _DetailRow(
+                    label: 'Status', 
+                    value: txn.status.name.toUpperCase(),
+                    valueColor: _getStatusColor(txn.status),
+                    isBold: true,
+                  ),
                   if (txn.commissionEarnedPaise > 0)
                     _DetailRow(
                       label: 'Commission Earned', 
                       value: '+${CurrencyFormatter.fromPaise(txn.commissionEarnedPaise)}',
                       valueColor: const Color(0xFF10B981),
+                      isBold: true,
                     ),
-                  if (txn.serviceType == 'wallet_topup')
-                    _DetailRow(label: 'Payment Method', value: txn.paymentMethod),
-                  if (txn.serviceType == 'commission' && txn.description != null)
-                    _DetailRow(label: 'Linked Transaction', value: txn.description!),
-
+                  _DetailRow(label: 'Payment Method', value: txn.paymentMethod.toUpperCase()),
                   const Divider(height: 1, color: Color(0xFFF1F5F9)),
                   
-                  // Common Fields
-                  _DetailRow(label: 'Transaction ID', value: txn.referenceId),
+                  _DetailRow(label: 'Order / Ref ID', value: txn.referenceId.isNotEmpty ? txn.referenceId : txn.id),
                   if (txn.apiReference != null && txn.apiReference!.isNotEmpty)
-                    _DetailRow(label: 'Bank / Operator Ref', value: txn.apiReference!),
+                    _DetailRow(label: 'Provider Transaction ID', value: txn.apiReference!, isBold: true),
                   _DetailRow(
                     label: 'Date & Time', 
                     value: DateFormat('dd MMM yyyy • hh:mm a').format(txn.completedAt),
@@ -166,6 +245,52 @@ class TransactionDetailsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+
+            // Failure Reason Card if Failed
+            if ((txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed) &&
+                txn.description != null &&
+                txn.description!.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Failure Reason',
+                            style: TextStyle(
+                              color: Color(0xFF991B1B),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            txn.description!,
+                            style: const TextStyle(
+                              color: Color(0xFF7F1D1D),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -193,7 +318,7 @@ class TransactionDetailsScreen extends ConsumerWidget {
                       context: context,
                       isScrollControlled: true,
                       backgroundColor: Colors.transparent,
-                      builder: (context) => ShareReceiptBottomSheet(transaction: txn),
+                      builder: (context) => ShareReceiptBottomSheet(transaction: txn!),
                     );
                   },
                 ),
@@ -217,43 +342,49 @@ class TransactionDetailsScreen extends ConsumerWidget {
     );
   }
 
+  String _formatServiceType(String type) {
+    return switch (type.toLowerCase()) {
+      'mobile' || 'mobile_recharge' => 'Mobile Recharge',
+      'dth' => 'DTH Recharge',
+      'bbps' => 'BBPS Bill Payment',
+      'wallet_topup' => 'Wallet Topup',
+      'commission' => 'Commission Credit',
+      'settlement' => 'Bank Settlement',
+      _ => type.toUpperCase(),
+    };
+  }
+
   IconData _getIcon(WalletTransaction txn) {
     if (txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed) return Icons.error_outline;
     
     final title = txn.transactionTitle.toLowerCase();
-    if (title.contains('commission')) return Icons.redeem; // 💰 Commission
-    if (title.contains('wallet')) return Icons.account_balance_wallet; // 💳 Wallet
-    if (title.contains('electricity')) return Icons.bolt; // ⚡ Electricity
-    if (title.contains('water')) return Icons.water_drop; // 💧 Water
-    if (title.contains('gas')) return Icons.local_fire_department; // 🔥 Gas
-    if (title.contains('broadband')) return Icons.wifi; // 🌐 Broadband
-    if (title.contains('dth')) return Icons.tv; // 📺 DTH
-    if (title.contains('mobile')) return Icons.phone_android; // 📱 Mobile
-    if (txn.isCredit) return Icons.arrow_downward; // Default Credit
+    final service = txn.serviceType.toLowerCase();
+    if (service == 'commission' || title.contains('commission')) return Icons.redeem;
+    if (service == 'wallet_topup' || title.contains('wallet')) return Icons.account_balance_wallet;
+    if (service == 'dth' || title.contains('dth')) return Icons.tv;
+    if (service == 'mobile' || service == 'mobile_recharge' || title.contains('mobile')) return Icons.phone_android;
+    if (service == 'bbps' || title.contains('electricity') || title.contains('water') || title.contains('gas')) return Icons.receipt_long;
+    if (txn.isCredit) return Icons.arrow_downward;
     
     return Icons.receipt_long;
   }
 
   Color _getIconColor(WalletTransaction txn) {
     if (txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed) {
-      return const Color(0xFFDC2626); // Red
+      return const Color(0xFFDC2626);
     }
     if (txn.status == TransactionStatus.pending) {
-      return const Color(0xFFF59E0B); // Orange
+      return const Color(0xFFF59E0B);
     }
     
-    final title = txn.transactionTitle.toLowerCase();
-    if (title.contains('commission')) return const Color(0xFF10B981); // Green
-    if (title.contains('wallet')) return const Color(0xFF8B5CF6); // Purple
-    if (title.contains('electricity')) return const Color(0xFFEAB308); // Yellow/Amber
-    if (title.contains('water')) return const Color(0xFF0EA5E9); // Light Blue
-    if (title.contains('gas')) return const Color(0xFFF97316); // Orange
-    if (title.contains('broadband')) return const Color(0xFF6366F1); // Indigo
-    if (title.contains('dth')) return const Color(0xFFF43F5E); // Rose
-    if (title.contains('mobile')) return const Color(0xFF3B82F6); // Blue
-    if (txn.isCredit) return const Color(0xFF10B981); // Default Credit
+    final service = txn.serviceType.toLowerCase();
+    if (service == 'commission') return const Color(0xFF10B981);
+    if (service == 'wallet_topup') return const Color(0xFF8B5CF6);
+    if (service == 'dth') return const Color(0xFFF43F5E);
+    if (service == 'mobile' || service == 'mobile_recharge') return const Color(0xFF3B82F6);
+    if (txn.isCredit) return const Color(0xFF10B981);
     
-    return const Color(0xFF3B82F6); // Default Blue
+    return const Color(0xFF3B82F6);
   }
 
   Color _getStatusColor(TransactionStatus status) {

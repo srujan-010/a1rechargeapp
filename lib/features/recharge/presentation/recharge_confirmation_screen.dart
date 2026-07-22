@@ -9,6 +9,7 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/pin_entry_widget.dart';
 import '../../commission/presentation/commission_providers.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
+import '../domain/models/operator.dart';
 import 'recharge_providers.dart';
 import '../../../core/models/app_exception.dart';
 import '../../../core/utils/upi_handler.dart';
@@ -114,12 +115,31 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
     final state = ref.watch(rechargeFlowProvider);
     final walletBalanceAsync = ref.watch(walletBalanceProvider);
 
+    final isDth = state.operator?.type == OperatorType.dth;
+
+    debugPrint('--- RECHARGE PAYMENT VALIDATION ---');
+    debugPrint('Service Type: ${state.operator?.type.name}');
+    debugPrint('Operator: ${state.operator?.name} (id: ${state.operator?.id})');
+    debugPrint('Operator Code: ${state.operator?.shortCode}');
+    debugPrint('Subscriber Number: ${state.phoneNumber}');
+    debugPrint('Amount: ${state.customAmountPaise} paise');
+    debugPrint('Circle: ${state.circle?.state} (id: ${state.circle?.id})');
+    debugPrint('Selected Pack: ${state.selectedPlan?.id}');
+    debugPrint('operator != null: ${state.operator != null}');
+    debugPrint('number != null: ${state.phoneNumber != null}');
+    debugPrint('amount > 0: ${state.customAmountPaise != null && state.customAmountPaise! > 0}');
+    debugPrint('circle != null: ${state.circle != null} (Required for Mobile, Optional for DTH)');
+
     if (state.phoneNumber == null || state.operator == null || state.customAmountPaise == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Confirm Recharge')),
         body: const Center(child: Text('Invalid recharge state.')),
       );
     }
+
+    final subtitleText = isDth 
+        ? state.operator!.name 
+        : (state.circle != null ? '${state.operator!.name} • ${state.circle!.state}' : state.operator!.name);
 
     final slabsAsync = ref.watch(activeCommissionSlabsProvider);
     double commissionEarnedPaise = 0;
@@ -191,7 +211,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(state.phoneNumber!, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          Text('${state.operator!.name} • ${state.circle ?? "Unknown"}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                          Text(subtitleText, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                         ],
                       ),
                     ),
