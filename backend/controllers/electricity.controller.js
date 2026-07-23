@@ -195,7 +195,11 @@ exports.fetchBill = async (req, res, next) => {
     if (isNaN(billerId)) {
       operator = await ElectricityOperator.findById(billerId);
     } else {
-      operator = await ElectricityOperator.findOne({ operatorCode: billerId });
+      operator = await ElectricityOperator.findOne({ 'planApi.operatorCode': billerId });
+      if (!operator) {
+        // Fallback to legacy field just in case
+        operator = await ElectricityOperator.findOne({ operatorCode: billerId });
+      }
     }
     const billerName = operator ? operator.name : 'Unknown Provider';
 

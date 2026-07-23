@@ -19,7 +19,13 @@ const electricityOperatorSchema = new mongoose.Schema({
     type: String,
     required: false
   },
-  operatorCode: { type: Number, required: true, unique: true },
+  operatorCode: { type: Number, required: true, unique: true }, // Keeping for backwards compat / UI mapping
+  planApi: {
+    operatorCode: { type: Number }
+  },
+  a1Topup: {
+    operatorCode: { type: String }
+  },
   serviceType: { type: String, default: 'electricity', index: true },
   category: { type: String, default: 'Electricity' },
   logo: { type: String },

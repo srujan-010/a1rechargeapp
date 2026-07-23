@@ -54,7 +54,7 @@ abstract final class AppConfig {
     }
 
     if (isDevelopment) {
-      _initializedBaseUrl = 'http://localhost:5000/api';
+      _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     } else {
       _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     }
