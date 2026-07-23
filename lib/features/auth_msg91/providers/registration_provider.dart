@@ -3,7 +3,7 @@ import '../repository/registration_repository.dart';
 import '../../../core/providers/core_providers.dart';
 
 final registrationRepositoryProvider = Provider<RegistrationRepository>((ref) {
-  return RegistrationRepository();
+  return RegistrationRepository(apiClient: ref.watch(apiClientProvider));
 });
 
 class RegistrationState {

@@ -1,15 +1,11 @@
-import 'package:dio/dio.dart';
-import '../../../core/config/app_config.dart';
+import '../../../core/services/api_client.dart';
+import '../../../core/models/app_exception.dart';
 
 class RegistrationRepository {
-  final Dio _dio;
+  final ApiClient _apiClient;
 
-  RegistrationRepository({Dio? dio}) 
-    : _dio = dio ?? Dio(BaseOptions(
-        baseUrl: AppConfig.baseUrl,
-        connectTimeout: AppConfig.connectTimeout,
-        receiveTimeout: AppConfig.receiveTimeout,
-      ));
+  RegistrationRepository({required ApiClient apiClient}) 
+    : _apiClient = apiClient;
 
   Future<Map<String, dynamic>> registerRetailer({
     required String tempSessionToken,
@@ -23,13 +19,11 @@ class RegistrationRepository {
     String? referralCode,
   }) async {
     try {
-      final response = await _dio.post(
+      final response = await _apiClient.post<Map<String, dynamic>>(
         '/auth/register',
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $tempSessionToken',
-          },
-        ),
+        headers: {
+          'Authorization': 'Bearer $tempSessionToken',
+        },
         data: {
           'name': name,
           'shopName': shopName,
@@ -42,9 +36,8 @@ class RegistrationRepository {
         },
       );
       return response.data;
-    } on DioException catch (e) {
-      final message = e.response?.data?['message'] ?? 'Registration failed';
-      throw Exception(message);
+    } on AppException catch (e) {
+      throw Exception(e.message);
     } catch (e) {
       throw Exception('An unexpected error occurred during registration');
     }

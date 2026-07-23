@@ -17,7 +17,7 @@ enum Environment { dev, staging, prod }
 abstract final class AppConfig {
   // ─── Dart-define injection (compile-time constants) ───────────────
   static const String _env =
-      String.fromEnvironment('ENV', defaultValue: 'dev');
+      String.fromEnvironment('ENV', defaultValue: '');
 
   static const String _baseUrl = String.fromEnvironment(
     'BASE_URL',
@@ -37,11 +37,18 @@ abstract final class AppConfig {
   );
 
   // ─── Public accessors ─────────────────────────────────────────────
-  static Environment get environment => switch (_env) {
-        'prod' => Environment.prod,
-        'staging' => Environment.staging,
-        _ => Environment.dev,
-      };
+  static Environment get environment {
+    switch (_env) {
+      case 'prod':
+        return Environment.prod;
+      case 'staging':
+        return Environment.staging;
+      case 'dev':
+        return Environment.dev;
+      default:
+        return kReleaseMode ? Environment.prod : Environment.dev;
+    }
+  }
 
   static bool get isProduction => environment == Environment.prod;
   static bool get isDevelopment => environment == Environment.dev;

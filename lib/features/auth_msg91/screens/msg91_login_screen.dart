@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/providers/core_providers.dart';
 import '../providers/msg91_auth_provider.dart';
 import 'msg91_webview_screen.dart';
 
@@ -29,6 +30,7 @@ class _Msg91LoginScreenState extends ConsumerState<Msg91LoginScreen> {
   bool _isPhoneValid = false;
   bool _isFocused = false;
   bool _isButtonPressed = false;
+  bool _isCheckingHealth = false;
 
   @override
   void initState() {
@@ -88,11 +90,30 @@ class _Msg91LoginScreenState extends ConsumerState<Msg91LoginScreen> {
     );
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_isPhoneValid) {
       HapticFeedback.mediumImpact();
       _focusNode.unfocus();
       final phone = _phoneController.text.trim();
+      
+      setState(() => _isCheckingHealth = true);
+      final apiClient = ref.read(apiClientProvider);
+      final isHealthy = await apiClient.checkHealth();
+      
+      if (!mounted) return;
+      setState(() => _isCheckingHealth = false);
+      
+      if (!isHealthy) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to connect to the server. Please check your internet connection or try again later.'),
+            backgroundColor: Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      
       _launchMsg91Widget(phone);
     }
   }
@@ -327,7 +348,7 @@ class _Msg91LoginScreenState extends ConsumerState<Msg91LoginScreen> {
                                   ] : [],
                                 ),
                                 child: Center(
-                                  child: isLoading
+                                  child: isLoading || _isCheckingHealth
                                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.0))
                                       : Row(
                                           mainAxisAlignment: MainAxisAlignment.center,

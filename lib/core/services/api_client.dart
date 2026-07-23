@@ -90,6 +90,7 @@ class ApiClient {
             AppLogger.error('URL: ${error.requestOptions.uri}', tag: 'HTTP');
             AppLogger.error('Method: ${error.requestOptions.method}', tag: 'HTTP');
             AppLogger.error('Exception: ${error.message}', tag: 'HTTP');
+            AppLogger.error('Original Error: ${error.error}', tag: 'HTTP');
             AppLogger.error('Timeout Type: ${error.type.name}', tag: 'HTTP');
             AppLogger.error('Stack Trace: ${error.stackTrace}', tag: 'HTTP');
             AppLogger.error('Response Status: ${error.response?.statusCode}', tag: 'HTTP');
@@ -220,6 +221,22 @@ class ApiClient {
     }
   }
 
+  // ─── Health Check ─────────────────────────────────────────────────
+  
+  /// Pings the backend to verify connectivity before critical flows (like OTP request)
+  Future<bool> checkHealth() async {
+    try {
+      final response = await _dio.get('/health', options: Options(
+        receiveTimeout: const Duration(seconds: 15),
+        sendTimeout: const Duration(seconds: 15),
+      ));
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Health check failed', tag: 'ApiClient', error: e);
+      return false;
+    }
+  }
+
   // ─── HTTP Methods ─────────────────────────────────────────────────
 
   Future<ApiResponse<T>> get<T>(
@@ -245,6 +262,7 @@ class ApiClient {
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
     T Function(Object? json)? fromJson,
   }) async {
     try {
@@ -252,6 +270,7 @@ class ApiClient {
         path,
         data: data,
         queryParameters: queryParameters,
+        options: headers != null ? Options(headers: headers) : null,
       );
       return ApiResponse<T>.fromJson(response.data!, fromJson);
     } on DioException catch (e) {

@@ -4,7 +4,7 @@ import '../repository/msg91_auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
 
 final msg91AuthRepositoryProvider = Provider<Msg91AuthRepository>((ref) {
-  return Msg91AuthRepository();
+  return Msg91AuthRepository(apiClient: ref.watch(apiClientProvider));
 });
 
 class Msg91AuthState {

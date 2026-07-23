@@ -5,7 +5,7 @@ void main() async {
   const baseUrl = 'https://planapi.in/api';
   const memberId = '7315';
   const password = 'A1recharge';
-  const mobile = '9876543210'; // Dummy number for testing
+  const mobile = '9100329521'; // Dummy number for testing
 
   print('==================================================');
   print('STEP 1: OperatorFetchNew Raw Response');

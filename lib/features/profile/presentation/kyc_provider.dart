@@ -59,7 +59,7 @@ class KycNotifier extends StateNotifier<KycState> {
         state = state.copyWith(status: KycStatus.idle);
       }
     } catch (e) {
-      if (e is DioException && e.response?.statusCode == 404) {
+      if (e is AppException && e.message.contains('404')) {
         state = state.copyWith(status: KycStatus.idle, kycModel: KycModel());
       } else {
         state = state.copyWith(status: KycStatus.error, errorMessage: e.toString());
@@ -105,8 +105,8 @@ class KycNotifier extends StateNotifier<KycState> {
       }
     } catch (e) {
       String msg = 'Failed to save KYC';
-      if (e is DioException && e.response?.data != null && e.response!.data['message'] != null) {
-        msg = e.response!.data['message'];
+      if (e is AppException) {
+        msg = e.message;
       }
       state = state.copyWith(status: KycStatus.idle, errorMessage: msg);
       return false;
