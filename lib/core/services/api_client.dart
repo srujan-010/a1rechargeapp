@@ -98,20 +98,9 @@ class ApiClient {
             AppLogger.error('Response Body: [OMITTED]', tag: 'HTTP');
             AppLogger.error('===============================================', tag: 'HTTP');
 
-            if (error.response?.statusCode == 401 && !_isRefreshing) {
-              _isRefreshing = true;
-              try {
-                final refreshed = await _refreshToken();
-                _isRefreshing = false;
-                if (refreshed) {
-                  final token = await secureStorage.getAccessToken();
-                  error.requestOptions.headers['Authorization'] = 'Bearer $token';
-                  final retryResponse = await _dio.fetch(error.requestOptions);
-                  return handler.resolve(retryResponse);
-                }
-              } catch (_) {
-                _isRefreshing = false;
-              }
+            if (error.response?.statusCode == 401) {
+              AppLogger.warning('Token expired or invalid (HTTP 401) — clearing session', tag: 'Auth');
+              await secureStorage.clearSession();
             }
 
             final isColdStartError = 
@@ -153,71 +142,6 @@ class ApiClient {
           error: true,
         ),
       );
-    }
-  }
-
-  Future<bool> _refreshToken() async {
-    final refreshToken = await secureStorage.getRefreshToken();
-    if (refreshToken == null) return false;
-
-    try {
-      final response = await Dio(_baseOptions).post(
-        '${AppConfig.baseUrl}/auth/refresh-token',
-        data: {'refreshToken': refreshToken},
-      );
-      final data = response.data as Map<String, dynamic>?;
-      if (data == null) return false;
-
-      final newToken = data['data']?['accessToken'] as String?;
-      final newRefresh = data['data']?['refreshToken'] as String?;
-      final expiryStr = data['data']?['expiresAt'] as String?;
-
-      if (newToken == null) return false;
-
-      final expiry = expiryStr != null
-          ? DateTime.tryParse(expiryStr) ?? DateTime.now().add(const Duration(hours: 1))
-          : DateTime.now().add(const Duration(hours: 1));
-
-      await secureStorage.saveTokens(
-        accessToken: newToken,
-        refreshToken: newRefresh ?? refreshToken,
-        expiry: expiry,
-      );
-
-      AppLogger.info('Token refreshed successfully', tag: 'Auth');
-      return true;
-    } on DioException catch (e) {
-      // Distinguish backend rejection (4xx) from network errors.
-      // Only clear the session if the backend explicitly rejected the refresh token.
-      // DO NOT clear the session on connectivity/timeout errors — the user may be offline.
-      final statusCode = e.response?.statusCode;
-      final isBackendRejection = statusCode != null &&
-          statusCode >= 400 &&
-          statusCode < 500 &&
-          e.type == DioExceptionType.badResponse;
-
-      if (isBackendRejection) {
-        AppLogger.warning(
-          'Refresh token explicitly rejected by server (HTTP $statusCode) — clearing session',
-          tag: 'Auth',
-        );
-        await secureStorage.clearSession();
-      } else {
-        AppLogger.warning(
-          'Token refresh failed due to network error (type: ${e.type.name}) — session preserved',
-          tag: 'Auth',
-        );
-        // Do NOT call clearSession() here — preserve the session for retry.
-      }
-      return false;
-    } catch (e) {
-      // Unknown exception (not a Dio error) — preserve session, treat as network failure.
-      AppLogger.error(
-        'Token refresh failed with unknown error — session preserved',
-        tag: 'Auth',
-        error: e,
-      );
-      return false;
     }
   }
 

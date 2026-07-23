@@ -10,7 +10,6 @@ abstract final class ApiEndpoints {
   static const String setupMpin = '/auth/setup-mpin';
   static const String verifyMpin = '/auth/verify-mpin';
   static const String changeMpin = '/auth/change-mpin';
-  static const String refreshToken = '/auth/refresh-token';
   static const String logout = '/auth/logout';
   static const String sessionCheck = '/auth/me';
 

@@ -185,16 +185,27 @@ const verifyForgotOtp = async (req, res, next) => {
       // MSG91 Widget verification
       try {
         const msg91AuthKey = process.env.MSG91_AUTH_KEY;
-        const msg91Response = await axios.post(
-          'https://api.msg91.com/api/v5/widget/verifyAccessToken',
-          { authkey: msg91AuthKey, access_token: accessToken }
-        );
+        console.log('[MSG91] Initialization Status: Checking environment variables');
+        console.log('[MSG91] Loaded env keys (no secrets):', Object.keys(process.env).filter(k => k.startsWith('MSG91')));
+
+        const msg91Url = 'https://api.msg91.com/api/v5/widget/verifyAccessToken';
+        const msg91Payload = { 'access-token': accessToken };
+        const msg91Headers = {
+          'Content-Type': 'application/json',
+          'authkey': msg91AuthKey
+        };
+
+        const msg91Response = await axios.post(msg91Url, msg91Payload, { headers: msg91Headers });
+
+        console.log('[MSG91] Raw response body:', JSON.stringify(msg91Response.data));
+
         if (msg91Response.data.type === 'success' || msg91Response.data.message === 'Token successfully verified.') {
           isVerified = true;
         } else {
           throw new Error('MSG91 Token verification failed');
         }
       } catch (err) {
+        console.error('[MSG91] Verification Error:', err.response?.data || err.message);
         res.status(401);
         throw new Error('Invalid or expired MSG91 access token.');
       }
