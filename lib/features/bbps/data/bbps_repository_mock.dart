@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:intl/intl.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/models/app_exception.dart';
 import '../../../core/utils/result.dart';
@@ -8,6 +9,17 @@ import '../domain/models/bbps_models.dart';
 
 class BbpsRepositoryMock implements BbpsRepository {
   final _random = Random();
+
+  BbpsRepositoryMock();
+
+  @override
+  Future<Result<RechargeReceipt, AppException>> checkStatus({
+    required String category,
+    required String orderId,
+  }) async {
+    await _delay();
+    return Success(RechargeReceipt.fake());
+  }
 
   Future<void> _delay() async {
     final ms = AppConfig.mockLatencyMin.inMilliseconds +
@@ -160,6 +172,7 @@ class BbpsRepositoryMock implements BbpsRepository {
 
   @override
   Future<Result<BillDetails, AppException>> fetchBill({
+    required String category,
     required String billerId,
     required Map<String, String> parameters,
   }) async {
@@ -173,19 +186,20 @@ class BbpsRepositoryMock implements BbpsRepository {
       ));
     }
     
-    final billNumber = 'B${_random.nextInt(99999999).toString().padLeft(8, '0')}';
-    final amountPaise = (100 + _random.nextInt(4900)) * 100; // Between Rs 100 and 5000
+    final operatorName = 'Demo Provider';
+    final amount = (100 + _random.nextInt(4900)) * 100;
     
     final billDetails = BillDetails(
       billerId: billerId,
-      billerName: 'Demo Provider',
-      customerName: 'Demo Customer',
-      billAmountPaise: amountPaise,
-      rawBillDate: DateTime.now().subtract(const Duration(days: 5)).toIso8601String(),
-      rawDueDate: DateTime.now().add(const Duration(days: 5)).toIso8601String(),
+      billerName: operatorName,
+      category: category,
+      customerName: 'Test User',
+      billAmountPaise: amount,
+      rawBillDate: DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 5))),
+      rawDueDate: DateFormat('yyyy-MM-dd').format(DateTime.now().add(const Duration(days: 10))),
       parsedBillDate: DateTime.now().subtract(const Duration(days: 5)),
-      parsedDueDate: DateTime.now().add(const Duration(days: 5)),
-      billNumber: 'MOCK${parameters.values.first}',
+      parsedDueDate: DateTime.now().add(const Duration(days: 10)),
+      billNumber: 'BILL${DateTime.now().millisecondsSinceEpoch}',
     );
     
     return Success(billDetails);

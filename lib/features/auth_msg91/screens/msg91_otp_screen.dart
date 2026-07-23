@@ -59,14 +59,11 @@ class _Msg91OtpScreenState extends ConsumerState<Msg91OtpScreen> with SingleTick
   }
 
   void _verifyOtp(String otp) {
-    if (otp.length == 4 || otp.length == 6) { // MSG91 can be 4 or 6 depending on config
+    if (otp.length >= 4) { // MSG91 token / OTP input
       setState(() => _hasError = false);
       HapticFeedback.mediumImpact();
       _focusNode.unfocus();
-      ref.read(msg91AuthProvider.notifier).verifyOtp(
-        widget.phone,
-        otp,
-      );
+      ref.read(msg91AuthProvider.notifier).verifyAccessToken(otp);
     }
   }
 

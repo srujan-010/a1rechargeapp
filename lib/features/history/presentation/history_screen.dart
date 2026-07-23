@@ -588,6 +588,7 @@ class _PremiumHistoryTile extends StatelessWidget {
     if (title.contains('electricity')) return const Color(0xFFEAB308); // Yellow/Amber
     if (title.contains('water')) return const Color(0xFF0EA5E9); // Light Blue
     if (title.contains('gas')) return const Color(0xFFF97316); // Orange
+    if (title.contains('fastag')) return const Color(0xFF00838F); // Teal
     if (title.contains('broadband')) return const Color(0xFF6366F1); // Indigo
     if (title.contains('dth')) return const Color(0xFFF43F5E); // Rose
     if (title.contains('mobile')) return const Color(0xFF3B82F6); // Blue
@@ -605,6 +606,7 @@ class _PremiumHistoryTile extends StatelessWidget {
     if (title.contains('electricity')) return Icons.bolt; // ⚡ Electricity
     if (title.contains('water')) return Icons.water_drop; // 💧 Water
     if (title.contains('gas')) return Icons.local_fire_department; // 🔥 Gas
+    if (title.contains('fastag')) return Icons.directions_car; // 🚗 FASTag
     if (title.contains('broadband')) return Icons.wifi; // 🌐 Broadband
     if (title.contains('dth')) return Icons.tv; // 📺 DTH
     if (title.contains('mobile')) return Icons.phone_android; // 📱 Mobile

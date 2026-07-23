@@ -6,6 +6,7 @@ const generateRetailerId = require('../utils/generateRetailerId');
 const Notification = require('../models/Notification');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 const { getApp } = require('../config/firebase');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -13,6 +14,12 @@ const { getAuth } = require('firebase-admin/auth');
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d',
+  });
+};
+
+const generateTempSessionToken = (phone) => {
+  return jwt.sign({ phone }, process.env.JWT_SECRET, {
+    expiresIn: '15m',
   });
 };
 
@@ -243,105 +250,86 @@ const firebaseLogin = async (req, res, next) => {
 
 // @desc    Complete retailer onboarding / registration
 // @route   POST /api/auth/register
-// @access  Public (protected by Firebase ID token)
+// @access  Public (Protected by tempSessionToken)
 const registerRetailer = async (req, res, next) => {
   try {
-    const { idToken } = req.body;
-
-    if (!idToken) {
-      res.status(400);
-      throw new Error('No Firebase ID token provided');
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+    
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No session token provided for registration' });
     }
 
-    let decodedToken;
+    let decoded;
     try {
-      const app = getApp();
-      decodedToken = await getAuth(app).verifyIdToken(idToken);
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {
-      console.error('Firebase ID token verification failed:', error.message);
-      res.status(401);
-      throw new Error('Invalid Firebase ID token: ' + error.message);
+      return res.status(401).json({ success: false, message: 'Invalid or expired registration session token' });
     }
 
-    const { uid, phone_number } = decodedToken;
+    const phone = decoded.phone;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Invalid session token payload' });
+    }
 
-    // Re-check: never double-create.
-    let existing = await User.findOne({ firebaseUid: uid });
-    if (!existing) existing = await User.findOne({ phone: phone_number });
+    // Verify mobile is still unused
+    const existing = await User.findOne({ phone });
     if (existing) {
-      const response = await buildAuthResponse(existing);
-      return res.status(200).json(response);
+      return res.status(400).json({ success: false, message: 'User already exists with this mobile number' });
     }
 
     const {
       name,
-      email,
       shopName,
-      shopAddress,
-      city,
+      email,
+      address,
       state,
+      district,
       pincode,
-      aadhaarNumber,
-      panNumber,
-      gstNumber,
-      bank,
-      mpin,
+      referralCode
     } = req.body;
 
-    if (!name || !mpin || !bank?.accountNumber || !bank?.ifsc) {
-      res.status(422);
-      throw new Error('Missing required registration fields');
+    if (!name || !shopName || !address) {
+      return res.status(422).json({ success: false, message: 'Missing required registration fields' });
     }
 
     const retailerId = await generateRetailerId();
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedMpin = await bcrypt.hash(mpin, salt);
-
     const user = await User.create({
       retailerId,
-      firebaseUid: uid,
-      phone: phone_number,
+      phone,
       name: name.trim(),
       email: email ? email.trim().toLowerCase() : null,
-      shopName: shopName?.trim() ?? null,
-      shopAddress: shopAddress?.trim() ?? null,
-      city: city?.trim() ?? null,
+      shopName: shopName.trim(),
+      shopAddress: address.trim(),
+      city: district?.trim() ?? null,
       state: state?.trim() ?? null,
       pincode: pincode?.trim() ?? null,
-      aadhaarNumber: aadhaarNumber?.trim() ?? null,
-      panNumber: panNumber?.trim().toUpperCase() ?? null,
-      gstNumber: gstNumber?.trim().toUpperCase() ?? null,
-      mpinHash: hashedMpin,
-      kycStatus: 'pending',
-      isOnboarded: true,
-      isVerified: false,
+      referredBy: referralCode?.trim() ?? null,
+      kycStatus: 'notStarted',
+      isOnboarded: false,
+      isVerified: true,
+      role: 'retailer',
+      status: 'active'
     });
 
-    await Bank.create({
-      userId: user._id,
-      accountHolderName: bank.accountHolderName?.trim(),
-      bankName: bank.bankName?.trim(),
-      accountNumber: bank.accountNumber?.trim(),
-      ifsc: bank.ifsc?.trim().toUpperCase(),
-    });
-
-    await Kyc.create({
-      userId: user._id,
-      aadhaarNumber: aadhaarNumber?.trim() ?? null,
-      panNumber: panNumber?.trim().toUpperCase() ?? null,
-      gstNumber: gstNumber?.trim().toUpperCase() ?? null,
-      status: 'pending',
-      submittedAt: new Date(),
-    });
-
-    await Wallet.create({
+    const wallet = await Wallet.create({
       userId: user._id,
       balancePaise: 0,
     });
 
-    user.lastLogin = new Date();
-    await user.save();
+    const WalletLedger = require('../models/WalletLedger');
+    await WalletLedger.create({
+      userId: user._id,
+      transactionType: 'CREDIT',
+      amount: 0,
+      balanceAfter: 0,
+      referenceType: 'MANUAL',
+      referenceId: user._id, // Using user ID as initial reference
+      description: 'Account Created',
+    });
 
     await Notification.create({
       userId: user._id,
@@ -352,9 +340,20 @@ const registerRetailer = async (req, res, next) => {
       action: 'ROUTE_KYC'
     });
 
-    const response = await buildAuthResponse(user);
-    return res.status(201).json(response);
+    const jwtToken = generateToken(user._id);
+    
+    // We don't have Bank or Kyc yet, but buildProfile expects them
+    const bank = null;
+    const kyc = null;
+    const profile = buildProfile(user, bank, wallet, kyc);
+
+    return res.status(201).json({
+      success: true,
+      token: jwtToken,
+      user: profile,
+    });
   } catch (error) {
+    console.error('[REGISTRATION ERROR]', error);
     next(error);
   }
 };
@@ -439,6 +438,205 @@ const changeMpin = async (req, res, next) => {
   }
 };
 
+// @desc    Authenticate/Register user via MSG91 OTP Widget v5 Access Token
+// @route   POST /api/auth/msg91-login
+// @access  Public
+const msg91Login = async (req, res, next) => {
+  const reqId = Math.random().toString(36).substring(7);
+  console.log(`[MSG91 LOGIN][${reqId}] 🏁 Request started`);
+  console.time(`msg91Login_total_${reqId}`);
+
+  try {
+    const { accessToken } = req.body;
+
+    if (!accessToken) {
+      console.log(`[MSG91 LOGIN][${reqId}] ❌ Missing accessToken`);
+      return res.status(400).json({
+        success: false,
+        message: 'accessToken is required',
+      });
+    }
+
+    const authKey = process.env.MSG91_AUTH_KEY;
+    const maskedAuthKey = authKey ? authKey.substring(0, 6) + '*'.repeat(authKey.length - 6) : 'NO_KEY';
+    
+    console.log('════════════════════════════════════════════════════════════════');
+    console.log(`[MSG91 LOGIN][${reqId}] Incoming Flutter Request Body:`, JSON.stringify(req.body));
+    console.log(`[MSG91 LOGIN][${reqId}] Auth Key configured: ` + (authKey ? 'YES' : 'NO') + ' (Masked: ' + maskedAuthKey + ')');
+
+    if (!authKey) {
+      console.log(`[MSG91 LOGIN][${reqId}] ❌ MSG91_AUTH_KEY missing`);
+      return res.status(500).json({
+        success: false,
+        message: 'MSG91_AUTH_KEY is not configured on server',
+      });
+    }
+
+    const msg91Url = 'https://api.msg91.com/api/v5/widget/verifyAccessToken';
+    const msg91Payload = { 'access-token': accessToken };
+    const msg91Headers = {
+      'Content-Type': 'application/json',
+      'authkey': authKey
+    };
+
+    console.log(`[MSG91 LOGIN][${reqId}] POST URL:`, msg91Url);
+    console.log(`[MSG91 LOGIN][${reqId}] Request Headers:`, JSON.stringify({ ...msg91Headers, 'authkey': maskedAuthKey }));
+    
+    let msg91Response;
+    try {
+      console.log(`[MSG91 LOGIN][${reqId}] ⏳ Calling MSG91 API...`);
+      console.time(`msg91_api_call_${reqId}`);
+      
+      msg91Response = await axios.post(
+        msg91Url,
+        msg91Payload,
+        { 
+          headers: msg91Headers,
+          timeout: 8000 // 8 second timeout to prevent hanging forever
+        }
+      );
+      
+      console.timeEnd(`msg91_api_call_${reqId}`);
+      console.log(`[MSG91 LOGIN][${reqId}] ✅ MSG91 API returned successfully`);
+    } catch (error) {
+      console.timeEnd(`msg91_api_call_${reqId}`);
+      console.log(`[MSG91 LOGIN][${reqId}] ❌ Axios Error making MSG91 request:`, error.message);
+      
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+         return res.status(504).json({
+            success: false,
+            message: 'Gateway Timeout: MSG91 API took too long to respond'
+         });
+      }
+
+      if (error.response) {
+         msg91Response = error.response; 
+      } else {
+         throw error;
+      }
+    }
+
+    const msgData = msg91Response.data || {};
+    
+    console.log(`[MSG91 LOGIN][${reqId}] MSG91 verification HTTP Status:`, msg91Response.status);
+    console.log(`[MSG91 LOGIN][${reqId}] MSG91 verification Response Headers:`, JSON.stringify(msg91Response.headers));
+    
+    const isSuccess = 
+       msgData.type === 'success' || 
+       msgData.status === 'success' || 
+       msgData.success === true || 
+       msgData.code === 200 || 
+       msgData.code === 201 ||
+       (msgData.message && typeof msgData.message === 'string' && msgData.message.toLowerCase().includes('success'));
+
+    if (!isSuccess) {
+       console.log(`[MSG91 LOGIN][${reqId}] ❌ Verification failed. Returning raw response to Flutter.`);
+       return res.status(401).json({
+         success: false,
+         debugResponse: msgData, 
+         message: msgData.message || 'Verification failed (see debugResponse)'
+       });
+    }
+
+    const findPhone = (obj) => {
+       if (!obj || typeof obj !== 'object') return null;
+       for (const key of Object.keys(obj)) {
+          const val = obj[key];
+          if (typeof val === 'string' || typeof val === 'number') {
+             let strVal = String(val).replace(/\D/g, '');
+             if (strVal.length === 10) return strVal;
+             if (strVal.length > 10 && strVal.startsWith('91')) {
+                strVal = strVal.slice(-10);
+                if (strVal.length === 10) return strVal;
+             }
+          } else if (typeof val === 'object') {
+             const found = findPhone(val);
+             if (found) return found;
+          }
+       }
+       return null;
+    };
+
+    const phone = findPhone(msgData);
+
+    if (!phone) {
+       console.log(`[MSG91 LOGIN][${reqId}] ❌ Phone number not found in successful response.`);
+       return res.status(400).json({
+         success: false,
+         message: 'Verification succeeded but phone number could not be extracted',
+         debugResponse: msgData
+       });
+    }
+
+    console.log(`[MSG91 LOGIN][${reqId}] ✅ Verified phone number extracted: ${phone}`);
+    console.log(`[MSG91 LOGIN][${reqId}] ⏳ Querying MongoDB for user...`);
+    console.time(`mongodb_query_${reqId}`);
+
+    let user = await User.findOne({ phone }).maxTimeMS(5000);
+
+    if (!user) {
+      console.log(`[MSG91 LOGIN][${reqId}] User not found for phone ${phone}. Returning tempSessionToken for registration.`);
+      const tempSessionToken = generateTempSessionToken(phone);
+      
+      console.timeEnd(`mongodb_query_${reqId}`);
+      console.timeEnd(`msg91Login_total_${reqId}`);
+      console.log(`[MSG91 LOGIN][${reqId}] 🏁 Request successfully completed (New User).`);
+      
+      return res.status(200).json({
+        success: true,
+        isNewUser: true,
+        mobile: phone,
+        tempSessionToken,
+      });
+    }
+
+    user.lastLogin = new Date();
+    await user.save();
+
+    await Notification.create({
+      userId: user._id,
+      title: 'New Login Detected',
+      message: 'Logged in via MSG91 OTP Widget.',
+      category: 'SYSTEM',
+      priority: 'LOW',
+    });
+
+    const jwtToken = generateToken(user._id);
+
+    const [bank, wallet, kyc] = await Promise.all([
+      Bank.findOne({ userId: user._id }).maxTimeMS(5000),
+      Wallet.findOne({ userId: user._id }).maxTimeMS(5000),
+      Kyc.findOne({ userId: user._id }).maxTimeMS(5000),
+    ]);
+    
+    console.timeEnd(`mongodb_query_${reqId}`);
+    console.log(`[MSG91 LOGIN][${reqId}] ✅ MongoDB operations completed`);
+
+    const profile = buildProfile(user, bank, wallet, kyc);
+
+    console.timeEnd(`msg91Login_total_${reqId}`);
+    console.log(`[MSG91 LOGIN][${reqId}] 🏁 Request successfully completed (Existing User). Sending response.`);
+
+    return res.status(200).json({
+      success: true,
+      isNewUser: false,
+      token: jwtToken,
+      user: profile,
+    });
+  } catch (error) {
+    console.timeEnd(`msg91Login_total_${reqId}`);
+    console.error(`[MSG91 LOGIN][${reqId}] ❌ Unexpected Server Error:`, error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Internal Server Error during MSG91 login',
+        error: error.message
+      });
+    }
+    next(error);
+  }
+};
+
 module.exports = {
   loginUser,
   verifyOtp,
@@ -447,4 +645,5 @@ module.exports = {
   firebaseLogin,
   registerRetailer,
   getMe,
+  msg91Login,
 };

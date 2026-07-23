@@ -14,8 +14,9 @@ import '../features/auth/screens/splash_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/otp_screen.dart';
-import '../features/auth/screens/registration_screen.dart';
+import '../features/auth/screens/registration_screen.dart' as legacy_reg;
 import '../features/auth_msg91/screens/msg91_login_screen.dart';
+import '../features/auth_msg91/screens/registration_screen.dart';
 import '../features/auth_msg91/screens/msg91_otp_screen.dart';
 // import '../features/authentication/presentation/mpin_setup_screen.dart';
 // import '../features/authentication/presentation/biometric_prompt_screen.dart';
@@ -39,6 +40,19 @@ import '../features/dth/presentation/dth_confirmation_screen.dart';
 import '../features/dth/presentation/dth_receipt_screen.dart';
 import '../features/bbps/presentation/bbps_screen.dart';
 import '../features/bbps/presentation/bbps_state_selection_screen.dart';
+
+import '../features/gas/presentation/screens/gas_operator_selection_screen.dart';
+import '../features/gas/presentation/screens/gas_fetch_screen.dart';
+import '../features/gas/presentation/screens/gas_pay_confirm_screen.dart';
+import '../features/gas/domain/models/gas_models.dart';
+
+import '../features/fastag/presentation/screens/fastag_operator_selection_screen.dart';
+import '../features/fastag/presentation/screens/fastag_fetch_screen.dart';
+import '../features/fastag/presentation/screens/fastag_recharge_amount_screen.dart';
+import '../features/fastag/presentation/screens/fastag_pay_confirm_screen.dart';
+import '../features/fastag/presentation/screens/fastag_pay_confirm_screen.dart';
+
+import '../features/commission/presentation/commission_slab_screen.dart';
 import '../features/bbps/presentation/bbps_biller_screen.dart';
 import '../features/bbps/presentation/bbps_fetch_screen.dart';
 import '../features/bbps/presentation/bbps_pay_confirm_screen.dart';
@@ -59,7 +73,6 @@ import '../features/loan/presentation/loan_screen.dart';
 import '../features/loan/presentation/loan_emi_screen.dart';
 import '../features/notifications/presentation/notifications_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
-import '../features/profile/presentation/profile_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
 import '../features/settings/presentation/privacy_policy_screen.dart';
 import '../features/settings/presentation/terms_conditions_screen.dart';
@@ -71,7 +84,6 @@ import '../features/profile/presentation/bank_details_screen.dart';
 import '../features/profile/presentation/add_bank_screen.dart';
 import '../features/profile/presentation/kyc_screen.dart';
 import '../features/profile/presentation/personal_info_screen.dart';
-import '../features/commission/presentation/commission_slab_screen.dart';
 import 'shell_scaffold.dart';
 
 // ─── Router Provider ──────────────────────────────────────────────────────────
@@ -165,9 +177,23 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return _slideUpPage(
             state: state,
-            child: RegistrationScreen(
+            child: legacy_reg.RegistrationScreen(
               phone: extra['phone'] ?? '',
               firebaseUid: extra['firebaseUid'] ?? '',
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: RouteNames.registration,
+        name: 'registration',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return _slideUpPage(
+            state: state,
+            child: RegistrationScreen(
+              mobile: extra['mobile'] ?? '',
+              tempSessionToken: extra['tempSessionToken'] ?? '',
             ),
           );
         },
@@ -452,6 +478,59 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (c, s) {
           final billerId = s.pathParameters['billerId'] ?? '';
           return _slideUpPage(state: s, child: BbpsPayConfirmScreen(billerId: billerId));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.gas,
+        name: 'gas',
+        pageBuilder: (c, s) => _slideRightPage(state: s, child: const GasOperatorSelectionScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.gasBillFetch,
+        name: 'gas-fetch',
+        pageBuilder: (c, s) {
+          final operator = s.extra as GasOperator?;
+          if (operator == null) {
+            return _slideRightPage(state: s, child: const Scaffold(body: Center(child: Text('Invalid Provider'))));
+          }
+          return _slideRightPage(state: s, child: GasFetchScreen(operator: operator));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.gasPayConfirm,
+        name: 'gas-pay',
+        pageBuilder: (c, s) {
+          final billerId = s.pathParameters['billerId'] ?? '';
+          return _slideUpPage(state: s, child: GasPayConfirmScreen(billerId: billerId));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.fastag,
+        name: 'fastag',
+        pageBuilder: (c, s) => _slideRightPage(state: s, child: const FastagOperatorSelectionScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.fastagFetch,
+        name: 'fastag-fetch',
+        pageBuilder: (c, s) {
+          final billerId = s.pathParameters['billerId'] ?? '';
+          return _slideRightPage(state: s, child: FastagFetchScreen(billerId: billerId));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.fastagRechargeAmount,
+        name: 'fastag-recharge',
+        pageBuilder: (c, s) {
+          final billerId = s.pathParameters['billerId'] ?? '';
+          return _slideRightPage(state: s, child: FastagRechargeAmountScreen(billerId: billerId));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.fastagPayConfirm,
+        name: 'fastag-pay',
+        pageBuilder: (c, s) {
+          final billerId = s.pathParameters['billerId'] ?? '';
+          return _slideUpPage(state: s, child: FastagPayConfirmScreen(billerId: billerId));
         },
       ),
       GoRoute(

@@ -172,171 +172,204 @@ class _BbpsPayConfirmScreenState extends ConsumerState<BbpsPayConfirmScreen> {
         backgroundColor: AppColors.background,
       ),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: Column(
-                  children: [
-                    // Main Receipt Card
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.cardWhite,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          // Header (Amount)
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
-                            decoration: const BoxDecoration(
-                              color: AppColors.primaryBlueLight,
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                            ),
-                            child: Center(
-                              child: Column(
-                                children: [
-                                  Text('Total Amount Due', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.primaryBlue)),
-                                  const SizedBox(height: AppSpacing.xs),
-                                  Text(
-                                    CurrencyFormatter.fromPaise(bill.billAmountPaise),
-                                    style: AppTextTheme.textTheme.displaySmall?.copyWith(
-                                      color: AppColors.primaryBlue,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ],
+            Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Column(
+                      children: [
+                        // Main Receipt Card
+                        Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.cardWhite,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
                               ),
-                            ),
+                            ],
                           ),
-                          
-                          // Details
-                          Padding(
-                            padding: const EdgeInsets.all(AppSpacing.xl),
-                            child: Column(
-                              children: [
-                                _DetailRow(icon: Icons.person_outline, label: 'Consumer Name', value: bill.customerName),
-                                const Divider(height: AppSpacing.xl),
-                                _DetailRow(icon: Icons.business, label: 'Provider', value: bill.billerName),
-                                const Divider(height: AppSpacing.xl),
-                                _DetailRow(icon: Icons.receipt_long, label: 'Bill Number', value: bill.billNumber),
-                                const Divider(height: AppSpacing.xl),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: isOverdue ? AppColors.errorLight : AppColors.surfaceVariant,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(Icons.event, size: 20, color: isOverdue ? AppColors.error : AppColors.primaryBlue),
-                                    ),
-                                    const SizedBox(width: AppSpacing.md),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Due Date', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary)),
-                                          Text(
-                                            bill.parsedDueDate != null ? DateFormat('dd MMM yyyy').format(bill.parsedDueDate!) : (bill.rawDueDate.isNotEmpty ? bill.rawDueDate : 'N/A'),
-                                            style: AppTextTheme.textTheme.titleSmall?.copyWith(
-                                              color: isOverdue ? AppColors.error : AppColors.textPrimary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (isOverdue)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.error,
-                                          borderRadius: BorderRadius.circular(4),
+                          child: Column(
+                            children: [
+                              // Header (Amount)
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxl),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primaryBlueLight,
+                                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    children: [
+                                      Text('Total Amount Due', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.primaryBlue)),
+                                      const SizedBox(height: AppSpacing.xs),
+                                      Text(
+                                        CurrencyFormatter.fromPaise(bill.billAmountPaise),
+                                        style: AppTextTheme.textTheme.displaySmall?.copyWith(
+                                          color: AppColors.primaryBlue,
+                                          fontWeight: FontWeight.w800,
                                         ),
-                                        child: const Text('OVERDUE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                                       ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              
+                              // Details
+                              Padding(
+                                padding: const EdgeInsets.all(AppSpacing.xl),
+                                child: Column(
+                                  children: [
+                                    _DetailRow(icon: Icons.person_outline, label: 'Consumer Name', value: bill.customerName),
+                                    const Divider(height: AppSpacing.xl),
+                                    _DetailRow(icon: Icons.business, label: 'Provider', value: bill.billerName),
+                                    const Divider(height: AppSpacing.xl),
+                                    _DetailRow(icon: Icons.receipt_long, label: 'Bill Number', value: bill.billNumber),
+                                    const Divider(height: AppSpacing.xl),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: isOverdue ? AppColors.errorLight : AppColors.surfaceVariant,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(Icons.event, size: 20, color: isOverdue ? AppColors.error : AppColors.primaryBlue),
+                                        ),
+                                        const SizedBox(width: AppSpacing.md),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text('Due Date', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary)),
+                                              Text(
+                                                bill.parsedDueDate != null ? DateFormat('dd MMM yyyy').format(bill.parsedDueDate!) : (bill.rawDueDate.isNotEmpty ? bill.rawDueDate : 'N/A'),
+                                                style: AppTextTheme.textTheme.titleSmall?.copyWith(
+                                                  color: isOverdue ? AppColors.error : AppColors.textPrimary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (isOverdue)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.error,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text('OVERDUE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                      ],
+                                    ),
                                   ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    
-                    // Wallet Balance Card
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      decoration: BoxDecoration(
-                        color: AppColors.cardWhite,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.divider),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: const BoxDecoration(
-                              color: AppColors.primaryBlueLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.account_balance_wallet, color: AppColors.primaryBlue, size: 20),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Available Balance', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary)),
-                                Text(
-                                  CurrencyFormatter.fromPaise(walletBalance),
-                                  style: AppTextTheme.textTheme.titleSmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (walletBalance < bill.billAmountPaise)
-                            const Icon(Icons.warning, color: AppColors.error, size: 20),
-                        ],
-                      ),
-                    ),
-                    if (walletBalance < bill.billAmountPaise)
-                      Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.sm, left: AppSpacing.xs),
-                        child: Text(
-                          'Insufficient balance to pay this bill.',
-                          style: AppTextTheme.textTheme.labelSmall?.copyWith(color: AppColors.error),
                         ),
-                      ),
-                  ],
+                        const SizedBox(height: AppSpacing.xl),
+                        
+                        // Wallet Balance Card
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          decoration: BoxDecoration(
+                            color: AppColors.cardWhite,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.divider),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primaryBlueLight,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.account_balance_wallet, color: AppColors.primaryBlue, size: 20),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Available Balance', style: AppTextTheme.textTheme.labelMedium?.copyWith(color: AppColors.textSecondary)),
+                                    Text(
+                                      CurrencyFormatter.fromPaise(walletBalance),
+                                      style: AppTextTheme.textTheme.titleSmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (walletBalance < bill.billAmountPaise)
+                                const Icon(Icons.warning, color: AppColors.error, size: 20),
+                            ],
+                          ),
+                        ),
+                        if (walletBalance < bill.billAmountPaise)
+                          Padding(
+                            padding: const EdgeInsets.only(top: AppSpacing.sm, left: AppSpacing.xs),
+                            child: Text(
+                              'Insufficient balance to pay this bill.',
+                              style: AppTextTheme.textTheme.labelSmall?.copyWith(color: AppColors.error),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                
+                // Bottom Action
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardWhite,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5)),
+                    ],
+                  ),
+                  child: AppButton(
+                    label: 'Pay ${CurrencyFormatter.fromPaise(bill.billAmountPaise)}',
+                    isLoading: _isLoading,
+                    onPressed: (walletBalance < bill.billAmountPaise) ? null : _showPinPrompt,
+                  ),
+                ),
+              ],
             ),
             
-            // Bottom Action
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                color: AppColors.cardWhite,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5)),
-                ],
+            // Full screen loading overlay
+            if (_isLoading)
+              Positioned.fill(
+                child: Container(
+                  color: AppColors.background.withValues(alpha: 0.9),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(color: AppColors.primaryBlue),
+                      const SizedBox(height: AppSpacing.xl),
+                      Text(
+                        'Processing your payment...',
+                        style: AppTextTheme.textTheme.titleMedium?.copyWith(
+                          color: AppColors.primaryBlue,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Please do not press back or close the app.',
+                        style: AppTextTheme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              child: AppButton(
-                label: 'Pay ${CurrencyFormatter.fromPaise(bill.billAmountPaise)}',
-                isLoading: _isLoading,
-                onPressed: (walletBalance < bill.billAmountPaise) ? null : _showPinPrompt,
-              ),
-            ),
           ],
         ),
       ),

@@ -142,7 +142,8 @@ exports.fetchBill = async (req, res, next) => {
 
     console.log('\n==================================================');
     console.log('[ELECTRICITY CONTROLLER] Incoming Request: fetchBill');
-    console.log('Query/Body Parameters:', { billerId, parameters });
+    console.log('Raw req.body:', JSON.stringify(req.body, null, 2));
+    console.log('Query/Body Parameters:', JSON.stringify({ billerId, parameters }, null, 2));
 
     if (!billerId) {
       return res.status(400).json({ success: false, message: 'billerId is required' });
@@ -152,9 +153,12 @@ exports.fetchBill = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid details. No bill found for these parameters.' });
     }
 
-    const hasInvalidParam = Object.values(parameters).some(v => !v || v.trim() === '' || v === '0000000000');
-    if (hasInvalidParam) {
-      return res.status(400).json({ success: false, message: 'Invalid details. No bill found for these parameters.' });
+    const invalidEntries = Object.entries(parameters).filter(([k, v]) => !v || v.toString().trim() === '' || v === '0000000000');
+    if (invalidEntries.length > 0) {
+      const invalidKeys = invalidEntries.map(e => e[0]).join(', ');
+      console.log(`[ELECTRICITY CONTROLLER] Validation Failed. Invalid or missing parameters: ${invalidKeys}`);
+      console.log('Invalid Entries:', JSON.stringify(invalidEntries, null, 2));
+      return res.status(400).json({ success: false, message: `Validation failed. Please provide a valid value for: ${invalidKeys}` });
     }
 
     // Call PlanAPI
@@ -209,7 +213,9 @@ exports.fetchBill = async (req, res, next) => {
     
     // Some providers might return an error but with 200 OK.
     if (!planApiResponse.success) {
-      return res.status(400).json({ success: false, message: rawData.message || rawData.Message || 'Failed to fetch bill from provider' });
+      const providerError = rawData.message || rawData.Message || rawData.ERRORMSG || rawData.error || 'Provider rejected request without an error message';
+      console.log(`[ELECTRICITY CONTROLLER] PlanAPI returned logical error: ${providerError}`);
+      return res.status(400).json({ success: false, message: providerError, rawProviderResponse: rawData });
     }
 
     const details = rawData.BILLDEATILS || rawData.BILLDETAILS || rawData.data || rawData;
@@ -244,3 +250,92 @@ exports.fetchBill = async (req, res, next) => {
   }
 };
 
+const currentBillPaymentService = require('../services/currentBillPayment.service');
+
+// @desc    Pay an electricity bill
+// @route   POST /api/electricity/pay
+// @access  Private
+exports.payBill = async (req, res, next) => {
+  try {
+    console.log('\n==================================================');
+    console.log('[LOG 1] Entering payment controller (POST /api/electricity/pay)');
+
+    const { billerId, amountPaise, customerIdentifier, mpin } = req.body;
+
+    console.log(`  billerId: ${billerId}`);
+    console.log(`  amountPaise: ${amountPaise}`);
+    console.log(`  customerIdentifier: ${customerIdentifier}`);
+    console.log(`  mpin: [REDACTED]`);
+    console.log('==================================================\n');
+
+    if (!billerId || !amountPaise) {
+      return res.status(400).json({ success: false, message: 'billerId and amount are required' });
+    }
+
+    if (!mpin) {
+      return res.status(400).json({ success: false, message: 'mpin is required' });
+    }
+
+    let operator;
+    if (isNaN(billerId)) {
+      operator = await ElectricityOperator.findById(billerId);
+    } else {
+      operator = await ElectricityOperator.findOne({ 'planApi.operatorCode': billerId });
+      if (!operator) {
+        operator = await ElectricityOperator.findOne({ operatorCode: billerId });
+      }
+    }
+    
+    if (!operator) {
+      return res.status(404).json({ success: false, message: 'Electricity operator not found' });
+    }
+
+    const a1TopupCode = operator.a1Topup?.operatorCode;
+    if (!a1TopupCode) {
+      return res.status(400).json({ success: false, message: 'Operator payment code not configured' });
+    }
+
+    console.log(`[ELECTRICITY CONTROLLER] Using A1 Topup operator code: ${a1TopupCode}`);
+
+    const amount = amountPaise / 100;
+
+    const paymentResponse = await currentBillPaymentService.executePayment({
+      user: req.user,
+      mpin: mpin,
+      orderIdPrefix: 'EL',
+      consumerIdentifier: customerIdentifier || '0000000000',
+      amount,
+      operatorCode: a1TopupCode,
+      serviceType: 'Electricity'
+    });
+
+    console.log(`[ELECTRICITY CONTROLLER] ◀ Response to Flutter: status=${paymentResponse.status}, orderId=${paymentResponse.orderId}`);
+
+    res.status(200).json({
+      success: paymentResponse.success,
+      message: paymentResponse.message,
+      transactionId: paymentResponse.providerTransactionId,
+      orderId: paymentResponse.orderId,
+      status: paymentResponse.status,
+      a1TopupOperatorCodeUsed: a1TopupCode
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Check status of an electricity payment
+// @route   GET /api/electricity/status/:orderId
+// @access  Private
+exports.checkStatus = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) {
+      return res.status(400).json({ success: false, message: 'orderId is required' });
+    }
+    const statusResponse = await currentBillPaymentService.checkStatus(orderId);
+    res.status(200).json(statusResponse);
+  } catch (error) {
+    next(error);
+  }
+};

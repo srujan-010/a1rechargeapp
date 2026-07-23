@@ -11,6 +11,7 @@ abstract final class RouteNames {
   static const String otpLogin = '/auth/otp-login';
   static const String mpinSetup = '/auth/mpin-setup';
   static const String biometricPrompt = '/auth/biometric';
+  static const String registration = '/auth/registration';
 
   // ─── Shell (bottom nav) ───────────────────────────────────────────
   static const String shell = '/shell';
@@ -103,8 +104,19 @@ abstract final class RouteNames {
   static const String qrPayment = '/qr-payment';
   // Extension point: UPI Collection — route reserved
   static const String upiCollection = '/upi-collection';
-  // Extension point: FASTag — route reserved
+  // ─── Gas Bill ──────────────────────────────────────────────────────
+  static const String gas = '/gas';
+  static const String gasBiller = '/gas/biller';
+  static const String gasBillFetch = '/gas/fetch/:billerId';
+  static const String gasPayConfirm = '/gas/pay/:billerId';
+
+  // ─── FASTag ────────────────────────────────────────────────────────
   static const String fastag = '/fastag';
-  // Extension point: Distributor Module — route reserved
+  static const String fastagBiller = '/fastag/biller';
+  static const String fastagFetch = '/fastag/fetch/:billerId';
+  static const String fastagRechargeAmount = '/fastag/recharge/:billerId';
+  static const String fastagPayConfirm = '/fastag/pay/:billerId';
+
+  // ─── Distributor Module — route reserved
   static const String distributor = '/distributor';
 }

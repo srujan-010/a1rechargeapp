@@ -40,6 +40,16 @@ abstract final class ApiEndpoints {
   static const String bbpsFetchBill = '/bbps/fetch-bill';
   static const String bbpsPayBill = '/bbps/pay';
 
+  // ─── Gas Bill ────────────────────────────────────────────────────
+  static const String gasProviders = '/gas/operators';
+  static const String gasFetch = '/gas/fetch';
+  static const String gasPay = '/gas/pay';
+
+  // ─── FASTag ──────────────────────────────────────────────────────
+  static const String fastagProviders = '/fastag/operators';
+  static const String fastagFetch = '/fastag/fetch';
+  static const String fastagPay = '/fastag/pay';
+
   // ─── AEPS ────────────────────────────────────────────────────────
   static const String aepsBanks = '/aeps/banks';
   static const String aepsCashWithdrawal = '/aeps/cash-withdrawal';

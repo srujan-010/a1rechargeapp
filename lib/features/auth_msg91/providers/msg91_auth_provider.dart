@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../repository/msg91_auth_repository.dart';
 import '../../../core/providers/core_providers.dart';
@@ -11,12 +12,18 @@ class Msg91AuthState {
   final String? error;
   final bool isOtpSent;
   final bool isVerified;
+  final bool isNewUser;
+  final String? mobile;
+  final String? tempSessionToken;
 
   Msg91AuthState({
     this.isLoading = false,
     this.error,
     this.isOtpSent = false,
     this.isVerified = false,
+    this.isNewUser = false,
+    this.mobile,
+    this.tempSessionToken,
   });
 
   Msg91AuthState copyWith({
@@ -24,12 +31,18 @@ class Msg91AuthState {
     String? error,
     bool? isOtpSent,
     bool? isVerified,
+    bool? isNewUser,
+    String? mobile,
+    String? tempSessionToken,
   }) {
     return Msg91AuthState(
       isLoading: isLoading ?? this.isLoading,
       error: error,
       isOtpSent: isOtpSent ?? this.isOtpSent,
       isVerified: isVerified ?? this.isVerified,
+      isNewUser: isNewUser ?? this.isNewUser,
+      mobile: mobile ?? this.mobile,
+      tempSessionToken: tempSessionToken ?? this.tempSessionToken,
     );
   }
 }
@@ -55,7 +68,6 @@ class Msg91AuthNotifier extends StateNotifier<Msg91AuthState> {
     try {
       final response = await _repository.verifyOtp(phone, otp);
       if (response['success'] == true) {
-        // Update global auth state to reflect logged-in status
         final data = response['data'];
         final token = data['accessToken'] ?? data['token'];
         
@@ -72,6 +84,44 @@ class Msg91AuthNotifier extends StateNotifier<Msg91AuthState> {
         state = state.copyWith(isLoading: false, isVerified: true);
       } else {
         state = state.copyWith(isLoading: false, error: 'Verification failed');
+      }
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<void> verifyAccessToken(String accessToken) async {
+    debugPrint('[MSG91 Provider] verifyAccessToken() called.');
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await _repository.loginWithAccessToken(accessToken);
+      
+      if (response['success'] == true) {
+        if (response['isNewUser'] == true) {
+           debugPrint('[MSG91 Provider] User is new. Proceeding to registration.');
+           state = state.copyWith(
+             isLoading: false,
+             isNewUser: true,
+             mobile: response['mobile'],
+             tempSessionToken: response['tempSessionToken'],
+           );
+           return;
+        }
+        
+        final token = response['token'] ?? response['data']?['accessToken'];
+        if (token != null) {
+          final secureStorage = _ref.read(secureStorageProvider);
+          await secureStorage.saveTokens(
+            accessToken: token,
+            refreshToken: '',
+            expiry: DateTime.now().add(const Duration(days: 30)),
+          );
+          _ref.invalidate(sessionProvider);
+        }
+        state = state.copyWith(isLoading: false, isVerified: true);
+      } else {
+        final msg = response['message'] ?? 'Authentication failed';
+        state = state.copyWith(isLoading: false, error: msg);
       }
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());

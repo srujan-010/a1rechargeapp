@@ -73,6 +73,7 @@ class BillDetails extends Equatable {
   const BillDetails({
     required this.billerId,
     required this.billerName,
+    required this.category,
     required this.customerName,
     required this.billAmountPaise,
     required this.rawBillDate,
@@ -84,6 +85,7 @@ class BillDetails extends Equatable {
 
   final String billerId;
   final String billerName;
+  final String category;
   final String customerName;
   final int billAmountPaise;
   final String rawBillDate;
@@ -95,6 +97,8 @@ class BillDetails extends Equatable {
   @override
   List<Object?> get props => [
         billerId,
+        billerName,
+        category,
         billNumber,
         billAmountPaise,
         rawBillDate,

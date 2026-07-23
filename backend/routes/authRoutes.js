@@ -8,6 +8,7 @@ const {
   firebaseLogin,
   registerRetailer,
   getMe,
+  msg91Login,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -16,6 +17,7 @@ router.get('/send-otp', (req, res) => {
   res.status(405).json({ message: 'Use POST method' });
 });
 router.post('/verify-otp', verifyOtp);
+router.post('/msg91-login', msg91Login);
 router.post('/firebase-login', firebaseLogin);
 router.post('/register', registerRetailer);
 router.post('/setup-mpin', protect, setupMpin);

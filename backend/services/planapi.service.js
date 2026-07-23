@@ -42,7 +42,7 @@ class PlanApiService {
       if (error.response) {
         console.log(`Status: ${error.response.status}`);
         console.log('Headers:', JSON.stringify(error.response.headers, null, 2));
-        console.log('Body:', error.response.data);
+        console.log('Body:', typeof error.response.data === 'object' ? JSON.stringify(error.response.data, null, 2) : error.response.data);
       } else {
         console.log('Error Message:', error.message);
       }
@@ -134,6 +134,51 @@ class PlanApiService {
       return { success: !isError, data };
     } catch (error) {
       console.log('\n[PlanAPI SERVICE] Exception Thrown in fetchElectricityBill:', error.message);
+      throw error;
+    }
+  }
+  async fetchGasBill(operatorCode, parameters) {
+    console.log('\n==================================================');
+    console.log('[PlanAPI SERVICE] fetchGasBill Called');
+    console.log('Operator Code:', operatorCode);
+    console.log('Parameters from Flutter:', parameters);
+
+    const billNumber = parameters.bill_number || parameters.consumer_number || parameters.account_id || Object.values(parameters)[0] || '';
+    
+    let url = `${PLANAPI_BASE_URL}/Mobile/GasInfoFetch?apimember_id=${PLANAPI_MEMBER_ID}&api_password=${PLANAPI_PASSWORD}&operator_code=${operatorCode}&ConsumerNo=${encodeURIComponent(billNumber)}`;
+
+    try {
+      const data = await this._makeRequest(url);
+      
+      console.log('\n[PlanAPI SERVICE] Parsed JSON Response:', data);
+      
+      const isError = data.ERROR !== '0' && data.ERROR !== undefined && data.STATUS !== '0' && data.STATUS !== '1';
+      return { success: !isError, data };
+    } catch (error) {
+      console.log('\n[PlanAPI SERVICE] Exception Thrown in fetchGasBill:', error.message);
+      throw error;
+    }
+  }
+
+  async fetchFastagDetails(operatorCode, parameters) {
+    console.log('\n==================================================');
+    console.log('[PlanAPI SERVICE] fetchFastagDetails Called');
+    console.log('Operator Code:', operatorCode);
+    console.log('Parameters from Flutter:', parameters);
+
+    const vehicleNumber = parameters.vehicleNumber || parameters.vehicle_number || Object.values(parameters)[0] || '';
+    
+    let url = `${PLANAPI_BASE_URL}/Mobile/FastagInfoFetch?apimember_id=${PLANAPI_MEMBER_ID}&api_password=${PLANAPI_PASSWORD}&operator_code=${operatorCode}&vehicle_number=${encodeURIComponent(vehicleNumber)}`;
+
+    try {
+      const data = await this._makeRequest(url);
+      
+      console.log('\n[PlanAPI SERVICE] Parsed JSON Response:', data);
+      
+      const isError = data.ERROR !== '0' && data.ERROR !== undefined && data.STATUS !== '0' && data.STATUS !== '1';
+      return { success: !isError, data };
+    } catch (error) {
+      console.log('\n[PlanAPI SERVICE] Exception Thrown in fetchFastagDetails:', error.message);
       throw error;
     }
   }

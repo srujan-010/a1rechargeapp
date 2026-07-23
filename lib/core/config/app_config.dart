@@ -9,6 +9,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'dart:io';
 import '../utils/logger.dart';
 
 enum Environment { dev, staging, prod }
@@ -25,7 +26,7 @@ abstract final class AppConfig {
 
   static const String _lanIp = String.fromEnvironment(
     'LAN_IP',
-    defaultValue: '192.168.0.111', 
+    defaultValue: '192.168.0.104',
   );
 
   static late String _initializedBaseUrl;
@@ -54,7 +55,30 @@ abstract final class AppConfig {
     }
 
     if (isDevelopment) {
-      _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
+      if (kIsWeb) {
+        _initializedBaseUrl = 'http://localhost:5000/api';
+      } else if (Platform.isAndroid) {
+        // Detect emulator vs physical device
+        bool isEmulator = false;
+        try {
+          final deviceInfo = DeviceInfoPlugin();
+          final androidInfo = await deviceInfo.androidInfo;
+          isEmulator = !androidInfo.isPhysicalDevice;
+        } catch (_) {
+          isEmulator = false;
+        }
+
+        if (isEmulator) {
+          // Android Emulator: 10.0.2.2 routes to host machine
+          _initializedBaseUrl = 'http://10.0.2.2:5000/api';
+        } else {
+          // Physical device: use LAN IP — set LAN_IP via --dart-define or fallback
+          final lanIp = _lanIp.isNotEmpty ? _lanIp : '192.168.0.104';
+          _initializedBaseUrl = 'http://$lanIp:5000/api';
+        }
+      } else {
+        _initializedBaseUrl = 'http://localhost:5000/api';
+      }
     } else {
       _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     }

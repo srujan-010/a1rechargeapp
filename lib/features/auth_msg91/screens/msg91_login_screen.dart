@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
 import '../providers/msg91_auth_provider.dart';
+import 'msg91_webview_screen.dart';
 
 // --- Color Tokens ---
 const Color bannerBlueStart = Color(0xFF2F6BFF);
@@ -57,12 +58,42 @@ class _Msg91LoginScreenState extends ConsumerState<Msg91LoginScreen> {
     }
   }
 
+  void _launchMsg91Widget(String phone) {
+    debugPrint('[MSG91 LoginScreen] Launching WebView for phone=$phone');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => Msg91WebViewScreen(
+          phone: phone,
+          onSuccess: (accessToken) async {
+            debugPrint('[MSG91 LoginScreen] onSuccess() called. Token length=${accessToken.length}');
+            debugPrint('[MSG91 LoginScreen] Token preview: ${accessToken.substring(0, accessToken.length > 30 ? 30 : accessToken.length)}...');
+            debugPrint('[MSG91 LoginScreen] Calling ref.read(msg91AuthProvider.notifier).verifyAccessToken()');
+            // Pop AFTER initiating the async call so ref is still valid
+            Navigator.of(ctx).pop();
+            await ref.read(msg91AuthProvider.notifier).verifyAccessToken(accessToken);
+          },
+          onFailure: (error) {
+            debugPrint('[MSG91 LoginScreen] onFailure() called. Error=$error');
+            Navigator.of(ctx).pop();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(error),
+                backgroundColor: const Color(0xFFDC2626),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   void _submit() {
     if (_isPhoneValid) {
       HapticFeedback.mediumImpact();
       _focusNode.unfocus();
       final phone = _phoneController.text.trim();
-      ref.read(msg91AuthProvider.notifier).sendOtp(phone);
+      _launchMsg91Widget(phone);
     }
   }
 
@@ -81,11 +112,18 @@ class _Msg91LoginScreenState extends ConsumerState<Msg91LoginScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-      } else if (next.isOtpSent && !(previous?.isOtpSent ?? false)) {
-        // Go router sub-route for MSG91
-        context.push('${RouteNames.otpLogin}/verify', extra: {
-          'phone': _phoneController.text.trim(),
-        });
+      } else if (next.isNewUser && !(previous?.isNewUser ?? false)) {
+        HapticFeedback.lightImpact();
+        context.push(
+          RouteNames.registration, 
+          extra: {
+            'mobile': next.mobile,
+            'tempSessionToken': next.tempSessionToken,
+          }
+        );
+      } else if (next.isVerified && !(previous?.isVerified ?? false)) {
+        HapticFeedback.lightImpact();
+        context.go(RouteNames.dashboard);
       }
     });
 

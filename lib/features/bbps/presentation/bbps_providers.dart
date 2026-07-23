@@ -7,9 +7,11 @@ import '../data/bbps_repository_impl.dart';
 import '../domain/bbps_repository.dart';
 import '../domain/models/bbps_models.dart';
 
+import '../../../core/providers/core_providers.dart';
+
 final bbpsRepositoryProvider = Provider<BbpsRepository>((ref) {
   final mockFallback = BbpsRepositoryMock();
-  return BbpsRepositoryImpl(mockFallback);
+  return BbpsRepositoryImpl(mockFallback, ref.watch(apiClientProvider));
 });
 
 class BillerFetchParams extends Equatable {
@@ -100,6 +102,7 @@ class BbpsFlowNotifier extends Notifier<BbpsState> {
     
     final repo = ref.read(bbpsRepositoryProvider);
     final result = await repo.fetchBill(
+      category: state.selectedBiller!.category,
       billerId: state.selectedBiller!.id,
       parameters: state.enteredParameters,
     );
@@ -117,12 +120,34 @@ class BbpsFlowNotifier extends Notifier<BbpsState> {
     }
     
     final repo = ref.read(bbpsRepositoryProvider);
-    final result = await repo.payBill(
+    final initialResult = await repo.payBill(
       billDetails: state.fetchedBill!,
       mpin: mpin,
     );
     
-    return result.getOrElseCompute((e) => throw e);
+    RechargeReceipt receipt = initialResult.getOrElseCompute((e) => throw e);
+    
+    if (receipt.status != RechargeStatus.pending) {
+      return receipt;
+    }
+    
+    int elapsedSeconds = 0;
+    while (receipt.status == RechargeStatus.pending && elapsedSeconds < 60) {
+      await Future.delayed(const Duration(seconds: 2));
+      elapsedSeconds += 2;
+      
+      final statusResult = await repo.checkStatus(
+        category: state.fetchedBill!.category,
+        orderId: receipt.referenceId,
+      );
+      
+      receipt = statusResult.getOrElseCompute((e) {
+         // Keep existing receipt on check error
+         return receipt;
+      });
+    }
+    
+    return receipt;
   }
 
   void reset() {

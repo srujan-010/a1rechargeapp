@@ -753,6 +753,22 @@ class _QuickServicesGrid extends StatelessWidget {
       iconColor: Color(0xFF43A047),
       isElectricity: true,
     ),
+    _ServiceItem(
+      label: 'Gas',
+      subtitle: 'Bill Payment',
+      icon: Icons.local_fire_department,
+      route: RouteNames.gas,
+      bgColor: Color(0xFFFBE9E7),
+      iconColor: Color(0xFFD84315),
+    ),
+    _ServiceItem(
+      label: 'FASTag',
+      subtitle: 'Recharge',
+      icon: Icons.directions_car,
+      route: RouteNames.fastag,
+      bgColor: Color(0xFFE0F7FA),
+      iconColor: Color(0xFF00838F),
+    ),
   ];
 
   @override

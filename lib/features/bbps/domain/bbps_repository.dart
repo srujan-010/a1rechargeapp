@@ -15,6 +15,7 @@ abstract class BbpsRepository {
 
   /// Fetches bill details using the biller parameters
   Future<Result<BillDetails, AppException>> fetchBill({
+    required String category,
     required String billerId,
     required Map<String, String> parameters,
   });
@@ -23,5 +24,11 @@ abstract class BbpsRepository {
   Future<Result<RechargeReceipt, AppException>> payBill({
     required BillDetails billDetails,
     required String mpin,
+  });
+
+  /// Checks the status of a pending payment
+  Future<Result<RechargeReceipt, AppException>> checkStatus({
+    required String category,
+    required String orderId,
   });
 }
