@@ -35,7 +35,7 @@ class RegistrationRepository {
           if (referralCode != null && referralCode.isNotEmpty) 'referralCode': referralCode,
         },
       );
-      return response.data;
+      return response.data ?? {};
     } on AppException catch (e) {
       throw Exception(e.message);
     } catch (e) {

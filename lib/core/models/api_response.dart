@@ -27,7 +27,7 @@ class ApiResponse<T> {
       message: json['message'] as String? ?? '',
       data: fromJsonT != null
           ? fromJsonT(json['data'] ?? json)
-          : null,
+          : (json['data'] ?? json) as T?,
       meta: json['meta'] as Map<String, dynamic>?,
       errors: json['errors'] as Map<String, dynamic>?,
     );

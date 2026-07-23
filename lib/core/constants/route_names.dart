@@ -16,8 +16,14 @@ abstract final class RouteNames {
   // ─── Shell (bottom nav) ───────────────────────────────────────────
   static const String shell = '/shell';
   static const String dashboard = '/shell/dashboard';
-  static const String history = '/shell/history';
-  static const String scan = '/shell/scan';
+  static const String myActivity = 'my-activity';
+  static const String allTransactions = 'all-transactions';
+  
+  // Wallet MPIN Routes
+  static const String createMpin = '/mpin/create';
+  static const String confirmMpin = '/mpin/confirm';
+  static const String forgotMpin = '/mpin/forgot';
+  static const String resetMpin = '/mpin/reset';
   static const String wallet = '/shell/wallet';
   static const String profile = '/shell/profile';
 

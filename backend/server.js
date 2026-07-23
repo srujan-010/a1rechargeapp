@@ -62,6 +62,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/msg91', require('./routes/msg91Routes'));
 app.use('/api/user', require('./routes/userRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
+app.use('/api/wallet-mpin', require('./routes/walletMpinRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
 app.use('/api/bank', require('./routes/bankRoutes'));

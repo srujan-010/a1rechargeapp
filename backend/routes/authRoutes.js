@@ -3,8 +3,6 @@ const router = express.Router();
 const {
   loginUser,
   verifyOtp,
-  setupMpin,
-  changeMpin,
   firebaseLogin,
   registerRetailer,
   getMe,
@@ -20,8 +18,6 @@ router.post('/verify-otp', verifyOtp);
 router.post('/msg91-login', msg91Login);
 router.post('/firebase-login', firebaseLogin);
 router.post('/register', registerRetailer);
-router.post('/setup-mpin', protect, setupMpin);
-router.put('/change-mpin', protect, changeMpin);
 router.get('/me', protect, getMe);
 
 module.exports = router;

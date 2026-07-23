@@ -640,8 +640,6 @@ const msg91Login = async (req, res, next) => {
 module.exports = {
   loginUser,
   verifyOtp,
-  setupMpin,
-  changeMpin,
   firebaseLogin,
   registerRetailer,
   getMe,

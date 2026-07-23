@@ -12,6 +12,7 @@ import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../features/wallet/domain/models/wallet_transaction.dart';
 import '../../notifications/presentation/notifications_providers.dart';
+import '../../wallet_mpin/providers/wallet_mpin_provider.dart';
 import 'dashboard_providers.dart';
 import 'package:flutter/services.dart';
 
@@ -38,6 +39,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final sessionAsync = ref.watch(sessionProvider);
     final user = sessionAsync.valueOrNull;
+    final mpinState = ref.watch(walletMpinProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -51,6 +53,41 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               SliverToBoxAdapter(
                 child: _DashboardAppBar(user: user),
               ),
+
+              if (mpinState.walletMpinConfigured == false)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.pagePadding, right: AppSpacing.pagePadding, top: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withOpacity(0.1),
+                        border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.security_rounded, color: AppColors.error),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Secure your wallet by creating a 6-digit MPIN.',
+                              style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => context.pushNamed(RouteNames.createMpin),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: AppColors.error,
+                            ),
+                            child: const Text('Create'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
@@ -113,7 +150,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     children: [
                       Text('Recent Transactions', style: AppTextTheme.textTheme.titleLarge),
                       TextButton(
-                        onPressed: () => context.go(RouteNames.history),
+                        onPressed: () => context.go(RouteNames.transactionHistory),
                         child: const Text('View All'),
                       ),
                     ],
@@ -525,7 +562,7 @@ class _WalletBalanceCardState extends ConsumerState<_WalletBalanceCard> {
               const SizedBox(width: 12),
               Expanded(
                 child: TextButton.icon(
-                  onPressed: () => context.go(RouteNames.history),
+                  onPressed: () => context.go(RouteNames.transactionHistory),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     backgroundColor: Colors.white.withOpacity(0.1),

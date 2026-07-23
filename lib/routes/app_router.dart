@@ -72,6 +72,11 @@ import '../features/insurance/presentation/insurance_product_screen.dart';
 import '../features/loan/presentation/loan_screen.dart';
 import '../features/loan/presentation/loan_emi_screen.dart';
 import '../features/notifications/presentation/notifications_screen.dart';
+import '../features/wallet_mpin/presentation/create_mpin_screen.dart';
+import '../features/wallet_mpin/presentation/confirm_mpin_screen.dart';
+import '../features/wallet_mpin/presentation/change_mpin_screen.dart';
+import '../features/wallet_mpin/presentation/forgot_mpin_screen.dart';
+import '../features/wallet_mpin/presentation/reset_mpin_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
 import '../features/settings/presentation/privacy_policy_screen.dart';
@@ -79,11 +84,11 @@ import '../features/settings/presentation/terms_conditions_screen.dart';
 import '../features/settings/presentation/refund_policy_screen.dart';
 import '../features/settings/presentation/about_app_screen.dart';
 import '../features/support/presentation/support_screen.dart';
-import '../features/profile/presentation/change_mpin_screen.dart';
 import '../features/profile/presentation/bank_details_screen.dart';
 import '../features/profile/presentation/add_bank_screen.dart';
 import '../features/profile/presentation/kyc_screen.dart';
 import '../features/profile/presentation/personal_info_screen.dart';
+import '../features/profile/presentation/kyc_screen.dart';
 import 'shell_scaffold.dart';
 
 // ─── Router Provider ──────────────────────────────────────────────────────────
@@ -134,6 +139,31 @@ final routerProvider = Provider<GoRouter>((ref) {
             },
           ),
         ),
+
+      // ─── MPIN Flows ────────────────────────────────────────────────
+      GoRoute(
+        path: RouteNames.createMpin,
+        name: RouteNames.createMpin,
+        builder: (context, state) => const CreateMpinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.confirmMpin,
+        name: RouteNames.confirmMpin,
+        builder: (context, state) {
+          final originalMpin = state.extra as String? ?? '';
+          return ConfirmMpinScreen(originalMpin: originalMpin);
+        },
+      ),
+      GoRoute(
+        path: RouteNames.forgotMpin,
+        name: RouteNames.forgotMpin,
+        builder: (context, state) => const ForgotMpinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.resetMpin,
+        name: RouteNames.resetMpin,
+        builder: (context, state) => const ResetMpinScreen(),
+      ),
 
       // ─── Authentication ────────────────────────────────────────────
       GoRoute(
@@ -245,9 +275,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: RouteNames.history,
+                path: RouteNames.transactionHistory,
                 name: 'history',
-                pageBuilder: (context, state) => _fadePage(
+                pageBuilder: (context, state) => _slideRightPage(
                   state: state,
                   child: const HistoryScreen(),
                 ),
@@ -361,6 +391,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                       child: const BankDetailsScreen(),
                     ),
                     routes: [
+                      GoRoute(
+                        path: 'change-mpin',
+                        name: RouteNames.changeMpin,
+                        pageBuilder: (context, state) => _slideRightPage(
+                          state: state,
+                          child: const ChangeMpinScreen(),
+                        ),
+                      ),
                       GoRoute(
                         path: 'add-bank',
                         name: 'add-bank',

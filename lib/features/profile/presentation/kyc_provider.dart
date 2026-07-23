@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
+import '../../../core/models/app_exception.dart';
 import '../../../core/providers/core_providers.dart';
 import '../domain/models/kyc_model.dart';
 

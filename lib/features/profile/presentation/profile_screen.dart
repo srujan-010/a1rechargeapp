@@ -90,6 +90,13 @@ class ProfileScreen extends ConsumerWidget {
                           subtitle: 'Update your security PIN',
                           onTap: () => context.push(RouteNames.changeMpin),
                         ),
+                        const _Divider(),
+                        _ProfileMenuItem(
+                          icon: Icons.restore,
+                          label: 'Forgot MPIN',
+                          subtitle: 'Reset your security PIN',
+                          onTap: () => context.push(RouteNames.forgotMpin),
+                        ),
                       ],
                     ),
                   ],

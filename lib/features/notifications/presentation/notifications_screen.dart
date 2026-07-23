@@ -166,7 +166,7 @@ class _NotificationTile extends ConsumerWidget {
               context.go(RouteNames.profile);
               break;
             case 'ROUTE_HISTORY':
-              context.go(RouteNames.history);
+              context.go(RouteNames.transactionHistory);
               break;
           }
         }

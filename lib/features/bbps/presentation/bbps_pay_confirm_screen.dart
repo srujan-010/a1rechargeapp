@@ -13,6 +13,7 @@ import '../../dashboard/presentation/dashboard_providers.dart';
 import 'bbps_providers.dart';
 
 import '../../../core/models/app_exception.dart';
+import '../../wallet_mpin/presentation/verify_mpin_dialog.dart';
 
 class BbpsPayConfirmScreen extends ConsumerStatefulWidget {
   const BbpsPayConfirmScreen({super.key, required this.billerId});
@@ -105,47 +106,16 @@ class _BbpsPayConfirmScreenState extends ConsumerState<BbpsPayConfirmScreen> {
     }
   }
 
-  void _showPinPrompt() {
-    _pinController.clear();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.xxl,
-          top: AppSpacing.lg,
-          left: AppSpacing.lg,
-          right: AppSpacing.lg,
-        ),
-        decoration: const BoxDecoration(
-          color: AppColors.cardWhite,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              height: 4,
-              width: 40,
-              decoration: BoxDecoration(
-                color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            Text('Confirm Payment', style: AppTextTheme.textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.xs),
-            Text('Enter your 6-digit MPIN', style: AppTextTheme.textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary)),
-            const SizedBox(height: AppSpacing.xl),
-            PinEntryWidget(
-              controller: _pinController,
-              onCompleted: _processPayment,
-            ),
-          ],
-        ),
-      ),
-    );
+  void _showPinPrompt() async {
+    final bill = ref.read(bbpsFlowProvider).fetchedBill;
+    if (bill == null) return;
+    
+    final formattedAmount = CurrencyFormatter.fromPaise(bill.billAmountPaise);
+    final pin = await VerifyMpinDialog.show(context, amount: formattedAmount);
+    
+    if (pin != null) {
+      _processPayment(pin);
+    }
   }
 
   @override

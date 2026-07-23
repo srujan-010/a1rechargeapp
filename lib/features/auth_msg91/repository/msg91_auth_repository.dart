@@ -21,8 +21,7 @@ class Msg91AuthRepository {
 
   Future<Map<String, dynamic>> verifyOtp(String phone, String otp) async {
     try {
-      final response = await _apiService.verifyOtp(phone, otp);
-      return response as Map<String, dynamic>;
+      return await _apiService.verifyOtp(phone, otp);
     } on AppException catch (e) {
       throw Exception(e.message);
     } catch (e) {
@@ -34,8 +33,7 @@ class Msg91AuthRepository {
     debugPrint('[MSG91 Repository] loginWithAccessToken() called. Token length=${accessToken.length}');
     try {
       debugPrint('[MSG91 Repository] Calling _apiService.msg91Login()');
-      final response = await _apiService.msg91Login(accessToken);
-      return response as Map<String, dynamic>;
+      return await _apiService.msg91Login(accessToken);
     } on AppException catch (e) {
       throw Exception(e.message);
     } catch (e) {
