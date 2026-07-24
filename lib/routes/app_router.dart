@@ -93,13 +93,13 @@ import 'shell_scaffold.dart';
 
 // ─── Router Provider ──────────────────────────────────────────────────────────
 
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
   final sessionListenable = _SessionListenable(ref);
 
   return GoRouter(
-    navigatorKey: _rootNavigatorKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: RouteNames.splash,
     refreshListenable: sessionListenable,
     redirect: (context, state) {
@@ -331,7 +331,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'topup',
                     name: 'wallet-topup',
-                    parentNavigatorKey: _rootNavigatorKey,
+                    parentNavigatorKey: rootNavigatorKey,
                     pageBuilder: (c, s) => _slideUpPage(
                       state: s,
                       child: const WalletTopupScreen(),

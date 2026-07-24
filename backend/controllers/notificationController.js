@@ -1,5 +1,7 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 const mongoose = require('mongoose');
+const notificationService = require('../services/notification.service');
 
 // @desc    Get all notifications for logged in user (with pagination)
 // @route   GET /api/notifications
@@ -129,6 +131,65 @@ exports.createAdminBroadcast = async (req, res, next) => {
     });
 
     res.status(201).json({ success: true, data: notification });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Register device for FCM push notifications
+// @route   POST /api/notifications/register-device
+// @access  Private
+exports.registerDevice = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ success: false, message: 'Valid token is required' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    user.fcmToken = token;
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Device registered successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Test push notification
+// @route   POST /api/notifications/test
+// @access  Private
+exports.testPushNotification = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    
+    if (!user || !user.fcmToken) {
+      return res.status(400).json({ success: false, message: 'User does not have a registered FCM token' });
+    }
+
+    const payload = {
+      title: 'A1 Recharge',
+      body: 'Push Notifications are working successfully.',
+    };
+
+    const result = await notificationService.sendToUser(user.fcmToken, payload);
+
+    if (result.success) {
+      res.status(200).json({ success: true, message: 'Test notification sent successfully', data: result.response });
+    } else {
+      if (result.isUnregistered) {
+        // Token is invalid/unregistered, remove it
+        user.fcmToken = null;
+        await user.save();
+        return res.status(400).json({ success: false, message: 'FCM token was invalid and has been removed' });
+      }
+      res.status(500).json({ success: false, message: 'Failed to send test notification', error: result.error });
+    }
   } catch (error) {
     next(error);
   }

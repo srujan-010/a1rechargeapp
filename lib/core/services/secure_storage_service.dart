@@ -10,6 +10,7 @@ abstract final class _Keys {
   static const String mpinHash = 'mpin_hash';
   static const String biometricEnabled = 'biometric_enabled';
   static const String retailerId = 'retailer_id';
+  static const String fcmToken = 'fcm_token';
 }
 
 class SecureStorageService {
@@ -154,6 +155,15 @@ class SecureStorageService {
 
   Future<String?> getRetailerId() async {
     return _read(_Keys.retailerId);
+  }
+
+  // ─── FCM Token ────────────────────────────────────────────────────
+  Future<void> saveFcmToken(String token) async {
+    await _write(_Keys.fcmToken, token);
+  }
+
+  Future<String?> getFcmToken() async {
+    return _read(_Keys.fcmToken);
   }
 
   // ─── Full Clear (logout) ─────────────────────────────────────────

@@ -1,23 +1,56 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_state.dart';
 import '../repository/auth_repository.dart';
+import '../../notifications/repository/notification_repository.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/logger.dart';
+import '../../../core/services/notification_service.dart';
 
 final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(
     authRepository: ref.watch(authRepositoryProvider),
+    notificationRepository: ref.watch(notificationRepositoryProvider),
     ref: ref,
   );
 });
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository authRepository;
+  final NotificationRepository notificationRepository;
   final Ref ref;
 
-  AuthNotifier({required this.authRepository, required this.ref})
-      : super(const AuthState.initial());
+  AuthNotifier({
+    required this.authRepository,
+    required this.notificationRepository,
+    required this.ref,
+  }) : super(const AuthState.initial()) {
+    _initTokenRefreshListener();
+  }
+
+  StreamSubscription<String>? _tokenRefreshSub;
+
+  void _initTokenRefreshListener() {
+    _tokenRefreshSub = NotificationService.instance.onTokenRefresh.listen((newToken) async {
+      // Only upload if currently authenticated
+      if (state is AuthStateAuthenticated) {
+        AppLogger.info('FCM Token Refreshed while authenticated, re-uploading...', tag: 'Auth');
+        try {
+          await notificationRepository.registerDevice(newToken);
+          AppLogger.info('Refreshed FCM token uploaded successfully', tag: 'Auth');
+        } catch (e) {
+          AppLogger.error('Failed to upload refreshed FCM token', tag: 'Auth', error: e);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tokenRefreshSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> sendOtp(String phoneNumber) async {
     state = const AuthState.loading();
@@ -36,6 +69,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
               );
             } else {
               ref.invalidate(sessionProvider);
+              await _registerFcmToken();
               state = const AuthState.authenticated();
             }
           } catch (e, stack) {
@@ -79,6 +113,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
       } else {
         ref.invalidate(sessionProvider);
+        await _registerFcmToken();
         state = const AuthState.authenticated();
       }
     } catch (e, stack) {
@@ -92,6 +127,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       await authRepository.registerRetailer(formData);
       ref.invalidate(sessionProvider);
+      await _registerFcmToken();
       state = const AuthState.authenticated();
     } catch (e, stack) {
       AppLogger.error('submitRegistration Failed', tag: 'Auth', error: e, stackTrace: stack);
@@ -104,5 +140,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await authRepository.logout();
     ref.invalidate(sessionProvider);
     state = const AuthState.initial();
+  }
+
+  Future<void> _registerFcmToken() async {
+    try {
+      final secureStorage = ref.read(secureStorageProvider);
+      
+      // Request permission on Android 13+ (or iOS), then get token
+      final token = await NotificationService.instance.requestPermissionAndGetToken(secureStorage);
+      
+      if (token != null) {
+        // Retry logic for token upload
+        int retryCount = 0;
+        bool success = false;
+        while (retryCount < 3 && !success) {
+          try {
+            AppLogger.info('Uploading FCM token to backend (Attempt ${retryCount + 1})...', tag: 'Auth');
+            await notificationRepository.registerDevice(token);
+            success = true;
+            AppLogger.info('FCM token uploaded successfully', tag: 'Auth');
+          } catch (e) {
+            retryCount++;
+            AppLogger.warning('Failed to upload FCM token. Retry $retryCount of 3', tag: 'Auth', error: e);
+            if (retryCount < 3) {
+              await Future.delayed(const Duration(seconds: 2));
+            }
+          }
+        }
+      } else {
+        AppLogger.warning('FCM token is null, cannot register with backend', tag: 'Auth');
+      }
+    } catch (e, stack) {
+      AppLogger.error('Error during FCM token registration', tag: 'Auth', error: e, stackTrace: stack);
+    }
   }
 }

@@ -7,13 +7,21 @@ const morgan = require('morgan');
 const connectDB = require('./config/db');
 const { errorHandler } = require('./middleware/errorHandler');
 
-const { initFirebaseAdmin } = require('./config/firebase');
+const { initFirebaseAdmin, getApp } = require('./config/firebase');
 
 // Load env vars
 dotenv.config();
 
 // Init Firebase Admin SDK
 initFirebaseAdmin();
+const firebaseApp = getApp();
+if (firebaseApp) {
+  const projectId = firebaseApp.options.projectId || 
+    (firebaseApp.options.credential && firebaseApp.options.credential.projectId) || 
+    'unknown';
+  console.log(`Project ID: ${projectId}`);
+  console.log('Notification service ready');
+}
 
 // Connect to database
 connectDB();

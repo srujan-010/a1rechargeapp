@@ -114,6 +114,10 @@ const userSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    fcmToken: {
+      type: String,
+      default: null,
+    },
     isOnboarded: {
       type: Boolean,
       default: false,
@@ -202,6 +206,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     isVerified: this.isVerified,
     hasMpin: !!this.mpinHash,
     recentContacts: this.recentContacts || [],
+    fcmToken: this.fcmToken,
     createdAt: this.createdAt,
   };
 };

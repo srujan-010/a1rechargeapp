@@ -5,7 +5,9 @@ const {
   markAsRead,
   markAllAsRead,
   deleteNotification,
-  createAdminBroadcast
+  createAdminBroadcast,
+  registerDevice,
+  testPushNotification
 } = require('../controllers/notificationController');
 
 const { protect } = require('../middleware/authMiddleware');
@@ -13,6 +15,8 @@ const { protect } = require('../middleware/authMiddleware');
 router.use(protect);
 
 router.get('/', getNotifications);
+router.post('/register-device', registerDevice);
+router.post('/test', testPushNotification);
 router.patch('/read-all', markAllAsRead);
 router.patch('/:id/read', markAsRead);
 router.delete('/:id', deleteNotification);

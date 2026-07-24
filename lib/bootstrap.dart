@@ -11,6 +11,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/services/local_cache_service.dart';
+import '../core/services/secure_storage_service.dart';
+import '../core/services/notification_service.dart';
 import '../core/utils/logger.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/operator_registry.dart';
@@ -59,8 +61,13 @@ Future<void> bootstrap(Widget app) async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     AppLogger.info('Firebase initialized', tag: 'Bootstrap');
+    
+    // Initialize Notification Service
+    final secureStorage = SecureStorageService();
+    await NotificationService.instance.initialize(secureStorage);
+    AppLogger.info('NotificationService initialized', tag: 'Bootstrap');
   } catch (e, st) {
-    AppLogger.error('Firebase init failed', tag: 'Bootstrap', error: e, stackTrace: st);
+    AppLogger.error('Firebase/Notifications init failed', tag: 'Bootstrap', error: e, stackTrace: st);
   }
 
   AppLogger.info('Bootstrap complete — launching app', tag: 'Bootstrap');
