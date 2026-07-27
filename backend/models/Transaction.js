@@ -60,5 +60,9 @@ const transactionSchema = new mongoose.Schema({
   timestamps: true,
 });
 
+transactionSchema.index({ userId: 1, createdAt: -1 });
+transactionSchema.index({ userId: 1, service: 1, status: 1 });
+
 const Transaction = mongoose.model('Transaction', transactionSchema);
 module.exports = Transaction;
+

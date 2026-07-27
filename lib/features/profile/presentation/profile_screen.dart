@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/providers/core_providers.dart';
+
 import '../../../core/widgets/premium_logout_sheet.dart';
 import '../../../features/auth/provider/auth_provider.dart';
 
@@ -194,8 +194,9 @@ class ProfileScreen extends ConsumerWidget {
                           icon: Icons.notifications_none,
                           label: 'Notifications',
                           subtitle: 'Manage alert preferences',
-                          onTap: () => context.push(RouteNames.notificationSettings),
+                          onTap: () => context.push(RouteNames.notifications),
                         ),
+
                         const _Divider(),
                         _ProfileMenuItem(
                           icon: Icons.system_update_outlined,
@@ -259,8 +260,8 @@ class ProfileScreen extends ConsumerWidget {
     final user = ref.read(sessionProvider).valueOrNull;
     final confirmed = await PremiumLogoutSheet.show(
       context,
-      merchantName: user?.name ?? 'User',
-      merchantId: user != null ? 'RET000001' : '',
+      merchantName: user?.name ?? '',
+      merchantId: user?.retailerId ?? '',
     );
     if (confirmed != true) return;
     if (!context.mounted) return;
@@ -288,9 +289,36 @@ class _PremiumProfileHeader extends StatelessWidget {
       }
     }
 
-    final memberSince = parsedDate != null 
+    final String memberSince = parsedDate != null 
         ? DateFormat('MMM yyyy').format(parsedDate) 
-        : 'Jun 2023';
+        : '--';
+
+    final String name = (user?.name != null && user!.name.toString().trim().isNotEmpty)
+        ? user!.name.toString()
+        : 'Retailer';
+    final String shopName = (user?.shopName != null && user!.shopName.toString().trim().isNotEmpty)
+        ? user!.shopName.toString()
+        : name;
+    final String phone = (user?.phone != null && user!.phone.toString().trim().isNotEmpty)
+        ? user!.phone.toString()
+        : '--';
+    final String retailerId = (user?.retailerId != null && user!.retailerId.toString().trim().isNotEmpty)
+        ? user!.retailerId.toString()
+        : '--';
+    final String email = (user?.email != null && user!.email.toString().trim().isNotEmpty)
+        ? user!.email.toString()
+        : 'Not Added';
+    final String kycStatus = user?.kycStatus?.toString() ?? 'notStarted';
+
+    print('\n========== PROFILE WIDGET DATA ==========');
+    print('Profile Name: "$name"');
+    print('Profile Shop Name: "$shopName"');
+    print('Profile Phone: "$phone"');
+    print('Profile Email: "$email"');
+    print('Profile Retailer ID: "$retailerId"');
+    print('Profile KYC Status: "$kycStatus"');
+    print('Profile Joined Date: "$memberSince"');
+    print('==========================================\n');
 
     return Container(
       decoration: const BoxDecoration(
@@ -325,7 +353,7 @@ class _PremiumProfileHeader extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    _initials(user?.name),
+                    _initials(name),
                     style: const TextStyle(
                       color: Color(0xFF1565FF),
                       fontWeight: FontWeight.bold,
@@ -346,7 +374,7 @@ class _PremiumProfileHeader extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            user?.shopName ?? 'A1 Retailer',
+                            shopName,
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -358,12 +386,12 @@ class _PremiumProfileHeader extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        _KycBadge(isVerified: user?.isVerified == true),
+                        _KycBadge(isVerified: user?.isVerified == true || kycStatus == 'verified'),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      user?.name ?? 'Merchant Name',
+                      name,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 14,
@@ -379,8 +407,8 @@ class _PremiumProfileHeader extends StatelessWidget {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        _HeaderBadge(icon: Icons.phone_android, text: user?.phone ?? '9876543210'),
-                        _HeaderBadge(icon: Icons.badge, text: user?.retailerId ?? 'RET0001'),
+                        _HeaderBadge(icon: Icons.phone_android, text: phone),
+                        _HeaderBadge(icon: Icons.badge, text: retailerId),
                         Text(
                           'Joined $memberSince',
                           style: TextStyle(
@@ -401,12 +429,12 @@ class _PremiumProfileHeader extends StatelessWidget {
   }
 
   String _initials(String? name) {
-    if (name == null || name.isEmpty) return '?';
-    final parts = name.trim().split(' ');
+    final effective = (name != null && name.trim().isNotEmpty) ? name.trim() : 'Retailer';
+    final parts = effective.split(' ');
     if (parts.length >= 2) {
       return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
     }
-    return name[0].toUpperCase();
+    return effective[0].toUpperCase();
   }
 }
 

@@ -19,7 +19,7 @@ class CommissionSlab extends Equatable {
 
   final String id;
 
-  /// 'mobile' | 'dth' | 'bbps' | 'aeps' | 'dmt' | 'insurance' | 'loan'
+  /// 'mobile' | 'dth' | 'bbps' | 'aeps' | 'dmt' | 'insurance' | 'loan' | 'electricity' | 'gas' | 'fastag'
   final String serviceType;
 
   final String operatorName;
@@ -39,17 +39,19 @@ class CommissionSlab extends Equatable {
   bool get isActive => effectiveTo == null || DateTime.now().isBefore(effectiveTo!);
 
   factory CommissionSlab.fromJson(Map<String, dynamic> json) => CommissionSlab(
-        id: json['id'] as String? ?? '',
+        id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
         serviceType: json['serviceType'] as String? ?? 'mobile',
         operatorName: json['operatorName'] as String? ?? '',
         operatorLogoUrl: json['operatorLogoUrl'] as String?,
         commissionType: json['commissionType'] as String? ?? 'percentage',
-        commissionValue: (json['commissionValue'] as num?)?.toDouble() ?? 0.0,
+        commissionValue: (json['commissionValue'] as num?)?.toDouble() ??
+            (json['retailerCommission'] as num?)?.toDouble() ??
+            0.0,
         effectiveFrom: json['effectiveFrom'] != null
-            ? DateTime.parse(json['effectiveFrom'] as String)
-            : DateTime(2024),
+            ? DateTime.tryParse(json['effectiveFrom'] as String) ?? DateTime.now()
+            : DateTime.now(),
         effectiveTo: json['effectiveTo'] != null
-            ? DateTime.parse(json['effectiveTo'] as String)
+            ? DateTime.tryParse(json['effectiveTo'] as String)
             : null,
       );
 
@@ -64,7 +66,7 @@ class CommissionSlab extends Equatable {
         'effectiveTo': effectiveTo?.toIso8601String(),
       };
 
-  /// Fake factory for tests and mock repositories.
+  /// Fake factory for tests.
   factory CommissionSlab.fake({
     String id = 'SLAB001',
     String serviceType = 'mobile',

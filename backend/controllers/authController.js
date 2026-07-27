@@ -364,9 +364,9 @@ const registerRetailer = async (req, res, next) => {
 const getMe = async (req, res, next) => {
   try {
     const [bank, wallet, kyc] = await Promise.all([
-      Bank.findOne({ userId: req.user._id }),
-      Wallet.findOne({ userId: req.user._id }),
-      Kyc.findOne({ userId: req.user._id }),
+      Bank.findOne({ userId: req.user._id }).lean().maxTimeMS(3000),
+      Wallet.findOne({ userId: req.user._id }).lean().maxTimeMS(3000),
+      Kyc.findOne({ userId: req.user._id }).lean().maxTimeMS(3000),
     ]);
 
     res.status(200).json({
@@ -377,6 +377,7 @@ const getMe = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // @desc    Change MPIN via Firebase Phone Auth
 // @route   PUT /api/user/change-mpin

@@ -11,8 +11,8 @@ import '../../commission/presentation/commission_providers.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import '../domain/models/operator.dart';
 import 'recharge_providers.dart';
-import '../../../core/models/app_exception.dart';
 import '../../../core/utils/upi_handler.dart';
+
 
 enum PaymentMethod { wallet, upi }
 
@@ -35,41 +35,26 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
     super.dispose();
   }
 
-  Future<void> _processRecharge(String pin) async {
-    setState(() {
-      _errorText = null;
-      _isLoading = true;
-    });
+  void _processRecharge(String pin) {
+    final state = ref.read(rechargeFlowProvider);
+    final isDth = state.operator?.type == OperatorType.dth;
 
-    try {
-      final receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(mpin: pin, paymentMode: 'wallet');
-      if (!mounted) return;
-      
-      // Navigate to home, then push receipt
-      context.go(RouteNames.dashboard);
-      context.push(RouteNames.rechargeReceipt.replaceFirst(':txnId', receipt.transactionId), extra: receipt);
-    } catch (e) {
-      if (mounted) {
-        String errorMsg = e.toString();
-        if (e is AppException) {
-          errorMsg = e.message;
-        }
-
-        if (errorMsg.toLowerCase().contains('insufficient balance') ||
-            errorMsg.toLowerCase().contains('insufficient fund') ||
-            errorMsg.toLowerCase().contains('balance')) {
-          errorMsg = 'Insufficient funds. Please add funds to your wallet.';
-        } else if (errorMsg.toLowerCase().contains('mpin') || errorMsg.toLowerCase().contains('pin')) {
-          errorMsg = 'Invalid MPIN entered. Please try again.';
-        }
-
-        setState(() {
-          _errorText = errorMsg;
-          _isLoading = false;
-          _pinController.clear();
-        });
-      }
+    if (state.phoneNumber == null || state.operator == null || (!isDth && state.circle == null) || state.customAmountPaise == null) {
+      setState(() => _errorText = 'Incomplete recharge details.');
+      return;
     }
+
+    // Instantly navigate to dedicated full-screen RechargeProcessingScreen
+    context.push(
+      RouteNames.rechargeProcessing,
+      extra: {
+        'mpin': pin,
+        'paymentMode': 'wallet',
+        'phoneNumber': state.phoneNumber,
+        'operatorName': state.operator!.name,
+        'amountPaise': state.customAmountPaise,
+      },
+    );
   }
 
   Future<void> _processUpiPayment(double amount) async {
@@ -95,12 +80,17 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         return;
       }
 
-      // If successful, proceed to recharge without mpin
-      final receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(paymentMode: 'upi');
+      final state = ref.read(rechargeFlowProvider);
       if (!mounted) return;
-      
-      context.go(RouteNames.dashboard);
-      context.push(RouteNames.rechargeReceipt.replaceFirst(':txnId', receipt.transactionId), extra: receipt);
+      context.push(
+        RouteNames.rechargeProcessing,
+        extra: {
+          'paymentMode': 'upi',
+          'phoneNumber': state.phoneNumber,
+          'operatorName': state.operator!.name,
+          'amountPaise': state.customAmountPaise,
+        },
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,6 +99,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       setState(() => _isLoading = false);
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

@@ -8,6 +8,7 @@ import '../utils/logger.dart';
 import 'secure_storage_service.dart';
 import '../../routes/app_router.dart';
 import '../../core/constants/route_names.dart';
+import 'device_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -54,9 +55,13 @@ class NotificationService {
 
       // 5. Initialize Token Refresh Listener
       _messaging.onTokenRefresh.listen((newToken) async {
+        print('\n========== FCM DEBUG ==========');
+        print('Token Refresh Event: $newToken');
+        print('==============================\n');
         AppLogger.info('FCM Token Refreshed: $newToken', tag: 'FCM');
         _fcmToken = newToken;
         await secureStorage.saveFcmToken(newToken);
+        await DeviceService.instance.registerDeviceToken(newToken);
       }).onError((err) {
         AppLogger.error('Failed to get FCM token on refresh', tag: 'FCM', error: err);
       });
@@ -67,16 +72,24 @@ class NotificationService {
     }
   }
 
-  Future<String?> requestPermissionAndGetToken(SecureStorageService secureStorage) async {
+  Future<String?> requestPermissionAndGetToken([SecureStorageService? secureStorage]) async {
     try {
+      print('\n========== FCM DEBUG ==========');
+      print('Firebase Initialized: $_isInitialized');
+      
       final status = await Permission.notification.request();
+      print('Permission Status: $status');
       AppLogger.info('Notification Permission status: $status', tag: 'FCM');
 
       if (status.isGranted) {
         _fcmToken = await _messaging.getToken();
+        print('FCM Token: ${_fcmToken ?? "null"}');
         if (_fcmToken != null) {
           AppLogger.info('FCM Token:\n$_fcmToken', tag: 'FCM');
-          await secureStorage.saveFcmToken(_fcmToken!);
+          if (secureStorage != null) {
+            await secureStorage.saveFcmToken(_fcmToken!);
+          }
+          await DeviceService.instance.registerDeviceToken(_fcmToken!);
           return _fcmToken;
         }
       } else if (status.isDenied) {
@@ -84,7 +97,10 @@ class NotificationService {
       } else if (status.isPermanentlyDenied) {
         AppLogger.warning('Notification permission permanently denied. Open settings to enable.', tag: 'FCM');
       }
+      print('==============================\n');
     } catch (e, stack) {
+      print('FCM Error in requestPermissionAndGetToken: $e');
+      print('==============================\n');
       AppLogger.error('Failed to request permission or get token', tag: 'FCM', error: e, stackTrace: stack);
     }
     return null;

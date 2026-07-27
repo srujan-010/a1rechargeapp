@@ -26,7 +26,7 @@ abstract final class AppConfig {
 
   static const String _lanIp = String.fromEnvironment(
     'LAN_IP',
-    defaultValue: '192.168.0.104',
+    defaultValue: '10.10.51.231',
   );
 
   static late String _initializedBaseUrl;
@@ -80,7 +80,7 @@ abstract final class AppConfig {
           _initializedBaseUrl = 'http://10.0.2.2:5000/api';
         } else {
           // Physical device: use LAN IP — set LAN_IP via --dart-define or fallback
-          final lanIp = _lanIp.isNotEmpty ? _lanIp : '192.168.0.104';
+          final lanIp = _lanIp.isNotEmpty ? _lanIp : '10.10.51.231';
           _initializedBaseUrl = 'http://$lanIp:5000/api';
         }
       } else {
@@ -90,6 +90,7 @@ abstract final class AppConfig {
       _initializedBaseUrl = 'https://a1rechargeapp.onrender.com/api';
     }
     
+    print('\nAPI Base URL:\n$_initializedBaseUrl\n');
     AppLogger.info('API Base URL configured as: $_initializedBaseUrl', tag: 'Config');
   }
 

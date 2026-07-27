@@ -75,6 +75,8 @@ class RechargeReceipt extends Equatable {
 
   bool get isSuccess => status == RechargeStatus.success;
   bool get isFailed => status == RechargeStatus.failed;
+  bool get isPending => status == RechargeStatus.pending || status == RechargeStatus.processing;
+
 
   factory RechargeReceipt.fromJson(Map<String, dynamic> json) =>
       RechargeReceipt(

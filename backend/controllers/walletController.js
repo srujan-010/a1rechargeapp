@@ -39,7 +39,10 @@ const getTransactionTitle = (serviceType, operatorName) => {
 // @access  Private
 const getBalance = async (req, res, next) => {
   try {
-    const wallet = await Wallet.findOne({ userId: req.user._id });
+    const wallet = await Wallet.findOne({ userId: req.user._id })
+      .select('balancePaise onHoldPaise currency')
+      .lean()
+      .maxTimeMS(3000);
     
     if (!wallet) {
       res.status(404);
@@ -69,9 +72,12 @@ const getStatement = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const transactions = await Transaction.find({ userId: req.user._id })
+      .select('_id service operatorName mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference')
       .sort({ createdAt: -1 })
       .skip(Number(skip))
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .lean()
+      .maxTimeMS(3000);
 
     res.status(200).json({
       success: true,
@@ -84,8 +90,8 @@ const getStatement = async (req, res, next) => {
         amount: t.amountPaise,
         commission: t.commissionEarnedPaise || 0,
         status: t.status,
-        createdAt: t.createdAt.toISOString(),
-        completedAt: (t.updatedAt || t.createdAt).toISOString(),
+        createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
+        completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
         paymentMethod: t.paymentMethod || 'wallet',
         referenceNumber: t.referenceId,
         apiReference: t.apiReference || ''
@@ -195,7 +201,10 @@ const getDashboardSummary = async (req, res, next) => {
     const transactions = await Transaction.find({
       userId: req.user._id,
       createdAt: { $gte: todayStart, $lte: todayEnd }
-    });
+    })
+    .select('service type status amountPaise')
+    .lean()
+    .maxTimeMS(3000);
 
     let todayRechargeAmount = 0;
     let todayCommission = 0;

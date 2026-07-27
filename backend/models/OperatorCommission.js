@@ -11,6 +11,16 @@ const operatorCommissionSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    serviceType: {
+      type: String,
+      enum: ['mobile', 'dth', 'bbps', 'electricity', 'gas', 'fastag', 'aeps', 'dmt'],
+      default: 'mobile',
+    },
+    commissionType: {
+      type: String,
+      enum: ['percentage', 'flat'],
+      default: 'percentage',
+    },
     providerCommission: {
       type: Number,
       required: true,

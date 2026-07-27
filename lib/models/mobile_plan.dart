@@ -12,6 +12,13 @@ class PlanPricing {
       validity: json['Month']?.toString() ?? json['Validity']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'Amount': amount,
+      'Validity': validity,
+    };
+  }
 }
 
 class MobilePlan {
@@ -51,8 +58,23 @@ class MobilePlan {
       hdChannels: json['hdChannels']?.toString() ?? json['HdChannels']?.toString(),
       language: json['language']?.toString() ?? json['Language']?.toString(),
       pricingOptions: json['PricingList'] != null 
-          ? (json['PricingList'] as List).map((p) => PlanPricing.fromJson(p as Map<String, dynamic>)).toList()
+          ? (json['PricingList'] as List).map((p) => PlanPricing.fromJson(Map<String, dynamic>.from(p as Map))).toList()
           : null,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'rs': rs,
+      'desc': desc,
+      'validity': validity,
+      'last_update': lastUpdate,
+      'channels': channels,
+      'paidChannels': paidChannels,
+      'hdChannels': hdChannels,
+      'language': language,
+      'PricingList': pricingOptions?.map((p) => p.toJson()).toList(),
+    };
   }
 }

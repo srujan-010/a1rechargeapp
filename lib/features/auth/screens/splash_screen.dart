@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:math' as math;
 import 'dart:ui';
+import '../../../firebase_options.dart';
 import '../../../core/constants/asset_paths.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/local_cache_service.dart';
+import '../../../core/utils/startup_tracker.dart';
+import '../../../core/utils/logger.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -29,6 +33,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   @override
   void initState() {
     super.initState();
+    StartupTracker.instance.markSplashStarted();
 
     // Entrance Animation (Fade & initial scale)
     _entranceController = AnimationController(
@@ -78,21 +83,48 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
   }
 
   Future<void> _checkAuth() async {
-    // Keep splash visible for ~2.5 - 3 seconds for premium feel
-    await Future.delayed(const Duration(milliseconds: 2800));
+    final startTime = DateTime.now();
 
-    if (!mounted) return;
-
-    final session = await ref.read(sessionProvider.future);
-    
-    if (!mounted) return;
-
-    if (session != null) {
-      context.go(RouteNames.dashboard);
-    } else {
-      context.go(RouteNames.onboarding);
+    // 1. Local storage & local Firebase init
+    try {
+      await LocalCacheService.initialize();
+    } catch (e) {
+      AppLogger.warning('LocalCacheService init error: $e', tag: 'Splash');
     }
+
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e) {
+      AppLogger.warning('Firebase local init error: $e', tag: 'Splash');
+    }
+
+    StartupTracker.instance.markLocalInitCompleted();
+
+    // 2. Restore & validate JWT locally (non-blocking network)
+    bool hasJwt = false;
+    try {
+      hasJwt = await ref.read(hasValidJwtProvider.future);
+    } catch (e) {
+      AppLogger.warning('JWT check error: $e', tag: 'Splash');
+    }
+
+    final targetRoute = hasJwt ? RouteNames.dashboard : RouteNames.otpLogin;
+    StartupTracker.instance.markNavDecisionCompleted();
+
+    // 3. Keep splash visible for ~1.2 seconds for smooth transition
+    final elapsedMs = DateTime.now().difference(startTime).inMilliseconds;
+    final remainingDelay = (1200 - elapsedMs).clamp(0, 1200);
+    if (remainingDelay > 0) {
+      await Future.delayed(Duration(milliseconds: remainingDelay));
+    }
+
+    if (!mounted) return;
+
+    context.go(targetRoute);
   }
+
 
   @override
   void dispose() {

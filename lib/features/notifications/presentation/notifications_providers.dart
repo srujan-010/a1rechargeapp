@@ -84,8 +84,35 @@ class NotificationsNotifier extends AutoDisposeAsyncNotifier<List<AppNotificatio
     
     await repo.markAllAsRead();
   }
+
+  Future<void> deleteNotification(String id) async {
+    final repo = ref.read(notificationsRepositoryProvider);
+    
+    // Optimistic removal
+    final current = state.valueOrNull;
+    if (current != null) {
+      final updatedList = current.where((n) => n.id != id).toList();
+      state = AsyncData(updatedList);
+      await repo.deleteNotification(id);
+    }
+  }
+
+  /// Silent background refresh without setting state to AsyncLoading
+  Future<void> refreshSilently() async {
+    try {
+      final repo = ref.read(notificationsRepositoryProvider);
+      final result = await repo.getNotifications(page: 1, limit: 20);
+      final newItems = result.valueOrNull;
+      if (newItems != null) {
+        state = AsyncData(newItems);
+      }
+    } catch (_) {
+      // Ignore background errors, keep existing state
+    }
+  }
 }
 
 final notificationsProvider = AutoDisposeAsyncNotifierProvider<NotificationsNotifier, List<AppNotification>>(
   NotificationsNotifier.new,
 );
+

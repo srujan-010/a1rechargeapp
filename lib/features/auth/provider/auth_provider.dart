@@ -155,12 +155,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
         bool success = false;
         while (retryCount < 3 && !success) {
           try {
+            print('\n========== FCM DEBUG ==========');
+            print('Token Upload Started (Attempt ${retryCount + 1})');
             AppLogger.info('Uploading FCM token to backend (Attempt ${retryCount + 1})...', tag: 'Auth');
-            await notificationRepository.registerDevice(token);
+            
+            final response = await notificationRepository.registerDevice(token);
+            
+            print('Backend Response: Success');
+            print('==============================\n');
+            
             success = true;
             AppLogger.info('FCM token uploaded successfully', tag: 'Auth');
           } catch (e) {
             retryCount++;
+            print('\n========== FCM DEBUG ==========');
+            print('Backend Response: Error - $e');
+            print('==============================\n');
             AppLogger.warning('Failed to upload FCM token. Retry $retryCount of 3', tag: 'Auth', error: e);
             if (retryCount < 3) {
               await Future.delayed(const Duration(seconds: 2));

@@ -10,23 +10,21 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../core/services/local_cache_service.dart';
-import '../core/services/secure_storage_service.dart';
-import '../core/services/notification_service.dart';
 import '../core/utils/logger.dart';
+import '../core/utils/startup_tracker.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/operator_registry.dart';
 
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-
 Future<void> bootstrap(Widget app) async {
+  // Mark t0: App Started
+  StartupTracker.instance.markAppStarted();
+
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize environment and base URLs
   await AppConfig.init();
 
-  // Initialize Operator Registry
+  // Initialize Operator Registry from local assets
   await OperatorRegistry.instance.initialize();
 
   // Lock orientation to portrait
@@ -46,30 +44,7 @@ Future<void> bootstrap(Widget app) async {
     ),
   );
 
-  // Initialize Hive local cache
-  try {
-    await LocalCacheService.initialize();
-    AppLogger.info('Hive cache initialized', tag: 'Bootstrap');
-  } catch (e, st) {
-    AppLogger.error('Hive init failed', tag: 'Bootstrap', error: e, stackTrace: st);
-    // Non-fatal: app can run without local cache
-  }
-
-  // Initialize Firebase
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    AppLogger.info('Firebase initialized', tag: 'Bootstrap');
-    
-    // Initialize Notification Service
-    final secureStorage = SecureStorageService();
-    await NotificationService.instance.initialize(secureStorage);
-    AppLogger.info('NotificationService initialized', tag: 'Bootstrap');
-  } catch (e, st) {
-    AppLogger.error('Firebase/Notifications init failed', tag: 'Bootstrap', error: e, stackTrace: st);
-  }
-
   AppLogger.info('Bootstrap complete — launching app', tag: 'Bootstrap');
   runApp(app);
 }
+

@@ -65,6 +65,18 @@ app.use(express.json());
 // app.use(helmet());
 app.use(morgan('dev'));
 
+// Response Time & Performance Auditing Middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (duration > 200) {
+      console.log(`[PERF WARNING] ${req.method} ${req.originalUrl} took ${duration}ms`);
+    }
+  });
+  next();
+});
+
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/msg91', require('./routes/msg91Routes'));

@@ -1,8 +1,10 @@
 // lib/features/commission/presentation/commission_providers.dart
 // Riverpod providers for commission data: slabs, earned summaries, period filtering.
 
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/app_config.dart';
+import '../../../core/services/local_cache_service.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/providers/core_providers.dart';
 import '../data/commission_repository_impl.dart';
@@ -67,13 +69,55 @@ final commissionRepositoryProvider = Provider<CommissionRepository>((ref) {
   );
 });
 
-// ─── Active Slabs Provider ────────────────────────────────────────────────────
+// ─── Active Slabs Provider (Stale-While-Revalidate) ──────────────────────────
 
-final activeCommissionSlabsProvider =
-    FutureProvider<List<CommissionSlab>>((ref) async {
-  final repo = ref.watch(commissionRepositoryProvider);
-  return repo.getActiveSlabs();
-});
+class ActiveCommissionSlabsNotifier extends AsyncNotifier<List<CommissionSlab>> {
+  @override
+  FutureOr<List<CommissionSlab>> build() {
+    final cache = LocalCacheService.instance;
+    final cachedList = cache.get<List<dynamic>>(cache.offersBox, 'cached_commission_slabs');
+    List<CommissionSlab>? cachedSlabs;
+
+    if (cachedList != null) {
+      try {
+        cachedSlabs = cachedList
+            .map((item) => CommissionSlab.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList();
+      } catch (e) {
+        AppLogger.warning('Failed to parse cached commission slabs', tag: 'Cache');
+      }
+    }
+
+    _refreshInBackground();
+
+    return cachedSlabs ?? <CommissionSlab>[];
+  }
+
+  Future<void> _refreshInBackground() async {
+    try {
+      final repo = ref.read(commissionRepositoryProvider);
+      final freshSlabs = await repo.getActiveSlabs().timeout(const Duration(seconds: 4));
+      if (freshSlabs.isNotEmpty) {
+        LocalCacheService.instance.put(
+          LocalCacheService.instance.offersBox,
+          'cached_commission_slabs',
+          freshSlabs.map((s) => s.toJson()).toList(),
+        );
+        state = AsyncData(freshSlabs);
+      }
+    } catch (e) {
+      AppLogger.warning('Commission slabs background refresh error: $e', tag: 'CommissionProviders');
+    }
+  }
+
+  Future<void> reload() async {
+    await _refreshInBackground();
+  }
+}
+
+final activeCommissionSlabsProvider = AsyncNotifierProvider<ActiveCommissionSlabsNotifier, List<CommissionSlab>>(
+  ActiveCommissionSlabsNotifier.new,
+);
 
 // ─── Earned Commission Provider (per-period) ──────────────────────────────────
 

@@ -33,7 +33,11 @@ import '../features/recharge/presentation/mobile_recharge_screen.dart';
 import '../features/recharge/presentation/plan_selection_screen.dart';
 import '../features/recharge/presentation/recharge_confirmation_screen.dart';
 import '../features/recharge/presentation/recharge_receipt_screen.dart';
+import '../features/recharge/presentation/recharge_processing_screen.dart';
+import '../features/recharge/presentation/recharge_pending_screen.dart';
+import '../features/recharge/presentation/recharge_failed_screen.dart';
 import '../features/recharge/domain/models/recharge_result.dart';
+
 import '../features/dth/presentation/dth_recharge_screen.dart';
 import '../features/dth/presentation/dth_plans_screen.dart';
 import '../features/dth/presentation/dth_confirmation_screen.dart';
@@ -49,7 +53,6 @@ import '../features/gas/domain/models/gas_models.dart';
 import '../features/fastag/presentation/screens/fastag_operator_selection_screen.dart';
 import '../features/fastag/presentation/screens/fastag_fetch_screen.dart';
 import '../features/fastag/presentation/screens/fastag_recharge_amount_screen.dart';
-import '../features/fastag/presentation/screens/fastag_pay_confirm_screen.dart';
 import '../features/fastag/presentation/screens/fastag_pay_confirm_screen.dart';
 
 import '../features/commission/presentation/commission_slab_screen.dart';
@@ -78,6 +81,7 @@ import '../features/wallet_mpin/presentation/change_mpin_screen.dart';
 import '../features/wallet_mpin/presentation/forgot_mpin_screen.dart';
 import '../features/wallet_mpin/presentation/reset_mpin_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/settings/presentation/device_info_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
 import '../features/settings/presentation/privacy_policy_screen.dart';
 import '../features/settings/presentation/terms_conditions_screen.dart';
@@ -86,9 +90,9 @@ import '../features/settings/presentation/about_app_screen.dart';
 import '../features/support/presentation/support_screen.dart';
 import '../features/profile/presentation/bank_details_screen.dart';
 import '../features/profile/presentation/add_bank_screen.dart';
-import '../features/profile/presentation/kyc_screen.dart';
 import '../features/profile/presentation/personal_info_screen.dart';
 import '../features/profile/presentation/kyc_screen.dart';
+
 import 'shell_scaffold.dart';
 
 // ─── Router Provider ──────────────────────────────────────────────────────────
@@ -103,8 +107,9 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: RouteNames.splash,
     refreshListenable: sessionListenable,
     redirect: (context, state) {
+      final hasJwt = ref.read(hasValidJwtProvider).valueOrNull ?? false;
       final sessionAsync = ref.read(sessionProvider);
-      final isAuthenticated = sessionAsync.valueOrNull != null;
+      final isAuthenticated = hasJwt || sessionAsync.valueOrNull != null;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       final isSplash = state.matchedLocation == RouteNames.splash;
 
@@ -123,6 +128,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       return null; // No redirect needed
     },
+
     routes: [
       // ─── Splash ────────────────────────────────────────────────────
         GoRoute(
@@ -455,6 +461,37 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: RouteNames.rechargeProcessing,
+        name: 'recharge-processing',
+        pageBuilder: (c, s) {
+          final data = s.extra as Map<String, dynamic>? ?? {};
+          return _fadePage(state: s, child: RechargeProcessingScreen(data: data));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.rechargePending,
+        name: 'recharge-pending',
+        pageBuilder: (c, s) {
+          final receipt = s.extra as RechargeReceipt?;
+          if (receipt == null) {
+            return _fadePage(state: s, child: const Scaffold(body: Center(child: Text('Invalid Pending Receipt'))));
+          }
+          return _fadePage(state: s, child: RechargePendingScreen(receipt: receipt));
+        },
+      ),
+      GoRoute(
+        path: RouteNames.rechargeFailed,
+        name: 'recharge-failed',
+        pageBuilder: (c, s) {
+          final receipt = s.extra as RechargeReceipt?;
+          if (receipt == null) {
+            return _fadePage(state: s, child: const Scaffold(body: Center(child: Text('Invalid Failure Receipt'))));
+          }
+          return _fadePage(state: s, child: RechargeFailedScreen(receipt: receipt));
+        },
+      ),
+
+      GoRoute(
         path: RouteNames.dthRecharge,
         name: 'dth-recharge',
         pageBuilder: (c, s) => _slideRightPage(state: s, child: const DthRechargeScreen()),
@@ -701,6 +738,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RouteNames.aboutApp,
         name: 'about-app',
         pageBuilder: (c, s) => _slideRightPage(state: s, child: const AboutAppScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.deviceInfo,
+        name: 'device-info',
+        pageBuilder: (c, s) => _slideRightPage(state: s, child: const DeviceInfoScreen()),
       ),
       GoRoute(
         path: RouteNames.support,

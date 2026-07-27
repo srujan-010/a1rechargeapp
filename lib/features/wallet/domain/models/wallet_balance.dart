@@ -35,7 +35,7 @@ class WalletBalance extends Equatable {
         lastUpdated: json['lastUpdated'] != null
             ? DateTime.parse(json['lastUpdated'] as String)
             : DateTime.now(),
-        walletId: json['walletId'] as String? ?? 'RET000000',
+        walletId: json['walletId'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {

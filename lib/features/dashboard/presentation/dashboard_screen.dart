@@ -10,6 +10,8 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/startup_tracker.dart';
+import '../../../core/services/background_startup_service.dart';
 import '../../../features/wallet/domain/models/wallet_transaction.dart';
 import '../../notifications/presentation/notifications_providers.dart';
 import '../../wallet_mpin/providers/wallet_mpin_provider.dart';
@@ -24,7 +26,17 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      StartupTracker.instance.markDashboardDisplayed();
+      BackgroundStartupService.instance.runTasks(ref);
+    });
+  }
+
   Future<void> _refresh() async {
+
     ref.invalidate(walletBalanceProvider);
     ref.invalidate(recentTransactionsProvider);
     ref.invalidate(earningsSummaryProvider);
@@ -180,9 +192,18 @@ class _DashboardAppBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notificationsCount = ref.watch(unreadNotificationsCountProvider);
-    final retailerName = user?.name ?? 'Retailer';
-    final initial = retailerName.isNotEmpty ? retailerName[0].toUpperCase() : 'R';
-    final retailerId = user?.retailerId ?? 'RET000000';
+    final String retailerName = (user?.name != null && user!.name.toString().trim().isNotEmpty)
+        ? user!.name.toString()
+        : 'Retailer';
+    final String initial = retailerName.isNotEmpty ? retailerName[0].toUpperCase() : 'R';
+    final String retailerId = (user?.retailerId != null && user!.retailerId.toString().trim().isNotEmpty)
+        ? user!.retailerId.toString()
+        : '--';
+
+    print('\n========== HOME WIDGET DATA ==========');
+    print('Home Retailer Name: "$retailerName"');
+    print('Home Retailer ID: "$retailerId"');
+    print('======================================\n');
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.0, end: 1.0),
@@ -227,14 +248,16 @@ class _DashboardAppBar extends ConsumerWidget {
                       ),
                     ),
                     child: Center(
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      child: initial.isNotEmpty
+                          ? Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            )
+                          : const Icon(Icons.person, color: Colors.white, size: 24),
                     ),
                   ),
                   if (user?.isVerified == true)
@@ -274,16 +297,26 @@ class _DashboardAppBar extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    retailerName,
-                    style: AppTextTheme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                      color: AppColors.textPrimary,
+                  if (retailerName.isNotEmpty)
+                    Text(
+                      retailerName,
+                      style: AppTextTheme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        color: AppColors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else
+                    Container(
+                      width: 120,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             ),
@@ -291,46 +324,46 @@ class _DashboardAppBar extends ConsumerWidget {
             // Right side: Retailer ID Pill & Notifications
             Row(
               children: [
-                // Retailer ID Pill
-                GestureDetector(
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: retailerId));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Copied ID: $retailerId'),
-                          behavior: SnackBarBehavior.floating,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.storefront_rounded, size: 14, color: AppColors.primaryBlue),
-                        const SizedBox(width: 4),
-                        Text(
-                          retailerId,
-                          style: const TextStyle(
-                            color: AppColors.primaryBlue,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                if (retailerId.isNotEmpty)
+                  GestureDetector(
+                    onTap: () async {
+                      await Clipboard.setData(ClipboardData(text: retailerId));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Copied ID: $retailerId'),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.copy_rounded, size: 12, color: AppColors.primaryBlue),
-                      ],
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.storefront_rounded, size: 14, color: AppColors.primaryBlue),
+                          const SizedBox(width: 4),
+                          Text(
+                            retailerId,
+                            style: const TextStyle(
+                              color: AppColors.primaryBlue,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.copy_rounded, size: 12, color: AppColors.primaryBlue),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 const SizedBox(width: AppSpacing.sm),
                 
                 // Notifications Button

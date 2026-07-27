@@ -61,4 +61,22 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
       return Failure(ServerException(message: e.toString()));
     }
   }
+
+  @override
+  Future<Result<void, AppException>> deleteNotification(String notificationId) async {
+    try {
+      final response = await _apiClient.delete<dynamic>(
+        '/notifications/$notificationId',
+      );
+      if (response.success) {
+        return const Success(null);
+      } else {
+        return Failure(ServerException(message: response.message ?? 'Failed to delete notification'));
+      }
+    } catch (e) {
+      // Non-fatal fallback for mock / offline operation
+      return const Success(null);
+    }
+  }
 }
+

@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/models/app_exception.dart';
+import '../../../core/services/local_cache_service.dart';
+import '../../../core/utils/logger.dart';
+
+
 import '../../../core/providers/core_providers.dart';
 import '../data/recharge_repository_impl.dart';
 import '../domain/recharge_repository.dart';
@@ -31,39 +33,90 @@ final mobilePlanRepositoryProvider = Provider<MobilePlanRepository>((ref) {
 
 // A family provider to fetch operators by service type ('mobile', 'dth', etc.)
 final operatorsProvider = FutureProvider.family<List<Operator>, String>((ref, serviceType) async {
-  final repo = ref.watch(rechargeRepositoryProvider);
-  final result = await repo.getOperators(serviceType: serviceType);
-  final ops = result.getOrElseCompute((e) => throw e);
-  debugPrint('==========================');
-  debugPrint('STEP 4 - PROVIDER');
-  debugPrint('==========================');
-  debugPrint('OperatorProvider state (serviceType=$serviceType):');
-  debugPrint('Number of operators stored: ${ops.length}');
-  return ops;
-});
+  final cache = LocalCacheService.instance;
+  final cacheKey = 'operators_$serviceType';
 
-// A provider to fetch all circles
-final circlesProvider = FutureProvider<List<Circle>>((ref) async {
-  final repo = ref.watch(rechargeRepositoryProvider);
-  final result = await repo.getCircles();
-  return result.getOrElseCompute((e) => throw e);
-});
+  // 1. Check local Hive cache
+  final cachedList = cache.get<List<dynamic>>(cache.operatorsBox, cacheKey);
+  List<Operator>? cachedOps;
+  if (cachedList != null) {
+    try {
+      cachedOps = cachedList
+          .map((e) => Operator.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {}
+  }
 
-// A provider to fetch plans based on operatorId, circle, and serviceType
-final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operatorId, String circle, String serviceType})>((ref, params) async {
-  print("ENTERED: recharge_providers.dart plansProvider");
+  // 2. Fetch fresh data with 3-second timeout
   try {
-    debugPrint("==================================================");
-    debugPrint("STEP 3");
-    
+    final repo = ref.watch(rechargeRepositoryProvider);
+    final result = await repo.getOperators(serviceType: serviceType).timeout(const Duration(seconds: 3));
+    final ops = result.valueOrNull;
+    if (ops != null && ops.isNotEmpty) {
+      cache.put(cache.operatorsBox, cacheKey, ops.map((o) => o.toJson()).toList());
+      return ops;
+    }
+  } catch (e) {
+    AppLogger.warning('Operators network fetch fallback to cache: $e', tag: 'OperatorsProvider');
+  }
+
+  return cachedOps ?? <Operator>[];
+});
+
+
+// A provider to fetch all circles with local cache
+final circlesProvider = FutureProvider<List<Circle>>((ref) async {
+  final cache = LocalCacheService.instance;
+  const cacheKey = 'cached_circles';
+
+  final cachedList = cache.get<List<dynamic>>(cache.operatorsBox, cacheKey);
+  List<Circle>? cachedCircles;
+  if (cachedList != null) {
+    try {
+      cachedCircles = cachedList
+          .map((e) => Circle.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {}
+  }
+
+  try {
+    final repo = ref.watch(rechargeRepositoryProvider);
+    final result = await repo.getCircles().timeout(const Duration(seconds: 3));
+    final freshCircles = result.valueOrNull;
+    if (freshCircles != null && freshCircles.isNotEmpty) {
+      cache.put(cache.operatorsBox, cacheKey, freshCircles.map((c) => c.toJson()).toList());
+      return freshCircles;
+    }
+  } catch (e) {
+    AppLogger.warning('Circles network fetch fallback to cache: $e', tag: 'CirclesProvider');
+  }
+
+  return cachedCircles ?? <Circle>[];
+});
+
+// A provider to fetch plans based on operatorId, circle, and serviceType with cache
+final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operatorId, String circle, String serviceType})>((ref, params) async {
+  final cache = LocalCacheService.instance;
+  final cacheKey = 'plans_${params.operatorId}_${params.circle}_${params.serviceType}';
+
+  // 1. Check cached plans
+  final cachedList = cache.get<List<dynamic>>(cache.plansBox, cacheKey);
+  List<PlanCategory>? cachedCategories;
+  if (cachedList != null) {
+    try {
+      cachedCategories = cachedList
+          .map((e) => PlanCategory.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {}
+  }
+
+  try {
     // Convert Operator Name/ID to PlanAPI Numeric Code
     String operatorCode = params.operatorId;
-    // We try to find the operator from registry if we can, else fallback
     final ops = ref.read(operatorsProvider(params.serviceType)).valueOrNull ?? [];
     final op = ops.where((o) => o.id == params.operatorId || o.shortCode == params.operatorId).firstOrNull;
     
     if (op != null) {
-       // Look it up in OperatorRegistry by name
        final registeredOp = OperatorRegistry.instance.getOperatorByName(op.name);
        if (registeredOp != null) {
          operatorCode = registeredOp.code.toString();
@@ -71,17 +124,13 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
          operatorCode = op.shortCode!;
        }
     } else {
-       // It might be the name or shortCode already if passed from PlanSelectionScreen
        final registeredOp = OperatorRegistry.instance.getOperatorByName(params.operatorId);
        if (registeredOp != null) {
          operatorCode = registeredOp.code.toString();
        }
     }
 
-    // Convert Circle Name/ID to PlanAPI Numeric Code
     String circleCode = params.circle;
-    
-    // Define a basic Circle Registry map for PlanAPI based on provided list
     final Map<String, String> circleRegistry = {
       'manipur': '106',
       'jharkhand': '105',
@@ -123,28 +172,19 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
       circleCode = params.circle;
     }
 
-    debugPrint("operatorcode=$operatorCode");
-    debugPrint("cricle=$circleCode");
-    debugPrint("API URL=https://planapi.in/api/Mobile/NewMobilePlans");
-    debugPrint("==================================================");
-
     final repo = ref.watch(mobilePlanRepositoryProvider);
-    final result = await repo.fetchMobilePlans(operatorCode, circleCode);
-    return result.getOrElseCompute((e) {
-      debugPrint("==================================================");
-      debugPrint("Failed to load plans");
-      debugPrint("Operator Code Used: $operatorCode");
-      debugPrint("Circle Code Used: $circleCode");
-      debugPrint("Expected Codes: numeric (e.g. 2, 49)");
-      debugPrint("Raw API Response: $e");
-      debugPrint("==================================================");
-      throw e;
-    });
-  } catch (e, st) {
-    debugPrint("PLANS CRASH: recharge_providers.dart, plansProvider");
-    debugPrint(e.toString());
-    rethrow;
+    final result = await repo.fetchMobilePlans(operatorCode, circleCode).timeout(const Duration(seconds: 4));
+    final freshCategories = result.valueOrNull;
+
+    if (freshCategories != null && freshCategories.isNotEmpty) {
+      cache.put(cache.plansBox, cacheKey, freshCategories.map((c) => c.toJson()).toList());
+      return freshCategories;
+    }
+  } catch (e) {
+    AppLogger.warning('Plans network fetch fallback to cache: $e', tag: 'PlansProvider');
   }
+
+  return cachedCategories ?? <PlanCategory>[];
 });
 
 // A provider to fetch DTH packs based on operatorId
@@ -152,6 +192,15 @@ final dthPacksProvider = FutureProvider.family<List<dynamic>, String>((ref, oper
   // DTH plans fetching is temporarily disabled due to migration
   throw UnimplementedError('DTH plans fetching is not yet implemented in PlanAPI');
 });
+
+enum RechargeTransactionState {
+  mpinVerified,
+  requestSubmitted,
+  processing,
+  success,
+  failed,
+  pendingTimeout,
+}
 
 // State classes for the recharge flow
 class RechargeState {
@@ -163,6 +212,8 @@ class RechargeState {
   final MobilePlan? selectedPlan;
   final int? customAmountPaise;
   final bool isDetecting;
+  final bool isProcessing;
+  final RechargeTransactionState transactionState;
 
   Operator? get operator => manualOperator ?? autoOperator;
   Circle? get circle => manualCircle ?? autoCircle;
@@ -178,6 +229,8 @@ class RechargeState {
     this.selectedPlan,
     this.customAmountPaise,
     this.isDetecting = false,
+    this.isProcessing = false,
+    this.transactionState = RechargeTransactionState.mpinVerified,
   });
 
   RechargeState copyWith({
@@ -189,6 +242,8 @@ class RechargeState {
     MobilePlan? selectedPlan,
     int? customAmountPaise,
     bool? isDetecting,
+    bool? isProcessing,
+    RechargeTransactionState? transactionState,
     bool clearPlan = false,
     bool clearManual = false,
     bool clearAuto = false,
@@ -202,6 +257,8 @@ class RechargeState {
       selectedPlan: selectedPlan ?? (clearPlan ? null : this.selectedPlan),
       customAmountPaise: customAmountPaise ?? (clearPlan ? null : this.customAmountPaise),
       isDetecting: isDetecting ?? this.isDetecting,
+      isProcessing: isProcessing ?? this.isProcessing,
+      transactionState: transactionState ?? this.transactionState,
     );
   }
 }
@@ -257,6 +314,13 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
 
   // Action method to process the recharge
   Future<RechargeReceipt> processRecharge({String? mpin, String paymentMode = 'wallet'}) async {
+    if (state.isProcessing) {
+      throw const ValidationException(
+        message: 'A recharge is currently being processed. Please wait.',
+        code: 'DUPLICATE_SUBMISSION',
+      );
+    }
+
     final isDth = state.operator?.type == OperatorType.dth;
     if (state.phoneNumber == null || state.operator == null || (!isDth && state.circle == null) || state.customAmountPaise == null) {
       throw const ValidationException(message: 'Incomplete recharge details', code: 'INVALID_STATE');
@@ -266,79 +330,81 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       throw const ValidationException(message: 'MPIN is required for wallet payments', code: 'INVALID_MPIN');
     }
 
-    final repo = ref.read(rechargeRepositoryProvider);
-    
-    // Map flutter OperatorType to backend serviceType
-    final serviceType = switch (state.operator!.type) {
-      OperatorType.prepaid => 'mobile',
-      OperatorType.dth => 'dth',
-      OperatorType.postpaid => 'bbps',
-    };
-
-    String finalOperatorId = state.operator!.id;
-    String finalOperatorName = state.operator!.name;
-
-    // BSNL Operator Mapping Architecture
-    // If the plan has a specific rechargeOperatorCode (e.g. BT for Topup, BR for STV),
-    // we MUST use that specific operator ID for the recharge to succeed.
-    // NOTE: Temporarily disabled as MobilePlan does not have rechargeOperatorCode yet
-    /*
-    if (state.selectedPlan?.rechargeOperatorCode != null && 
-        state.selectedPlan!.rechargeOperatorCode != state.operator!.shortCode) {
-      try {
-        final operatorsList = await ref.read(operatorsProvider(serviceType).future);
-        final mappedOp = operatorsList.firstWhere(
-          (op) => op.shortCode == state.selectedPlan!.rechargeOperatorCode,
-        );
-        finalOperatorId = mappedOp.id;
-        finalOperatorName = mappedOp.name;
-        debugPrint('Applied BSNL Architecture Mapping: Overrode ${state.operator!.shortCode} -> ${mappedOp.shortCode}');
-      } catch (e) {
-        debugPrint('Warning: Failed to map rechargeOperatorCode ${state.selectedPlan!.rechargeOperatorCode}: $e');
-      }
-    }
-    */
-
-    final result = await repo.processRecharge(
-      phoneNumber: state.phoneNumber!,
-      operatorId: finalOperatorId,
-      operatorName: finalOperatorName,
-      circleId: state.circle?.id ?? '',
-      serviceType: serviceType,
-      amountPaise: state.customAmountPaise!,
-      mpin: mpin,
-      paymentMode: paymentMode,
+    state = state.copyWith(
+      isProcessing: true,
+      transactionState: RechargeTransactionState.requestSubmitted,
     );
 
-    final receipt = result.getOrElseCompute((e) => throw e);
+    try {
+      final repo = ref.read(rechargeRepositoryProvider);
+      
+      // Map flutter OperatorType to backend serviceType
+      final serviceType = switch (state.operator!.type) {
+        OperatorType.prepaid => 'mobile',
+        OperatorType.dth => 'dth',
+        OperatorType.postpaid => 'bbps',
+      };
 
-    // Update the receipt with paymentMode and circle
-    final walletAsync = ref.read(walletBalanceProvider);
-    final finalReceipt = receipt.copyWith(
-      paymentMode: paymentMode.toUpperCase(),
-      circle: state.circle?.state,
-      walletBalancePaise: walletAsync.valueOrNull?.availablePaise, // Get current wallet balance
-    );
+      String finalOperatorId = state.operator!.id;
+      String finalOperatorName = state.operator!.name;
 
-    // Save recent contact if successful
-    if (finalReceipt.isSuccess) {
-      final contact = RecentContact(
-        phone: finalReceipt.mobileNumber,
-        operatorId: state.operator!.id,
-        circle: state.circle?.state ?? 'Unknown',
-        lastRechargeDate: DateTime.now(),
-        lastRechargeAmountPaise: finalReceipt.amountPaise,
+      final result = await repo.processRecharge(
+        phoneNumber: state.phoneNumber!,
+        operatorId: finalOperatorId,
+        operatorName: finalOperatorName,
+        circleId: state.circle?.id ?? '',
+        serviceType: serviceType,
+        amountPaise: state.customAmountPaise!,
+        mpin: mpin,
+        paymentMode: paymentMode,
       );
-      await repo.saveRecentContact(contact);
+
+      final receipt = result.getOrElseCompute((e) => throw e);
+
+      final walletAsync = ref.read(walletBalanceProvider);
+      final finalReceipt = receipt.copyWith(
+        paymentMode: paymentMode.toUpperCase(),
+        circle: state.circle?.state,
+        walletBalancePaise: walletAsync.valueOrNull?.availablePaise,
+      );
+
+      final nextTxnState = switch (receipt.status) {
+        RechargeStatus.success => RechargeTransactionState.success,
+        RechargeStatus.failed => RechargeTransactionState.failed,
+        RechargeStatus.pending || RechargeStatus.processing => RechargeTransactionState.processing,
+      };
+
+      state = state.copyWith(
+        isProcessing: receipt.status == RechargeStatus.pending || receipt.status == RechargeStatus.processing,
+        transactionState: nextTxnState,
+      );
+
+      // Save recent contact if successful
+      if (finalReceipt.isSuccess) {
+        final contact = RecentContact(
+          phone: finalReceipt.mobileNumber,
+          operatorId: state.operator!.id,
+          circle: state.circle?.state ?? 'Unknown',
+          lastRechargeDate: DateTime.now(),
+          lastRechargeAmountPaise: finalReceipt.amountPaise,
+        );
+        await repo.saveRecentContact(contact);
+      }
+
+      // Invalidate dashboard wallet providers to trigger balance reload
+      ref.invalidate(walletBalanceProvider);
+      ref.invalidate(recentTransactionsProvider);
+      ref.invalidate(earningsSummaryProvider);
+      ref.invalidate(recentContactsProvider);
+
+      return finalReceipt;
+    } catch (e) {
+      state = state.copyWith(
+        isProcessing: false,
+        transactionState: RechargeTransactionState.failed,
+      );
+      rethrow;
     }
-
-    // Invalidate dashboard wallet providers to trigger balance reload
-    ref.invalidate(walletBalanceProvider);
-    ref.invalidate(recentTransactionsProvider);
-    ref.invalidate(earningsSummaryProvider);
-    ref.invalidate(recentContactsProvider);
-
-    return finalReceipt;
   }
 }
 

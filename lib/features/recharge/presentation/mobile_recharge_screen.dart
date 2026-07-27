@@ -13,8 +13,8 @@ import '../../../core/widgets/loading_skeleton.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import 'recharge_providers.dart';
 import '../../../models/mobile_plan.dart';
-import '../../../models/plan_category.dart';
 import '../domain/models/operator.dart';
+
 import '../domain/models/circle.dart';
 import 'widgets/recent_contacts_list.dart';
 
@@ -31,13 +31,9 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
 
 
   String _selectedCategory = '';
-  final List<String> _quickFilters = [
-    '28 Days', '56 Days', '84 Days', '365 Days', 
-    '1GB/day', '1.5GB/day', '2GB/day', 'Unlimited 5G'
-  ];
   String _searchQuery = '';
-  String _selectedQuickFilter = '';
   final TextEditingController _searchController = TextEditingController();
+
 
   @override
   void initState() {
@@ -618,42 +614,9 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                 ),
                               ),
                             ),
-                            
-                            // Quick Filters
-                            SliverToBoxAdapter(
-                              child: SizedBox(
-                                height: 36,
-                                child: ListView.separated(
-                                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _quickFilters.length,
-                                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                                  itemBuilder: (context, index) {
-                                    final filter = _quickFilters[index];
-                                    final isSelected = filter == _selectedQuickFilter;
-                                    return ActionChip(
-                                      label: Text(filter),
-                                      labelStyle: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                        color: isSelected ? Colors.white : AppColors.textPrimary,
-                                      ),
-                                      backgroundColor: isSelected ? AppColors.textPrimary : Colors.white,
-                                      side: BorderSide(color: isSelected ? AppColors.textPrimary : AppColors.border.withValues(alpha: 0.5)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                                      onPressed: () {
-                                        setState(() {
-                                          _selectedQuickFilter = isSelected ? '' : filter;
-                                        });
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            
+
                               Consumer(
+
                                 builder: (context, ref, child) {
                                   final operator = state.operator;
                                   final circle = state.circle;
@@ -719,16 +682,8 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                         }).toList();
                                       }
 
-                                      // Apply Validity/Quick Filters
-                                      if (_selectedQuickFilter.isNotEmpty) {
-                                        final qf = _selectedQuickFilter.toLowerCase();
-                                        plans = plans.where((p) {
-                                          if (qf.contains('day') || qf.contains('year')) return (p.validity ?? '').toLowerCase().contains(qf);
-                                          return true;
-                                        }).toList();
-                                      }
-                                      
-                                      if (plans.isNotEmpty) {
+                                       if (plans.isNotEmpty) {
+
                                         activeCategories.add(category.name);
                                         categoriesMap[category.name] = plans;
                                       }
@@ -769,9 +724,10 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                     delegate: SliverChildBuilderDelegate(
                                       (context, index) {
                                         final plan = selectedPlans[index];
-                                        final isSelected = state.selectedPlan?.id == plan.id || state.customAmountPaise == ((double.tryParse(plan.rs ?? '0') ?? 0) * 100).toInt();
+                                        final isSelected = _isSamePlan(state.selectedPlan, plan);
                                         
                                         return Padding(
+
                                           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: 8),
                                           child: _PremiumPlanCard(
                                             plan: plan,
@@ -956,22 +912,17 @@ class _CategorySelectorDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-class _PlanDetailCol extends StatelessWidget {
-  final String label;
-  final String value;
-  const _PlanDetailCol({required this.label, required this.value});
+bool _isSamePlan(MobilePlan? selected, MobilePlan cardPlan) {
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textHint, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-      ],
-    );
+  if (selected == null) return false;
+  if (selected.id.isNotEmpty && cardPlan.id.isNotEmpty) {
+    return selected.id == cardPlan.id;
   }
+  final selRs = double.tryParse(selected.rs ?? '0') ?? 0;
+  final cardRs = double.tryParse(cardPlan.rs ?? '0') ?? 0;
+  return selRs == cardRs &&
+      (selected.validity ?? '') == (cardPlan.validity ?? '') &&
+      (selected.desc ?? '') == (cardPlan.desc ?? '');
 }
 
 class _PremiumPlanCard extends StatelessWidget {
@@ -1005,17 +956,17 @@ class _PremiumPlanCard extends StatelessWidget {
     }
 
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 180),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primaryBlueLight.withValues(alpha: 0.1) : Colors.white,
+        color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isSelected ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.3),
-          width: isSelected ? 1.5 : 1,
+          color: isSelected ? AppColors.primaryBlue : const Color(0xFFE2E8F0),
+          width: isSelected ? 2.0 : 1.0,
         ),
         boxShadow: isSelected 
-          ? [BoxShadow(color: AppColors.primaryBlue.withValues(alpha: 0.1), blurRadius: 10, offset: const Offset(0, 4))]
+          ? [BoxShadow(color: AppColors.primaryBlue.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 4))]
           : [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
       ),
       child: Material(
@@ -1029,45 +980,51 @@ class _PremiumPlanCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Top Row: Price, Badges, Action Button
+                // Top Row: Price, Selected Checkmark, Action Button
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 4,
+                      child: Row(
                         children: [
                           Text(
                             '\u20B9${plan.rs ?? '0'}',
                             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.primaryBlue,
+                              size: 22,
+                            ),
+                          ],
                         ],
                       ),
                     ),
                     const SizedBox(width: 8),
                     SizedBox(
-                      width: 95,
-                      height: 36,
+                      width: 105,
+                      height: 38,
                       child: ElevatedButton(
                         onPressed: onTap,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: isSelected ? AppColors.primaryBlue : Colors.white,
                           foregroundColor: isSelected ? Colors.white : AppColors.primaryBlue,
                           elevation: 0,
-                          padding: EdgeInsets.zero, // Important for fixed small width
+                          padding: EdgeInsets.zero,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
-                            side: const BorderSide(color: AppColors.primaryBlue),
+                            side: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
                           ),
                         ),
-                        child: const Text('Recharge', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        child: Text(isSelected ? 'Selected' : 'Recharge', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
+
                 
                 // Second Row: Compact Chips
                 Wrap(

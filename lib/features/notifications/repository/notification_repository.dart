@@ -14,14 +14,27 @@ class NotificationRepository {
 
   Future<void> registerDevice(String token) async {
     try {
-      await apiClient.post(
+      print('\n========== FCM DEBUG ==========');
+      print('HTTP Request: POST /api/notifications/register-device');
+      print('Payload: {"token": "$token"}');
+      
+      final response = await apiClient.post(
         '/api/notifications/register-device',
         data: {'token': token},
       );
+      
+      print('HTTP Response Success: ${response.success}');
+      print('HTTP Response Message: ${response.message}');
+      print('HTTP Response Data: ${response.data}');
+      print('==============================\n');
+      
       AppLogger.info('Successfully registered FCM token with backend', tag: 'NotificationRepository');
     } catch (e) {
+      print('\n========== FCM DEBUG ==========');
+      print('HTTP Error: $e');
+      print('==============================\n');
       AppLogger.error('Failed to register FCM token', tag: 'NotificationRepository', error: e);
-      // We don't rethrow here because failing to register token shouldn't break the app flow
+      throw e; // We must throw so the retry loop in auth_provider can catch it
     }
   }
 }

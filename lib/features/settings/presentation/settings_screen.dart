@@ -162,6 +162,22 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: AppSpacing.lg),
+              
+              Text('Developer', style: AppTextTheme.textTheme.labelLarge),
+              const SizedBox(height: AppSpacing.sm),
+              AppCard(
+                child: Column(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.developer_mode,
+                      title: 'Device Information',
+                      subtitle: 'FCM Token & OS info',
+                      onTap: () => context.push(RouteNames.deviceInfo),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: AppSpacing.xxxl),
               Center(
                 child: Text(
@@ -184,8 +200,8 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.read(sessionProvider).valueOrNull;
     final confirm = await PremiumLogoutSheet.show(
       context,
-      merchantName: user?.name ?? 'User',
-      merchantId: user != null ? 'RET000001' : '',
+      merchantName: user?.name ?? '',
+      merchantId: user?.retailerId ?? '',
     );
 
     if (confirm == true && context.mounted) {

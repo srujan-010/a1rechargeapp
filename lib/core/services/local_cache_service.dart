@@ -14,6 +14,9 @@ abstract final class _Boxes {
   static const String userProfile = 'user_profile_cache';
   static const String recentContacts = 'recent_contacts_cache';
   static const String settings = 'settings_cache';
+  static const String history = 'history_cache';
+  static const String plans = 'plans_cache';
+  static const String notifications = 'notifications_cache';
 }
 
 class LocalCacheService {
@@ -32,6 +35,9 @@ class LocalCacheService {
       Hive.openBox<dynamic>(_Boxes.userProfile),
       Hive.openBox<dynamic>(_Boxes.recentContacts),
       Hive.openBox<dynamic>(_Boxes.settings),
+      Hive.openBox<dynamic>(_Boxes.history),
+      Hive.openBox<dynamic>(_Boxes.plans),
+      Hive.openBox<dynamic>(_Boxes.notifications),
     ]);
     AppLogger.info('Local cache initialized', tag: 'Cache');
   }
@@ -43,6 +49,9 @@ class LocalCacheService {
   Box<dynamic> get _profileBox => Hive.box<dynamic>(_Boxes.userProfile);
   Box<dynamic> get _recentContactsBox => Hive.box<dynamic>(_Boxes.recentContacts);
   Box<dynamic> get _settingsBox => Hive.box<dynamic>(_Boxes.settings);
+  Box<dynamic> get _historyBox => Hive.box<dynamic>(_Boxes.history);
+  Box<dynamic> get _plansBox => Hive.box<dynamic>(_Boxes.plans);
+  Box<dynamic> get _notificationsBox => Hive.box<dynamic>(_Boxes.notifications);
 
   // ─── Generic Cache Operations ─────────────────────────────────────
 
@@ -95,6 +104,9 @@ class LocalCacheService {
   Box<dynamic> get profileBox => _profileBox;
   Box<dynamic> get recentContactsBox => _recentContactsBox;
   Box<dynamic> get settingsBox => _settingsBox;
+  Box<dynamic> get historyBox => _historyBox;
+  Box<dynamic> get plansBox => _plansBox;
+  Box<dynamic> get notificationsBox => _notificationsBox;
 
   // ─── Clear All (on logout) ────────────────────────────────────────
   Future<void> clearAll() async {
@@ -105,6 +117,9 @@ class LocalCacheService {
       _dashboardBox.clear(),
       _profileBox.clear(),
       _recentContactsBox.clear(),
+      _historyBox.clear(),
+      _plansBox.clear(),
+      _notificationsBox.clear(),
     ]);
     AppLogger.info('All cache cleared on logout', tag: 'Cache');
   }

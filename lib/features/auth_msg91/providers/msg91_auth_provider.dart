@@ -116,7 +116,14 @@ class Msg91AuthNotifier extends StateNotifier<Msg91AuthState> {
             refreshToken: '',
             expiry: DateTime.now().add(const Duration(days: 30)),
           );
-          _ref.invalidate(sessionProvider);
+
+          final userJson = response['user'] ?? response['data']?['user'];
+          if (userJson != null && userJson is Map<String, dynamic>) {
+            final user = SessionUser.fromJson(userJson);
+            await _ref.read(sessionProvider.notifier).saveUser(user);
+          } else {
+            _ref.invalidate(sessionProvider);
+          }
         }
         state = state.copyWith(isLoading: false, isVerified: true);
       } else {

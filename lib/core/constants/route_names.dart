@@ -26,6 +26,7 @@ abstract final class RouteNames {
   static const String resetMpin = '/mpin/reset';
   static const String wallet = '/shell/wallet';
   static const String profile = '/shell/profile';
+  static const String deviceInfo = '/device-info';
 
   // ─── Wallet sub-routes ────────────────────────────────────────────
   static const String walletStatement = '/shell/wallet/statement';
@@ -38,7 +39,11 @@ abstract final class RouteNames {
   static const String mobileRecharge = '/recharge/mobile';
   static const String rechargePlans = '/recharge/mobile/plans';
   static const String rechargeConfirm = '/recharge/mobile/confirm';
+  static const String rechargeProcessing = '/recharge/processing';
+  static const String rechargePending = '/recharge/pending';
+  static const String rechargeFailed = '/recharge/failed';
   static const String rechargeReceipt = '/recharge/receipt/:txnId';
+
 
   // ─── DTH ─────────────────────────────────────────────────────────
   static const String dthRecharge = '/recharge/dth';
@@ -96,8 +101,9 @@ abstract final class RouteNames {
 
   // ─── Settings ────────────────────────────────────────────────────
   static const String settings = '/settings';
-  static const String notificationSettings = '/settings/notifications';
+  static const String notificationSettings = notifications;
   static const String securitySettings = '/settings/security';
+
   static const String privacyPolicy = '/settings/privacy';
   static const String termsAndConditions = '/settings/terms';
   static const String refundPolicy = '/settings/refund';

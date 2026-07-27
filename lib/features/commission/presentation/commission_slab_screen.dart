@@ -147,7 +147,9 @@ class _CommissionSlabScreenState extends ConsumerState<CommissionSlabScreen> {
                   // Grouping
                   final mobileSlabs = slabs.where((s) => s.serviceType == 'mobile').toList();
                   final dthSlabs = slabs.where((s) => s.serviceType == 'dth').toList();
-                  final bbpsSlabs = slabs.where((s) => s.serviceType == 'bbps').toList();
+                  final bbpsSlabs = slabs.where((s) => s.serviceType == 'bbps' || s.serviceType == 'electricity').toList();
+                  final gasSlabs = slabs.where((s) => s.serviceType == 'gas').toList();
+                  final fastagSlabs = slabs.where((s) => s.serviceType == 'fastag').toList();
 
                   return ListView(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.md),
@@ -176,6 +178,24 @@ class _CommissionSlabScreenState extends ConsumerState<CommissionSlabScreen> {
                           icon: Icons.lightbulb_outline,
                           accentColor: Colors.teal,
                           slabs: bbpsSlabs,
+                          calcAmount: _calcAmount,
+                          initiallyExpanded: true,
+                        ),
+                      if (gasSlabs.isNotEmpty)
+                        _CategorySection(
+                          title: 'Piped Gas',
+                          icon: Icons.gas_meter_outlined,
+                          accentColor: Colors.purple,
+                          slabs: gasSlabs,
+                          calcAmount: _calcAmount,
+                          initiallyExpanded: true,
+                        ),
+                      if (fastagSlabs.isNotEmpty)
+                        _CategorySection(
+                          title: 'FASTag',
+                          icon: Icons.directions_car_outlined,
+                          accentColor: Colors.indigo,
+                          slabs: fastagSlabs,
                           calcAmount: _calcAmount,
                           initiallyExpanded: true,
                         ),
