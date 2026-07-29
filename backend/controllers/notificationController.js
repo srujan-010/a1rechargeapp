@@ -150,25 +150,27 @@ exports.registerDevice = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Valid token is required' });
     }
 
-    const user = await User.findById(req.user._id);
-    if (!user) {
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { fcmToken: deviceToken } },
+      { new: true, runValidators: false }
+    );
+
+    if (!updatedUser) {
       console.log('❌ [FCM REGISTER] User not found for ID:', req.user._id);
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    user.fcmToken = deviceToken;
-    await user.save();
-
     console.log('\n====================================================');
     console.log('✅ [FCM REGISTER] Device FCM Token Saved to MongoDB');
-    console.log(`👤 User: ${user.name} (${user.phone} / ${user.retailerId})`);
-    console.log(`🔑 FCM Token: ${deviceToken}`);
+    console.log(`👤 User: ${updatedUser.name} (${updatedUser.phone} / ${updatedUser.retailerId})`);
+    console.log(`🔑 FCM Token: ${updatedUser.fcmToken}`);
     console.log('====================================================\n');
 
     res.status(200).json({
       success: true,
       message: 'Device FCM token registered and saved successfully',
-      data: { fcmToken: deviceToken },
+      data: { fcmToken: updatedUser.fcmToken },
     });
   } catch (error) {
     console.error('❌ [FCM REGISTER ERROR]', error);
