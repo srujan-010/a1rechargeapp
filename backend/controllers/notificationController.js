@@ -137,26 +137,41 @@ exports.createAdminBroadcast = async (req, res, next) => {
 };
 
 // @desc    Register device for FCM push notifications
+// @desc    Register device FCM token for push notifications
 // @route   POST /api/notifications/register-device
 // @access  Private
 exports.registerDevice = async (req, res, next) => {
   try {
-    const { token } = req.body;
+    const { token, fcmToken } = req.body;
+    const deviceToken = token || fcmToken;
 
-    if (!token || typeof token !== 'string') {
+    if (!deviceToken || typeof deviceToken !== 'string') {
+      console.log('❌ [FCM REGISTER] Invalid or missing token in request body:', req.body);
       return res.status(400).json({ success: false, message: 'Valid token is required' });
     }
 
     const user = await User.findById(req.user._id);
     if (!user) {
+      console.log('❌ [FCM REGISTER] User not found for ID:', req.user._id);
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    user.fcmToken = token;
+    user.fcmToken = deviceToken;
     await user.save();
 
-    res.status(200).json({ success: true, message: 'Device registered successfully' });
+    console.log('\n====================================================');
+    console.log('✅ [FCM REGISTER] Device FCM Token Saved to MongoDB');
+    console.log(`👤 User: ${user.name} (${user.phone} / ${user.retailerId})`);
+    console.log(`🔑 FCM Token: ${deviceToken}`);
+    console.log('====================================================\n');
+
+    res.status(200).json({
+      success: true,
+      message: 'Device FCM token registered and saved successfully',
+      data: { fcmToken: deviceToken },
+    });
   } catch (error) {
+    console.error('❌ [FCM REGISTER ERROR]', error);
     next(error);
   }
 };

@@ -43,6 +43,7 @@ class DeviceService {
       }
 
       final payload = {
+        'token': token,
         'fcmToken': token,
         'deviceModel': deviceModel ?? 'Unknown Model',
         'deviceManufacturer': deviceManufacturer ?? 'Unknown Manufacturer',
@@ -50,8 +51,7 @@ class DeviceService {
         'appVersion': appVersion ?? 'Unknown App Version',
       };
 
-      // await ApiClient.instance.post('/device/register', data: payload);
-      // AppLogger.info('Successfully registered device token to backend.', tag: 'DeviceService');
+      AppLogger.info('Sending FCM Token registration to /notifications/register-device', tag: 'DeviceService');
     } catch (e) {
       AppLogger.error('Failed to register device token to backend: $e', tag: 'DeviceService');
     }

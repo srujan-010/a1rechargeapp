@@ -15,11 +15,11 @@ class NotificationRepository {
   Future<void> registerDevice(String token) async {
     try {
       print('\n========== FCM DEBUG ==========');
-      print('HTTP Request: POST /api/notifications/register-device');
+      print('HTTP Request: POST /notifications/register-device');
       print('Payload: {"token": "$token"}');
       
       final response = await apiClient.post(
-        '/api/notifications/register-device',
+        '/notifications/register-device',
         data: {'token': token},
       );
       
