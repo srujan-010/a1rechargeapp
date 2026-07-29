@@ -1,4 +1,5 @@
 const a1TopupProvider = require('../services/providers/a1topup/provider.service');
+const fast2smsService = require('../services/fast2sms.service');
 
 const ProviderWallet = require('../models/ProviderWallet');
 const ProviderOperator = require('../models/ProviderOperator');
@@ -370,6 +371,15 @@ const executeRecharge = async (req, res, next) => {
       globalTransaction.completedAt = new Date();
       await globalTransaction.save();
       walletReserved = false;
+
+      // Automatically send Fast2SMS WhatsApp Recharge Success Utility Template
+      fast2smsService.sendRechargeSuccessTemplate({
+        customerName: req.user.name || req.user.shopName || 'Valued Retailer',
+        mobileNumber: mobileNumber,
+        amount: amount,
+        operator: operator.name || 'Mobile',
+        transactionId: providerResponse.providerTransactionId || orderId,
+      }).catch(err => console.error('[WHATSAPP RECHARGE NOTIFICATION ERROR]:', err));
     } else if (providerResponse.status === 'FAILED') {
       // Immediate Release of Wallet Reservation
       await walletService.releaseReservation(userId, amount);

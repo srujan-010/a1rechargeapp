@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
 import 'personal_info_provider.dart';
@@ -19,6 +20,18 @@ class PersonalInfoScreen extends ConsumerStatefulWidget {
 
 class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
   final Map<String, dynamic> _pendingChanges = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppLogger.info('Personal Information Navigation: Opened PersonalInfoScreen', tag: 'Profile');
+      if (ref.read(sessionProvider).valueOrNull == null) {
+        AppLogger.info('Personal Information API: Triggering profile refresh', tag: 'Profile');
+        ref.read(sessionProvider.notifier).refreshProfile();
+      }
+    });
+  }
 
   bool get _hasChanges => _pendingChanges.isNotEmpty;
 
@@ -110,8 +123,31 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
     final user = sessionAsync.valueOrNull;
 
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Personal Information'),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('Loading profile information...'),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () => ref.read(sessionProvider.notifier).refreshProfile(),
+                child: const Text('Retry Loading Profile'),
+              ),
+            ],
+          ),
+        ),
       );
     }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/api_response.dart';
 import '../services/api_client.dart';
 import '../services/secure_storage_service.dart';
 import '../services/local_cache_service.dart';
@@ -47,32 +48,63 @@ class SessionNotifier extends AsyncNotifier<SessionUser?> {
 
   Future<void> _refreshInBackground() async {
     final secureStorage = ref.read(secureStorageProvider);
-    final hasToken = await secureStorage.isTokenValid();
-    if (!hasToken) return;
+    final token = await secureStorage.getAccessToken();
+    if (token == null || token.isEmpty) {
+      AppLogger.warning('Profile API Skipped: No JWT token found in secure storage', tag: 'Profile');
+      return;
+    }
+
+    AppLogger.info('====================================================', tag: 'Profile');
+    AppLogger.info('Profile API Started: Endpoint=/user/profile', tag: 'Profile');
+    AppLogger.info('JWT Used: ${token.substring(0, token.length > 15 ? 15 : token.length)}...', tag: 'Profile');
 
     try {
       final apiClient = ref.read(apiClientProvider);
-      final response = await apiClient.get<Map<String, dynamic>>(
-        '/auth/me',
-        fromJson: (json) => json as Map<String, dynamic>,
-      ).timeout(const Duration(seconds: 3));
+      ApiResponse<Map<String, dynamic>> response;
+      try {
+        response = await apiClient.get<Map<String, dynamic>>(
+          '/user/profile',
+          fromJson: (json) => json as Map<String, dynamic>,
+        ).timeout(const Duration(seconds: 10));
+      } catch (err) {
+        AppLogger.warning('GET /user/profile failed or timed out: $err. Trying /auth/me...', tag: 'Profile');
+        response = await apiClient.get<Map<String, dynamic>>(
+          '/auth/me',
+          fromJson: (json) => json as Map<String, dynamic>,
+        ).timeout(const Duration(seconds: 10));
+      }
+
+      AppLogger.info('Profile Response Success: ${response.success}', tag: 'Profile');
 
       if (response.success && response.data != null) {
         final user = SessionUser.fromJson(response.data!);
-        LocalCacheService.instance.put(
+        AppLogger.info('Profile Model Parsed: Name="${user.name}", Shop="${user.shopName}", RetailerId="${user.retailerId}", Phone="${user.phone}"', tag: 'Profile');
+
+        await LocalCacheService.instance.put(
           LocalCacheService.instance.profileBox,
           'cached_user',
           user.toJson(),
         );
+
         state = AsyncData(user);
+        AppLogger.info('Profile Provider Updated Successfully', tag: 'Profile');
+      } else {
+        AppLogger.warning('Profile API returned error: ${response.message}', tag: 'Profile');
       }
-    } catch (e) {
-      AppLogger.warning('Profile fetch background revalidation error: $e', tag: 'SessionNotifier');
+      AppLogger.info('====================================================', tag: 'Profile');
+    } catch (e, stack) {
+      AppLogger.error('Profile fetch error', tag: 'Profile', error: e, stackTrace: stack);
+      AppLogger.info('====================================================', tag: 'Profile');
     }
   }
 
+  Future<void> refreshProfile() async {
+    state = const AsyncLoading();
+    await _refreshInBackground();
+  }
+
   Future<void> saveUser(SessionUser user) async {
-    LocalCacheService.instance.put(
+    await LocalCacheService.instance.put(
       LocalCacheService.instance.profileBox,
       'cached_user',
       user.toJson(),

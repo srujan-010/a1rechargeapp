@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pinput/pinput.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/route_names.dart';
-import '../../auth_msg91/screens/msg91_webview_screen.dart';
 import '../providers/wallet_mpin_provider.dart';
 
 class ForgotMpinScreen extends ConsumerStatefulWidget {
@@ -16,11 +16,14 @@ class ForgotMpinScreen extends ConsumerStatefulWidget {
 
 class _ForgotMpinScreenState extends ConsumerState<ForgotMpinScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   bool _isPhoneValid = false;
+  bool _otpSent = false;
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -32,40 +35,51 @@ class _ForgotMpinScreenState extends ConsumerState<ForgotMpinScreen> {
     }
   }
 
-  void _launchMsg91Widget(String phone) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (ctx) => Msg91WebViewScreen(
-          phone: phone,
-          onSuccess: (accessToken) async {
-            Navigator.of(ctx).pop(); // pop webview
-            
-            final success = await ref.read(walletMpinProvider.notifier).verifyForgotOtp(accessToken: accessToken);
-            if (success && mounted) {
-              // Navigate to Reset MPIN screen
-              context.pushNamed(RouteNames.resetMpin);
-            }
-          },
-          onFailure: (error) {
-            Navigator.of(ctx).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(error), backgroundColor: AppColors.error),
-            );
-          },
-        ),
-      ),
-    );
+  Future<void> _sendOtp() async {
+    if (_isPhoneValid) {
+      HapticFeedback.mediumImpact();
+      final success = await ref.read(walletMpinProvider.notifier).sendForgotOtp();
+      if (success && mounted) {
+        setState(() => _otpSent = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('OTP sent to your WhatsApp number.'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
-  void _submit() {
-    if (_isPhoneValid) {
-      _launchMsg91Widget(_phoneController.text.trim());
+  Future<void> _verifyOtp(String otp) async {
+    if (otp.length == 6) {
+      HapticFeedback.mediumImpact();
+      final success = await ref.read(walletMpinProvider.notifier).verifyForgotOtp(otp: otp);
+      if (success && mounted) {
+        context.pushNamed(RouteNames.resetMpin);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(walletMpinProvider);
+
+    final defaultPinTheme = PinTheme(
+      width: 48,
+      height: 56,
+      textStyle: const TextStyle(fontSize: 22, color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+      ),
+    );
+
+    final focusedPinTheme = defaultPinTheme.copyDecorationWith(
+      border: Border.all(color: AppColors.primaryBlue, width: 2),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -88,52 +102,107 @@ class _ForgotMpinScreenState extends ConsumerState<ForgotMpinScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Enter your registered mobile number to verify your identity via OTP.',
-                style: TextStyle(
-                  fontSize: 16,
+              Text(
+                _otpSent
+                    ? 'Enter the 6-digit OTP code sent to your registered WhatsApp mobile number.'
+                    : 'Enter your registered mobile number to receive an OTP code on WhatsApp.',
+                style: const TextStyle(
+                  fontSize: 15,
                   color: AppColors.textSecondary,
+                  height: 1.4,
                 ),
               ),
               const SizedBox(height: 32),
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-                onChanged: _onPhoneChanged,
-                decoration: InputDecoration(
-                  labelText: 'Mobile Number',
-                  prefixText: '+91 ',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+
+              if (!_otpSent) ...[
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  onChanged: _onPhoneChanged,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    labelText: 'Mobile Number',
+                    prefixText: '+91 ',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
-              ),
-              if (state.error != null) ...[
+                if (state.error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    state.error!,
+                    style: const TextStyle(color: AppColors.error),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isPhoneValid && !state.isLoading ? _sendOtp : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: state.isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            'Send OTP via WhatsApp',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                  ),
+                ),
+              ] else ...[
+                Center(
+                  child: Pinput(
+                    controller: _otpController,
+                    length: 6,
+                    defaultPinTheme: defaultPinTheme,
+                    focusedPinTheme: focusedPinTheme,
+                    onCompleted: _verifyOtp,
+                    enabled: !state.isLoading,
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                if (state.error != null) ...[
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      state.error!,
+                      style: const TextStyle(color: AppColors.error, fontSize: 13),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _otpController.text.length == 6 && !state.isLoading
+                        ? () => _verifyOtp(_otpController.text)
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: state.isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text(
+                            'Verify OTP',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                  ),
+                ),
                 const SizedBox(height: 16),
-                Text(
-                  state.error!,
-                  style: const TextStyle(color: AppColors.error),
+                Center(
+                  child: TextButton(
+                    onPressed: state.isLoading ? null : _sendOtp,
+                    child: const Text('Resend OTP', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
+                  ),
                 ),
               ],
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isPhoneValid && !state.isLoading ? _submit : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryBlue,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: state.isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          'Send OTP',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                ),
-              ),
             ],
           ),
         ),

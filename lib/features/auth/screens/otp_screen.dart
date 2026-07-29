@@ -10,10 +10,9 @@ import '../models/auth_state.dart';
 import '../provider/auth_provider.dart';
 
 class OtpScreen extends ConsumerStatefulWidget {
-  final String verificationId;
   final String phone;
 
-  const OtpScreen({super.key, required this.verificationId, required this.phone});
+  const OtpScreen({super.key, required this.phone});
 
   @override
   ConsumerState<OtpScreen> createState() => _OtpScreenState();
@@ -24,7 +23,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> with SingleTickerProvider
   final FocusNode _focusNode = FocusNode();
   
   bool _hasError = false;
-  int _secondsRemaining = 20;
+  int _secondsRemaining = 30;
   Timer? _timer;
 
   late AnimationController _shakeController;
@@ -40,7 +39,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> with SingleTickerProvider
   }
 
   void _startTimer() {
-    _secondsRemaining = 20;
+    _secondsRemaining = 30;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsRemaining > 0) {
@@ -66,7 +65,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> with SingleTickerProvider
       HapticFeedback.mediumImpact();
       _focusNode.unfocus();
       ref.read(authNotifierProvider.notifier).verifyOtpAndLogin(
-        verificationId: widget.verificationId,
+        phone: widget.phone,
         smsCode: otp,
       );
     }
@@ -98,14 +97,20 @@ class _OtpScreenState extends ConsumerState<OtpScreen> with SingleTickerProvider
     ref.listen(authNotifierProvider, (previous, next) {
       if (next is AuthStateError) {
         _triggerErrorAnimation();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.message),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       } else if (next is AuthStateAuthenticated) {
-        // Success animation logic
         HapticFeedback.lightImpact();
         context.go(RouteNames.dashboard);
       } else if (next is AuthStateRegistrationRequired) {
-        context.pushNamed('register', extra: {
-          'phone': next.phone,
-          'firebaseUid': next.firebaseUid,
+        context.pushNamed('registration', extra: {
+          'mobile': next.phone,
+          'tempSessionToken': next.tempSessionToken,
         });
       }
     });
@@ -339,7 +344,7 @@ class _OtpScreenState extends ConsumerState<OtpScreen> with SingleTickerProvider
                               HapticFeedback.selectionClick();
                               _otpController.clear();
                               _startTimer();
-                              ref.read(authNotifierProvider.notifier).sendOtp(widget.phone);
+                              ref.read(authNotifierProvider.notifier).resendOtp(widget.phone);
                             },
                             child: const Text(
                               'Resend OTP',

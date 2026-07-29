@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
@@ -12,8 +13,6 @@ import 'device_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // If you're going to use other Firebase services in the background, such as Firestore,
-  // make sure you call `initializeApp` before using other Firebase services.
   AppLogger.debug('Handling a background message: ${message.messageId}', tag: 'FCM');
 }
 
@@ -21,28 +20,52 @@ class NotificationService {
   NotificationService._internal();
   static final NotificationService instance = NotificationService._internal();
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messagingInstance;
+
+  FirebaseMessaging? get _messaging {
+    if (kIsWeb) return null;
+    try {
+      _messagingInstance ??= FirebaseMessaging.instance;
+      return _messagingInstance;
+    } catch (e) {
+      AppLogger.warning('FirebaseMessaging.instance unavailable: $e', tag: 'FCM');
+      return null;
+    }
+  }
+
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
   String? _fcmToken;
 
+  String? get currentToken => _fcmToken;
+
   /// Android channel for high importance notifications
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'high_importance_channel', // id
-    'High Importance Notifications', // name
-    description: 'This channel is used for important notifications.', // description
+    'high_importance_channel',
+    'High Importance Notifications',
+    description: 'This channel is used for important notifications.',
     importance: Importance.high,
   );
 
-  Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;
+  Stream<String> get onTokenRefresh {
+    if (kIsWeb || _messaging == null) return const Stream.empty();
+    try {
+      return _messaging!.onTokenRefresh;
+    } catch (_) {
+      return const Stream.empty();
+    }
+  }
 
   Future<void> initialize(SecureStorageService secureStorage) async {
-    if (_isInitialized) return;
+    if (kIsWeb || _isInitialized) return;
 
     try {
       // 1. Setup Local Notifications (for foreground notifications)
       await _setupLocalNotifications();
+
+      final messaging = _messaging;
+      if (messaging == null) return;
 
       // 2. Setup Background Handler
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -54,10 +77,7 @@ class NotificationService {
       _checkInitialMessage();
 
       // 5. Initialize Token Refresh Listener
-      _messaging.onTokenRefresh.listen((newToken) async {
-        print('\n========== FCM DEBUG ==========');
-        print('Token Refresh Event: $newToken');
-        print('==============================\n');
+      messaging.onTokenRefresh.listen((newToken) async {
         AppLogger.info('FCM Token Refreshed: $newToken', tag: 'FCM');
         _fcmToken = newToken;
         await secureStorage.saveFcmToken(newToken);
@@ -73,17 +93,16 @@ class NotificationService {
   }
 
   Future<String?> requestPermissionAndGetToken([SecureStorageService? secureStorage]) async {
+    if (kIsWeb) return null;
     try {
-      print('\n========== FCM DEBUG ==========');
-      print('Firebase Initialized: $_isInitialized');
-      
+      final messaging = _messaging;
+      if (messaging == null) return null;
+
       final status = await Permission.notification.request();
-      print('Permission Status: $status');
       AppLogger.info('Notification Permission status: $status', tag: 'FCM');
 
       if (status.isGranted) {
-        _fcmToken = await _messaging.getToken();
-        print('FCM Token: ${_fcmToken ?? "null"}');
+        _fcmToken = await messaging.getToken();
         if (_fcmToken != null) {
           AppLogger.info('FCM Token:\n$_fcmToken', tag: 'FCM');
           if (secureStorage != null) {
@@ -97,106 +116,108 @@ class NotificationService {
       } else if (status.isPermanentlyDenied) {
         AppLogger.warning('Notification permission permanently denied. Open settings to enable.', tag: 'FCM');
       }
-      print('==============================\n');
+      return null;
     } catch (e, stack) {
-      print('FCM Error in requestPermissionAndGetToken: $e');
-      print('==============================\n');
-      AppLogger.error('Failed to request permission or get token', tag: 'FCM', error: e, stackTrace: stack);
+      AppLogger.error('FCM Token retrieval failed safely', tag: 'FCM', error: e, stackTrace: stack);
+      return null;
     }
-    return null;
   }
 
   Future<void> _setupLocalNotifications() async {
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
-    const initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
+    try {
+      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosInit = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      );
+      const initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
 
-    await _localNotificationsPlugin.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        if (response.payload != null) {
-          _handleDeepLink(response.payload!);
-        }
-      },
-    );
+      await _localNotificationsPlugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: (response) {
+          _handleNotificationPayload(response.payload);
+        },
+      );
 
-    await _localNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_channel);
+      final androidPlugin = _localNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        await androidPlugin.createNotificationChannel(_channel);
+      }
+    } catch (e) {
+      AppLogger.error('Local notifications setup failed', tag: 'FCM', error: e);
+    }
   }
 
   void _setupForegroundListeners() {
+    final messaging = _messaging;
+    if (messaging == null) return;
+
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      AppLogger.debug('Got a message whilst in the foreground!', tag: 'FCM');
-      AppLogger.debug('Message data: ${message.data}', tag: 'FCM');
+      AppLogger.info('Foreground Message Received: ${message.messageId}', tag: 'FCM');
+      _showForegroundNotification(message);
+    });
+  }
 
-      if (message.notification != null) {
-        AppLogger.debug('Message also contained a notification: ${message.notification}', tag: 'FCM');
-        
-        final notification = message.notification!;
-        final android = message.notification?.android;
+  void _showForegroundNotification(RemoteMessage message) {
+    try {
+      final notification = message.notification;
+      final android = message.notification?.android;
 
-        if (android != null) {
-          _localNotificationsPlugin.show(
-            notification.hashCode,
-            notification.title,
-            notification.body,
-            NotificationDetails(
-              android: AndroidNotificationDetails(
-                _channel.id,
-                _channel.name,
-                channelDescription: _channel.description,
-                icon: android.smallIcon ?? '@mipmap/ic_launcher',
-                importance: Importance.high,
-                priority: Priority.high,
-              ),
+      if (notification != null && android != null) {
+        _localNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              _channel.id,
+              _channel.name,
+              channelDescription: _channel.description,
+              icon: '@mipmap/ic_launcher',
+              importance: Importance.high,
+              priority: Priority.high,
             ),
-            payload: jsonEncode(message.data),
-          );
-        }
+          ),
+          payload: jsonEncode(message.data),
+        );
       }
-    });
-
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      AppLogger.debug('A new onMessageOpenedApp event was published!', tag: 'FCM');
-      _handleDeepLink(jsonEncode(message.data));
-    });
+    } catch (e) {
+      AppLogger.error('Show foreground notification failed', tag: 'FCM', error: e);
+    }
   }
 
   Future<void> _checkInitialMessage() async {
-    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      AppLogger.debug('App opened from terminated state via notification', tag: 'FCM');
-      // Delay to allow GoRouter to initialize its state fully.
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _handleDeepLink(jsonEncode(initialMessage.data));
-      });
-    }
-  }
-
-  void _handleDeepLink(String payload) {
     try {
-      final Map<String, dynamic> data = jsonDecode(payload);
-      final String? route = data['route'] as String?;
-      
-      final targetRoute = (route != null && route.isNotEmpty) ? route : RouteNames.dashboard;
-      
-      AppLogger.info('Notification clicked. Deep linking to: $targetRoute', tag: 'FCM');
-      final context = rootNavigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        context.push(targetRoute);
-      } else {
-        AppLogger.warning('Cannot navigate: rootNavigatorKey context is null or unmounted', tag: 'FCM');
+      final messaging = _messaging;
+      if (messaging == null) return;
+
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        AppLogger.info('App opened from notification: ${message.messageId}', tag: 'FCM');
+        _handleNotificationPayload(jsonEncode(message.data));
+      });
+
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) {
+        AppLogger.info('Terminated App opened from notification: ${initialMessage.messageId}', tag: 'FCM');
+        _handleNotificationPayload(jsonEncode(initialMessage.data));
       }
     } catch (e) {
-      AppLogger.error('Failed to parse deep link payload: $payload', tag: 'FCM', error: e);
-      // Fallback to dashboard
-      final context = rootNavigatorKey.currentContext;
-      if (context != null && context.mounted) {
-        context.push(RouteNames.dashboard);
-      }
+      AppLogger.error('Check initial message failed', tag: 'FCM', error: e);
     }
   }
 
-  String? get currentToken => _fcmToken;
+  void _handleNotificationPayload(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+    try {
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+      final route = data['route'] as String?;
+      if (route != null && route.isNotEmpty) {
+        AppLogger.info('Navigating from notification payload to: $route', tag: 'FCM');
+        rootNavigatorKey.currentContext?.push(route);
+      }
+    } catch (e) {
+      AppLogger.error('Failed to parse notification payload', tag: 'FCM', error: e);
+    }
+  }
 }

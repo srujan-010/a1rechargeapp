@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_state.dart';
 import '../repository/auth_repository.dart';
@@ -26,24 +26,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required this.notificationRepository,
     required this.ref,
   }) : super(const AuthState.initial()) {
-    _initTokenRefreshListener();
+    _initSessionListener();
   }
 
-  StreamSubscription<String>? _tokenRefreshSub;
+  StreamSubscription? _tokenRefreshSub;
 
-  void _initTokenRefreshListener() {
-    _tokenRefreshSub = NotificationService.instance.onTokenRefresh.listen((newToken) async {
-      // Only upload if currently authenticated
-      if (state is AuthStateAuthenticated) {
-        AppLogger.info('FCM Token Refreshed while authenticated, re-uploading...', tag: 'Auth');
-        try {
-          await notificationRepository.registerDevice(newToken);
-          AppLogger.info('Refreshed FCM token uploaded successfully', tag: 'Auth');
-        } catch (e) {
-          AppLogger.error('Failed to upload refreshed FCM token', tag: 'Auth', error: e);
-        }
-      }
-    });
+  void _initSessionListener() {
+    // Listen for 401 unauthorized signals to log out user
+    _tokenRefreshSub?.cancel();
   }
 
   @override
@@ -55,83 +45,104 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> sendOtp(String phoneNumber) async {
     state = const AuthState.loading();
     try {
-      await authRepository.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-resolution (Android)
-          try {
-            state = const AuthState.loading();
-            final response = await authRepository.loginWithCredential(credential);
-            if (response.isNewUser) {
-              state = AuthState.registrationRequired(
-                phone: response.phone ?? '',
-                firebaseUid: response.firebaseUid ?? '',
-              );
-            } else {
-              ref.invalidate(sessionProvider);
-              await _registerFcmToken();
-              state = const AuthState.authenticated();
-            }
-          } catch (e, stack) {
-            AppLogger.error('Firebase Auto-Resolution Failed', tag: 'Auth', error: e, stackTrace: stack);
-            state = AuthState.error(e.toString());
-          }
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          state = AuthState.error(e.message ?? 'Verification failed');
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          state = AuthState.codeSent(
-            verificationId: verificationId,
-            resendToken: resendToken,
-          );
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          // You could handle timeout state if needed
-        },
-      );
+      AppLogger.info('Send OTP Started: $phoneNumber', tag: 'Auth');
+      await authRepository.sendOtp(phoneNumber);
+      state = AuthState.codeSent(phone: phoneNumber);
     } catch (e, stack) {
       AppLogger.error('sendOtp Failed', tag: 'Auth', error: e, stackTrace: stack);
-      state = AuthState.error(e.toString());
+      state = AuthState.error(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
   Future<void> verifyOtpAndLogin({
-    required String verificationId,
+    required String phone,
     required String smsCode,
   }) async {
     state = const AuthState.loading();
+    AppLogger.info('====================================================', tag: 'Auth');
+    AppLogger.info('Verify OTP Started: Phone=$phone', tag: 'Auth');
+    AppLogger.info('API Request: POST /auth/verify-otp with mobile & code', tag: 'Auth');
+    
     try {
       final response = await authRepository.verifyOtpAndLogin(
-        verificationId: verificationId,
+        phone: phone,
         smsCode: smsCode,
       );
+
+      AppLogger.info('API Response Success: isNewUser=${response.isNewUser}', tag: 'Auth');
+
       if (response.isNewUser) {
+        AppLogger.info('Authentication Response: Registration Required', tag: 'Auth');
+        AppLogger.info('Navigation: Pushing Registration Screen', tag: 'Auth');
         state = AuthState.registrationRequired(
-          phone: response.phone ?? '',
-          firebaseUid: response.firebaseUid ?? '',
+          phone: response.phone ?? phone,
+          tempSessionToken: response.tempSessionToken ?? '',
         );
       } else {
-        ref.invalidate(sessionProvider);
+        AppLogger.info('Authentication Response: User Authenticated', tag: 'Auth');
+        AppLogger.info('Token Save: JWT Token saved to Secure Storage', tag: 'Auth');
+        ref.invalidate(hasValidJwtProvider);
+        if (response.user != null) {
+          await ref.read(sessionProvider.notifier).saveUser(response.user!);
+        } else {
+          ref.invalidate(sessionProvider);
+        }
+
+        AppLogger.info('FCM Initialization Started', tag: 'Auth');
         await _registerFcmToken();
+
+        AppLogger.info('Navigation: Navigating to Dashboard', tag: 'Auth');
         state = const AuthState.authenticated();
       }
+      AppLogger.info('====================================================', tag: 'Auth');
     } catch (e, stack) {
       AppLogger.error('verifyOtpAndLogin Failed', tag: 'Auth', error: e, stackTrace: stack);
-      state = AuthState.error(e.toString());
+      AppLogger.error('Stack Trace:\n$stack', tag: 'Auth');
+      AppLogger.info('====================================================', tag: 'Auth');
+      state = AuthState.error(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
-  Future<void> submitRegistration(Map<String, dynamic> formData) async {
-    state = const AuthState.loading();
+  Future<void> resendOtp(String phone) async {
     try {
-      await authRepository.registerRetailer(formData);
+      await authRepository.resendOtp(phone);
+      AppLogger.info('Resent OTP successfully', tag: 'Auth');
+    } catch (e, stack) {
+      AppLogger.error('resendOtp Failed', tag: 'Auth', error: e, stackTrace: stack);
+      state = AuthState.error(e.toString().replaceAll('Exception: ', ''));
+    }
+  }
+
+  Future<void> submitRegistration({
+    required String tempSessionToken,
+    required String name,
+    required String shopName,
+    required String address,
+    String? email,
+    String? state,
+    String? district,
+    String? pincode,
+    String? referralCode,
+  }) async {
+    this.state = const AuthState.loading();
+    try {
+      await authRepository.registerRetailer(
+        tempSessionToken: tempSessionToken,
+        name: name,
+        shopName: shopName,
+        address: address,
+        email: email,
+        state: state,
+        district: district,
+        pincode: pincode,
+        referralCode: referralCode,
+      );
       ref.invalidate(sessionProvider);
       await _registerFcmToken();
-      state = const AuthState.authenticated();
+      this.state = const AuthState.authenticated();
     } catch (e, stack) {
       AppLogger.error('submitRegistration Failed', tag: 'Auth', error: e, stackTrace: stack);
-      state = AuthState.error(e.toString());
+      this.state = AuthState.error(e.toString().replaceAll('Exception: ', ''));
     }
   }
 
@@ -143,34 +154,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> _registerFcmToken() async {
+    if (kIsWeb) {
+      AppLogger.info('FCM Initialization Bypassed for Web Platform', tag: 'Auth');
+      return;
+    }
     try {
       final secureStorage = ref.read(secureStorageProvider);
-      
-      // Request permission on Android 13+ (or iOS), then get token
       final token = await NotificationService.instance.requestPermissionAndGetToken(secureStorage);
-      
+
       if (token != null) {
-        // Retry logic for token upload
         int retryCount = 0;
         bool success = false;
         while (retryCount < 3 && !success) {
           try {
-            print('\n========== FCM DEBUG ==========');
-            print('Token Upload Started (Attempt ${retryCount + 1})');
-            AppLogger.info('Uploading FCM token to backend (Attempt ${retryCount + 1})...', tag: 'Auth');
-            
-            final response = await notificationRepository.registerDevice(token);
-            
-            print('Backend Response: Success');
-            print('==============================\n');
-            
+            await notificationRepository.registerDevice(token);
             success = true;
-            AppLogger.info('FCM token uploaded successfully', tag: 'Auth');
+            AppLogger.info('FCM Initialization Success: FCM Token uploaded', tag: 'Auth');
           } catch (e) {
             retryCount++;
-            print('\n========== FCM DEBUG ==========');
-            print('Backend Response: Error - $e');
-            print('==============================\n');
             AppLogger.warning('Failed to upload FCM token. Retry $retryCount of 3', tag: 'Auth', error: e);
             if (retryCount < 3) {
               await Future.delayed(const Duration(seconds: 2));
@@ -178,10 +179,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
           }
         }
       } else {
-        AppLogger.warning('FCM token is null, cannot register with backend', tag: 'Auth');
+        AppLogger.info('FCM Initialization Skipped: Token is null', tag: 'Auth');
       }
     } catch (e, stack) {
-      AppLogger.error('Error during FCM token registration', tag: 'Auth', error: e, stackTrace: stack);
+      AppLogger.error('FCM Initialization Failed (Ignored to keep Login flow uninterrupted)', tag: 'Auth', error: e, stackTrace: stack);
     }
   }
 }

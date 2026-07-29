@@ -1,7 +1,10 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const Otp = require('../models/Otp');
+const fast2smsService = require('../services/fast2sms.service');
 const axios = require('axios');
 
 // Helper to validate 6-digit MPIN rules
@@ -156,14 +159,37 @@ const changeMpin = async (req, res, next) => {
 const sendForgotOtp = async (req, res, next) => {
   try {
     const user = req.user;
-    
-    // In a real app, integrate MSG91 Send OTP API here.
-    // Since our app uses MSG91 widget heavily, the client might skip this
-    // and directly use the widget. This endpoint acts as a fallback / mock.
-    
+    let mobile = user.phone ? String(user.phone).replace(/\D/g, '') : '';
+    if (mobile.length > 10 && mobile.startsWith('91')) {
+      mobile = mobile.slice(-10);
+    }
+
+    if (!mobile || mobile.length !== 10) {
+      res.status(400);
+      throw new Error('Valid registered mobile number not found on user profile.');
+    }
+
+    // Generate 6-digit OTP
+    const otp = crypto.randomInt(100000, 1000000).toString();
+    const salt = await bcrypt.genSalt(10);
+    const otpHash = await bcrypt.hash(otp, salt);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    await Otp.deleteMany({ mobile });
+    await Otp.create({
+      mobile,
+      otpHash,
+      expiresAt,
+      attempts: 0,
+      resendCount: 0,
+      lastSentAt: new Date(),
+    });
+
+    await fast2smsService.sendAuthenticationTemplate({ mobile, otp });
+
     res.status(200).json({
       success: true,
-      message: 'OTP sent to registered mobile number. Temp OTP is 123456.',
+      message: 'OTP sent to your registered mobile number on WhatsApp.',
       data: { phone: user.phone },
     });
   } catch (error) {
@@ -176,64 +202,60 @@ const sendForgotOtp = async (req, res, next) => {
 // @access  Private
 const verifyForgotOtp = async (req, res, next) => {
   try {
-    const { otp, accessToken } = req.body;
+    const { otp } = req.body;
     const user = req.user;
 
-    let isVerified = false;
+    let mobile = user.phone ? String(user.phone).replace(/\D/g, '') : '';
+    if (mobile.length > 10 && mobile.startsWith('91')) {
+      mobile = mobile.slice(-10);
+    }
 
-    if (accessToken) {
-      // MSG91 Widget verification
-      try {
-        const msg91AuthKey = process.env.MSG91_AUTH_KEY;
-        console.log('[MSG91] Initialization Status: Checking environment variables');
-        console.log('[MSG91] Loaded env keys (no secrets):', Object.keys(process.env).filter(k => k.startsWith('MSG91')));
-
-        const msg91Url = 'https://api.msg91.com/api/v5/widget/verifyAccessToken';
-        const msg91Payload = { 'access-token': accessToken };
-        const msg91Headers = {
-          'Content-Type': 'application/json',
-          'authkey': msg91AuthKey
-        };
-
-        const msg91Response = await axios.post(msg91Url, msg91Payload, { headers: msg91Headers });
-
-        console.log('[MSG91] Raw response body:', JSON.stringify(msg91Response.data));
-
-        if (msg91Response.data.type === 'success' || msg91Response.data.message === 'Token successfully verified.') {
-          isVerified = true;
-        } else {
-          throw new Error('MSG91 Token verification failed');
-        }
-      } catch (err) {
-        console.error('[MSG91] Verification Error:', err.response?.data || err.message);
-        res.status(401);
-        throw new Error('Invalid or expired MSG91 access token.');
-      }
-    } else if (otp) {
-      // Fallback mock OTP verification
-      if (otp === '123456') {
-        isVerified = true;
-      } else {
-        res.status(401);
-        throw new Error('Invalid OTP.');
-      }
-    } else {
+    if (!otp || String(otp).trim().length !== 6) {
       res.status(400);
-      throw new Error('Either OTP or MSG91 accessToken is required.');
+      throw new Error('Please enter a valid 6-digit OTP.');
     }
 
-    if (isVerified) {
-      // Generate a short-lived reset token
-      const resetToken = jwt.sign({ id: user._id, purpose: 'mpin_reset' }, process.env.JWT_SECRET, {
-        expiresIn: '15m',
-      });
+    const otpRecord = await Otp.findOne({ mobile });
 
-      res.status(200).json({
-        success: true,
-        message: 'OTP verified successfully.',
-        data: { resetToken },
-      });
+    if (!otpRecord) {
+      res.status(400);
+      throw new Error('OTP has expired or is invalid. Please request a new OTP.');
     }
+
+    if (otpRecord.expiresAt < new Date()) {
+      await Otp.deleteOne({ _id: otpRecord._id });
+      res.status(400);
+      throw new Error('OTP has expired. Please request a new OTP.');
+    }
+
+    if (otpRecord.attempts >= 5) {
+      await Otp.deleteOne({ _id: otpRecord._id });
+      res.status(400);
+      throw new Error('Maximum verification attempts exceeded. Please request a new OTP.');
+    }
+
+    const isMatch = await bcrypt.compare(String(otp).trim(), otpRecord.otpHash);
+
+    if (!isMatch) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
+      const attemptsLeft = 5 - otpRecord.attempts;
+      res.status(400);
+      throw new Error(`Invalid OTP. ${attemptsLeft} attempt(s) remaining.`);
+    }
+
+    await Otp.deleteOne({ _id: otpRecord._id });
+
+    // Generate short-lived reset token for MPIN reset
+    const resetToken = jwt.sign({ id: user._id, purpose: 'mpin_reset' }, process.env.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP verified successfully.',
+      data: { resetToken },
+    });
   } catch (error) {
     next(error);
   }

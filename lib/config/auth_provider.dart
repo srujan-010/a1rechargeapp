@@ -1,10 +1,9 @@
 enum AuthProviderType {
+  fast2sms,
   firebase,
-  msg91,
 }
 
 class AppAuthConfig {
-  // Set to msg91 to use MSG91 API for authentication
-  // Change this flag to switch between Firebase Phone Auth and MSG91 OTP
-  static const AuthProviderType provider = AuthProviderType.msg91;
+  // Authentication Provider for A1 Recharge (Fast2SMS WhatsApp API)
+  static const AuthProviderType provider = AuthProviderType.fast2sms;
 }

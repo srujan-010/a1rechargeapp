@@ -6,6 +6,7 @@ const commissionService = require('../services/commission/commission.service');
 const ledgerService = require('../services/ledger/ledger.service');
 const CommissionHistory = require('../models/CommissionHistory');
 const Transaction = require('../models/Transaction');
+const fast2smsService = require('../services/fast2sms.service');
 
 class PendingRechargeWorker {
   constructor() {
@@ -127,6 +128,15 @@ class PendingRechargeWorker {
           console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping further processing.`);
           return;
         }
+
+        // Send Fast2SMS WhatsApp Recharge Success Notification
+        fast2smsService.sendRechargeSuccessTemplate({
+          customerName: 'Valued Retailer',
+          mobileNumber: transaction.mobileNumber,
+          amount: transaction.amount,
+          operator: transaction.operatorCode || 'Mobile',
+          transactionId: statusResponse.providerTransactionId || transaction.orderId,
+        }).catch(err => console.error('[WORKER WHATSAPP NOTIFICATION ERROR]:', err));
 
         // Deduct Wallet & Calculate Commission
         let commissionAmountPaise = 0;

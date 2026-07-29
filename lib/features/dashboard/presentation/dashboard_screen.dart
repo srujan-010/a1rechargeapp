@@ -11,10 +11,13 @@ import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/startup_tracker.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/services/background_startup_service.dart';
 import '../../../features/wallet/domain/models/wallet_transaction.dart';
 import '../../notifications/presentation/notifications_providers.dart';
 import '../../wallet_mpin/providers/wallet_mpin_provider.dart';
+import '../../commission/presentation/commission_providers.dart';
+import '../../commission/domain/models/commission_slab.dart';
 import 'dashboard_providers.dart';
 import 'package:flutter/services.dart';
 
@@ -36,22 +39,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refresh() async {
-
     ref.invalidate(walletBalanceProvider);
     ref.invalidate(recentTransactionsProvider);
     ref.invalidate(earningsSummaryProvider);
+    ref.invalidate(activeCommissionSlabsProvider);
     // Wait for all to complete
     await Future.wait([
       ref.read(walletBalanceProvider.future).catchError((Object error) => throw error),
       ref.read(recentTransactionsProvider.future).catchError((Object error) => throw error),
+      ref.read(activeCommissionSlabsProvider.future).catchError((Object error) => <CommissionSlab>[]),
     ]).catchError((Object error) => <Object>[]);
   }
 
   @override
   Widget build(BuildContext context) {
+    AppLogger.info('Dashboard Build Started', tag: 'Dashboard');
     final sessionAsync = ref.watch(sessionProvider);
     final user = sessionAsync.valueOrNull;
     final mpinState = ref.watch(walletMpinProvider);
+    AppLogger.info('Dashboard Build Finished: User=${user?.name ?? "Guest/Loading"}', tag: 'Dashboard');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -1248,11 +1254,18 @@ class _TransactionTile extends StatelessWidget {
 
 // ─── Commission Preview Card ──────────────────────────────────────────────────────────
 
-class _CommissionPreviewCard extends StatelessWidget {
+class _CommissionPreviewCard extends ConsumerWidget {
   const _CommissionPreviewCard();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final slabsAsync = ref.watch(activeCommissionSlabsProvider);
+    final slabs = slabsAsync.valueOrNull ?? [];
+
+    AppLogger.info('Home Dashboard Commission List: count=${slabs.length}', tag: 'Dashboard');
+
+    final previewSlabs = slabs.take(3).toList();
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1292,9 +1305,34 @@ class _CommissionPreviewCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
-          const _CommissionPreviewRow(operatorName: 'Airtel', percentage: '1.00%'),
-          const _CommissionPreviewRow(operatorName: 'Jio', percentage: '0.80%'),
-          const _CommissionPreviewRow(operatorName: 'Vi', percentage: '2.70%'),
+
+          if (slabsAsync.isLoading && slabs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (previewSlabs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              child: Center(
+                child: Text(
+                  'No commissions available',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+              ),
+            )
+          else
+            ...previewSlabs.map((slab) {
+              final isFlat = slab.commissionType == 'flat';
+              final commissionText = isFlat
+                  ? '₹${slab.commissionValue.toStringAsFixed(2)} Flat'
+                  : '${slab.commissionValue.toStringAsFixed(2)}%';
+              return _CommissionPreviewRow(
+                operatorName: slab.operatorName,
+                percentage: commissionText,
+              );
+            }),
+
           const Divider(height: 1),
           InkWell(
             onTap: () => context.push(RouteNames.commissionSlab),

@@ -10,13 +10,13 @@ import '../provider/auth_provider.dart';
 import '../models/auth_state.dart';
 
 class RegistrationScreen extends ConsumerStatefulWidget {
-  final String phone;
-  final String firebaseUid;
+  final String mobile;
+  final String tempSessionToken;
 
   const RegistrationScreen({
     super.key,
-    required this.phone,
-    required this.firebaseUid,
+    required this.mobile,
+    required this.tempSessionToken,
   });
 
   @override
@@ -109,28 +109,17 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   }
 
   void _submit() {
-    final formData = {
-      'name': _nameController.text.trim(),
-      'email': _emailController.text.trim(),
-      'shopName': _shopNameController.text.trim(),
-      'shopAddress': _selectedAddress,
-      'city': _extractedCity,
-      'state': _extractedState,
-      'pincode': _extractedPincode,
-      'mpin': _mpinController.text.trim(),
-      'aadhaarNumber': 'PENDING',
-      'panNumber': 'PENDING',
-      'gstNumber': 'PENDING',
-      'bank': {
-        'bankName': 'PENDING',
-        'accountNumber': 'PENDING',
-        'ifsc': 'PENDING',
-        'accountHolderName': 'PENDING',
-      }
-    };
-
     HapticFeedback.mediumImpact();
-    ref.read(authNotifierProvider.notifier).submitRegistration(formData);
+    ref.read(authNotifierProvider.notifier).submitRegistration(
+      tempSessionToken: widget.tempSessionToken,
+      name: _nameController.text.trim(),
+      shopName: _shopNameController.text.trim(),
+      address: _selectedAddress.isNotEmpty ? _selectedAddress : 'Registered Shop Address',
+      email: _emailController.text.trim(),
+      state: _extractedState,
+      district: _extractedCity,
+      pincode: _extractedPincode,
+    );
   }
 
   @override
@@ -290,7 +279,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       case 0:
         return _PersonalStep(
           key: const ValueKey(0),
-          phone: widget.phone,
+          phone: widget.mobile,
           nameController: _nameController,
           emailController: _emailController,
         );

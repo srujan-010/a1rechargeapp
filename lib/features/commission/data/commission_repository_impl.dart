@@ -17,18 +17,22 @@ class CommissionRepositoryImpl implements CommissionRepository {
   @override
   Future<List<CommissionSlab>> getActiveSlabs() async {
     try {
+      AppLogger.info('Commission API Request: GET ${ApiEndpoints.commissionSlabs}', tag: 'CommissionRepo');
       final response = await apiClient.get<List<dynamic>>(
         ApiEndpoints.commissionSlabs,
         fromJson: (json) => json as List<dynamic>,
       );
+      AppLogger.info('Commission API Response: success=${response.success}, count=${response.data?.length ?? 0}', tag: 'CommissionRepo');
       if (!response.success) {
         throw Exception(response.message);
       }
       if (response.data == null) return [];
-      return response.data!
+      final slabs = response.data!
           .whereType<Map<String, dynamic>>()
           .map(CommissionSlab.fromJson)
           .toList();
+      AppLogger.info('Commission Repository Result: parsed ${slabs.length} slabs', tag: 'CommissionRepo');
+      return slabs;
     } catch (e, st) {
       AppLogger.error(
         'getActiveSlabs failed',

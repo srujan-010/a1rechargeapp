@@ -5,19 +5,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../config/auth_provider.dart';
 import '../core/constants/route_names.dart';
 import '../core/providers/core_providers.dart';
+import '../core/utils/logger.dart';
+import '../features/auth/provider/auth_provider.dart';
+import '../features/auth/models/auth_state.dart';
 
 // Import screens (using placeholder references — implemented in Phases 2-12)
 import '../features/auth/screens/splash_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/otp_screen.dart';
-import '../features/auth/screens/registration_screen.dart' as legacy_reg;
-import '../features/auth_msg91/screens/msg91_login_screen.dart';
-import '../features/auth_msg91/screens/registration_screen.dart';
-import '../features/auth_msg91/screens/msg91_otp_screen.dart';
+import '../features/auth/screens/registration_screen.dart';
 // import '../features/authentication/presentation/mpin_setup_screen.dart';
 // import '../features/authentication/presentation/biometric_prompt_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
@@ -107,22 +106,28 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: RouteNames.splash,
     refreshListenable: sessionListenable,
     redirect: (context, state) {
+      final authState = ref.read(authNotifierProvider);
       final hasJwt = ref.read(hasValidJwtProvider).valueOrNull ?? false;
       final sessionAsync = ref.read(sessionProvider);
-      final isAuthenticated = hasJwt || sessionAsync.valueOrNull != null;
+      
+      final isAuthenticated = authState is AuthStateAuthenticated || hasJwt || sessionAsync.valueOrNull != null;
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       final isSplash = state.matchedLocation == RouteNames.splash;
+
+      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, isAuthenticated=$isAuthenticated', tag: 'Router');
 
       // Allow splash to always render (it handles its own redirect logic)
       if (isSplash) return null;
 
       // Unauthenticated → redirect to OTP login
       if (!isAuthenticated && !isAuthRoute) {
+        AppLogger.info('Router Decision: Redirecting Unauthenticated user to ${RouteNames.otpLogin}', tag: 'Router');
         return RouteNames.otpLogin;
       }
 
       // Authenticated → redirect away from auth screens
       if (isAuthenticated && isAuthRoute) {
+        AppLogger.info('Router Decision: Redirecting Authenticated user to ${RouteNames.dashboard}', tag: 'Router');
         return RouteNames.dashboard;
       }
 
@@ -177,9 +182,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'otp-login',
         pageBuilder: (context, state) => _slideUpPage(
           state: state,
-          child: AppAuthConfig.provider == AuthProviderType.msg91 
-              ? const Msg91LoginScreen() 
-              : const LoginScreen(),
+          child: const LoginScreen(),
         ),
         routes: [
           GoRoute(
@@ -187,21 +190,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: 'otp-verify',
             pageBuilder: (context, state) {
               final extra = state.extra as Map<String, dynamic>? ?? {};
-              
-              if (AppAuthConfig.provider == AuthProviderType.msg91) {
-                final phone = extra['phone'] as String? ?? '';
-                return _slideRightPage(
-                  state: state,
-                  child: Msg91OtpScreen(phone: phone),
-                );
-              } else {
-                final verificationId = extra['verificationId'] as String? ?? '';
-                final phone = extra['phone'] as String? ?? '';
-                return _slideRightPage(
-                  state: state,
-                  child: OtpScreen(verificationId: verificationId, phone: phone),
-                );
-              }
+              final phone = extra['phone'] as String? ?? '';
+              return _slideRightPage(
+                state: state,
+                child: OtpScreen(phone: phone),
+              );
             },
           ),
         ],
@@ -213,9 +206,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           return _slideUpPage(
             state: state,
-            child: legacy_reg.RegistrationScreen(
-              phone: extra['phone'] ?? '',
-              firebaseUid: extra['firebaseUid'] ?? '',
+            child: RegistrationScreen(
+              mobile: extra['mobile'] ?? extra['phone'] ?? '',
+              tempSessionToken: extra['tempSessionToken'] ?? '',
             ),
           );
         },
@@ -228,7 +221,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return _slideUpPage(
             state: state,
             child: RegistrationScreen(
-              mobile: extra['mobile'] ?? '',
+              mobile: extra['mobile'] ?? extra['phone'] ?? '',
               tempSessionToken: extra['tempSessionToken'] ?? '',
             ),
           );
@@ -838,6 +831,8 @@ CustomTransitionPage<T> _slideUpPage<T>({
 class _SessionListenable extends ChangeNotifier {
   _SessionListenable(Ref ref) {
     ref.listen(sessionProvider, (_, __) => notifyListeners());
+    ref.listen(authNotifierProvider, (_, __) => notifyListeners());
+    ref.listen(hasValidJwtProvider, (_, __) => notifyListeners());
   }
 }
 

@@ -79,7 +79,6 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/msg91', require('./routes/msg91Routes'));
 app.use('/api/user', require('./routes/userRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/wallet-mpin', require('./routes/walletMpinRoutes'));

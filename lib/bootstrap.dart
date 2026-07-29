@@ -1,12 +1,10 @@
 // lib/bootstrap.dart
 // App initialization sequence — runs before MaterialApp is built.
 // Order matters:
-//   1. Firebase (must be first)
-//   2. Hive (local cache)
-//   3. WidgetsFlutterBinding
-//   4. System UI overlay style
-// Note: Firebase requires google-services.json (Android) and GoogleService-Info.plist (iOS).
-// See README.md for Firebase setup instructions.
+//   1. Hive (must be initialized & boxes opened before any providers/UI)
+//   2. Environment & AppConfig
+//   3. Operator Registry
+//   4. WidgetsBinding & UI Overlay Settings
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +12,7 @@ import '../core/utils/logger.dart';
 import '../core/utils/startup_tracker.dart';
 import '../core/config/app_config.dart';
 import '../core/constants/operator_registry.dart';
+import '../core/services/local_cache_service.dart';
 
 Future<void> bootstrap(Widget app) async {
   // Mark t0: App Started
@@ -21,10 +20,15 @@ Future<void> bootstrap(Widget app) async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize environment and base URLs
+  // 1. Initialize Hive Local Storage & Open all required boxes upfront
+  AppLogger.info('Bootstrap: Starting Hive Initialization', tag: 'Bootstrap');
+  await LocalCacheService.initialize();
+  AppLogger.info('Bootstrap: Hive Initialization Completed', tag: 'Bootstrap');
+
+  // 2. Initialize environment and base URLs
   await AppConfig.init();
 
-  // Initialize Operator Registry from local assets
+  // 3. Initialize Operator Registry from local assets
   await OperatorRegistry.instance.initialize();
 
   // Lock orientation to portrait
@@ -47,4 +51,3 @@ Future<void> bootstrap(Widget app) async {
   AppLogger.info('Bootstrap complete — launching app', tag: 'Bootstrap');
   runApp(app);
 }
-

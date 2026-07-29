@@ -1,18 +1,15 @@
-import 'user_profile.dart';
-
 sealed class AuthState {
   const AuthState();
 
   const factory AuthState.initial() = AuthStateInitial;
   const factory AuthState.loading() = AuthStateLoading;
   const factory AuthState.codeSent({
-    required String verificationId,
-    int? resendToken,
+    required String phone,
   }) = AuthStateCodeSent;
   const factory AuthState.authenticated() = AuthStateAuthenticated;
   const factory AuthState.registrationRequired({
     required String phone,
-    required String firebaseUid,
+    required String tempSessionToken,
   }) = AuthStateRegistrationRequired;
   const factory AuthState.error(String message) = AuthStateError;
 }
@@ -26,9 +23,8 @@ class AuthStateLoading extends AuthState {
 }
 
 class AuthStateCodeSent extends AuthState {
-  final String verificationId;
-  final int? resendToken;
-  const AuthStateCodeSent({required this.verificationId, this.resendToken});
+  final String phone;
+  const AuthStateCodeSent({required this.phone});
 }
 
 class AuthStateAuthenticated extends AuthState {
@@ -37,8 +33,11 @@ class AuthStateAuthenticated extends AuthState {
 
 class AuthStateRegistrationRequired extends AuthState {
   final String phone;
-  final String firebaseUid;
-  const AuthStateRegistrationRequired({required this.phone, required this.firebaseUid});
+  final String tempSessionToken;
+  const AuthStateRegistrationRequired({
+    required this.phone,
+    required this.tempSessionToken,
+  });
 }
 
 class AuthStateError extends AuthState {

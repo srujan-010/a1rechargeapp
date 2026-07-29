@@ -1,23 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const {
-  loginUser,
+  sendOtp,
   verifyOtp,
-  firebaseLogin,
+  resendOtp,
   registerRetailer,
   getMe,
-  msg91Login,
+  firebaseLogin,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 
-router.post('/send-otp', loginUser);
+// Fast2SMS WhatsApp Authentication Endpoints
+router.post('/send-otp', sendOtp);
 router.get('/send-otp', (req, res) => {
-  res.status(405).json({ message: 'Use POST method' });
+  res.status(405).json({ success: false, message: 'Use POST method' });
 });
+
 router.post('/verify-otp', verifyOtp);
-router.post('/msg91-login', msg91Login);
-router.post('/firebase-login', firebaseLogin);
+router.post('/resend-otp', resendOtp);
+
+// Onboarding & Profile
 router.post('/register', registerRetailer);
 router.get('/me', protect, getMe);
+router.post('/firebase-login', firebaseLogin);
 
 module.exports = router;

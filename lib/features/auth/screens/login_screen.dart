@@ -84,13 +84,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
       } else if (next is AuthStateCodeSent) {
         context.push('${RouteNames.otpLogin}/verify', extra: {
-          'verificationId': next.verificationId,
-          'phone': '+91 ${_phoneController.text.trim()}',
+          'phone': _phoneController.text.trim(),
         });
       } else if (next is AuthStateRegistrationRequired) {
-        context.pushNamed('register', extra: {
-          'phone': next.phone,
-          'firebaseUid': next.firebaseUid,
+        context.pushNamed('registration', extra: {
+          'mobile': next.phone,
+          'tempSessionToken': next.tempSessionToken,
         });
       }
     });
