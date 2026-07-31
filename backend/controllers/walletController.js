@@ -72,7 +72,7 @@ const getStatement = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     const transactions = await Transaction.find({ userId: req.user._id })
-      .select('_id service operatorName mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference')
+      .select('_id service operatorName operatorId mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference providerTransactionId failureReason providerMessage')
       .sort({ createdAt: -1 })
       .skip(Number(skip))
       .limit(Number(limit))
@@ -85,6 +85,7 @@ const getStatement = async (req, res, next) => {
         id: t._id,
         serviceType: t.service,
         operatorName: t.operatorName || '',
+        operatorId: t.operatorId || null,
         transactionTitle: getTransactionTitle(t.service, t.operatorName),
         customerIdentifier: t.mobileNumber || t.recipientName || '',
         amount: t.amountPaise,
@@ -92,9 +93,14 @@ const getStatement = async (req, res, next) => {
         status: t.status,
         createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
         completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
+        updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
         paymentMethod: t.paymentMethod || 'wallet',
         referenceNumber: t.referenceId,
-        apiReference: t.apiReference || ''
+        clientOrderId: t.referenceId,
+        apiReference: t.apiReference || '',
+        providerTransactionId: t.providerTransactionId || t.apiReference || null,
+        failureReason: t.failureReason || null,
+        providerMessage: t.providerMessage || null,
       }))
     });
   } catch (error) {

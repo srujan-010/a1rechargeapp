@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/services/secure_storage_service.dart';
+import '../../../core/services/local_cache_service.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/models/app_exception.dart';
 
 class AuthResponse {
@@ -161,6 +163,19 @@ class AuthRepository {
   }
 
   Future<void> logout() async {
+    final tokenBefore = await secureStorage.getAccessToken();
+    final refreshTokenBefore = await secureStorage.getRefreshToken();
+    AppLogger.info('====================================================', tag: 'Auth');
+    AppLogger.info('Logout Repository: Initiating full session destruction', tag: 'Auth');
+    AppLogger.info('Tokens Before Deletion: AccessToken=$tokenBefore, RefreshToken=$refreshTokenBefore', tag: 'Auth');
+
     await secureStorage.clearSession();
+    await LocalCacheService.instance.clearAll();
+
+    final tokenAfter = await secureStorage.getAccessToken();
+    final refreshTokenAfter = await secureStorage.getRefreshToken();
+    AppLogger.info('Tokens After Deletion: AccessToken=$tokenAfter, RefreshToken=$refreshTokenAfter', tag: 'Auth');
+    AppLogger.info('Logout Repository: Session and local cache completely destroyed.', tag: 'Auth');
+    AppLogger.info('====================================================', tag: 'Auth');
   }
 }

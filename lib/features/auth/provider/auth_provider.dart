@@ -147,10 +147,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    AppLogger.info('Logout Provider: Auth state before reset: ${state.runtimeType}', tag: 'Auth');
     state = const AuthState.loading();
+    
     await authRepository.logout();
+    
+    ref.invalidate(hasValidJwtProvider);
     ref.invalidate(sessionProvider);
+    
     state = const AuthState.initial();
+    AppLogger.info('Logout Provider: Auth state after reset: ${state.runtimeType}', tag: 'Auth');
   }
 
   Future<void> _registerFcmToken() async {

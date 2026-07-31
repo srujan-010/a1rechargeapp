@@ -168,16 +168,22 @@ class SecureStorageService {
 
   // ─── Full Clear (logout) ─────────────────────────────────────────
   Future<void> clearSession() async {
+    final prevToken = _cachedAccessToken ?? await getAccessToken();
+    AppLogger.info('SecureStorage: Clearing session. Token before deletion: $prevToken', tag: 'Auth');
+
     _cachedAccessToken = null;
     await Future.wait([
       _delete(_Keys.accessToken),
       _delete(_Keys.refreshToken),
       _delete(_Keys.tokenExpiry),
       _delete(_Keys.retailerId),
+      _delete(_Keys.fcmToken),
       // MPIN hash and biometric preference are intentionally preserved across logout
       // so the user doesn't need to re-setup on next login
     ]);
-    AppLogger.info('Session cleared from secure storage');
+
+    final afterToken = await getAccessToken();
+    AppLogger.info('SecureStorage: Session cleared. Token after deletion: $afterToken', tag: 'Auth');
   }
 
   Future<void> clearAll() async {

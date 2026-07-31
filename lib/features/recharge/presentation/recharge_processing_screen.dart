@@ -74,7 +74,11 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     );
 
     _startMessageRotation();
-    _initiateRecharge();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initiateRecharge();
+      }
+    });
   }
 
   void _startMessageRotation() {
@@ -95,6 +99,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     final paymentMode = (widget.data['paymentMode'] as String?) ?? 'wallet';
 
     try {
+      debugPrint('[FLOW] Processing State');
       final receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(
             mpin: mpin,
             paymentMode: paymentMode,
@@ -177,11 +182,13 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     if (!mounted) return;
     _isNavigated = true;
 
+    debugPrint('[FLOW] Provider Update');
     // Invalidate wallet & transaction providers
     ref.invalidate(walletBalanceProvider);
     ref.invalidate(recentTransactionsProvider);
     ref.invalidate(earningsSummaryProvider);
 
+    debugPrint('[FLOW] Navigation');
     context.go(RouteNames.dashboard);
     context.push(
       RouteNames.rechargeReceipt.replaceFirst(':txnId', receipt.transactionId),
@@ -194,10 +201,12 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     _isNavigated = true;
     _cancelTimers();
 
-    ref.invalidate(walletBalanceProvider);
-
-    Future.microtask(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      debugPrint('[FLOW] Provider Update');
+      ref.invalidate(walletBalanceProvider);
+
+      debugPrint('[FLOW] Navigation');
       context.go(RouteNames.rechargeFailed, extra: receipt);
     });
   }
@@ -219,8 +228,9 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
       failureReason: errorMsg,
     );
 
-    Future.microtask(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      debugPrint('[FLOW] Navigation');
       context.go(RouteNames.rechargeFailed, extra: fallbackReceipt);
     });
   }
@@ -242,8 +252,9 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
           timestamp: DateTime.now(),
         );
 
-    Future.microtask(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      debugPrint('[FLOW] Navigation');
       context.go(RouteNames.rechargePending, extra: receipt);
     });
   }

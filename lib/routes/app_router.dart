@@ -108,13 +108,15 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authNotifierProvider);
       final hasJwt = ref.read(hasValidJwtProvider).valueOrNull ?? false;
-      final sessionAsync = ref.read(sessionProvider);
+      final sessionUser = ref.read(sessionProvider).valueOrNull;
       
-      final isAuthenticated = authState is AuthStateAuthenticated || hasJwt || sessionAsync.valueOrNull != null;
+      // User is authenticated ONLY if they hold a valid JWT token OR are in AuthStateAuthenticated state.
+      // Stale cached profile alone MUST NOT grant authenticated status.
+      final isAuthenticated = (authState is AuthStateAuthenticated) || (hasJwt && sessionUser != null);
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       final isSplash = state.matchedLocation == RouteNames.splash;
 
-      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, isAuthenticated=$isAuthenticated', tag: 'Router');
+      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, hasUser=${sessionUser != null}, isAuthenticated=$isAuthenticated', tag: 'Router');
 
       // Allow splash to always render (it handles its own redirect logic)
       if (isSplash) return null;

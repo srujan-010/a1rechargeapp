@@ -44,6 +44,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       return;
     }
 
+    debugPrint('[FLOW] Navigation');
     // Instantly navigate to dedicated full-screen RechargeProcessingScreen
     context.push(
       RouteNames.rechargeProcessing,
@@ -82,6 +83,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
 
       final state = ref.read(rechargeFlowProvider);
       if (!mounted) return;
+      debugPrint('[FLOW] Navigation');
       context.push(
         RouteNames.rechargeProcessing,
         extra: {

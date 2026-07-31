@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../../core/models/app_exception.dart';
@@ -330,6 +331,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       throw const ValidationException(message: 'MPIN is required for wallet payments', code: 'INVALID_MPIN');
     }
 
+    debugPrint('[FLOW] Processing State');
     state = state.copyWith(
       isProcessing: true,
       transactionState: RechargeTransactionState.requestSubmitted,
@@ -348,6 +350,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       String finalOperatorId = state.operator!.id;
       String finalOperatorName = state.operator!.name;
 
+      debugPrint('[FLOW] Recharge API Started');
       final result = await repo.processRecharge(
         phoneNumber: state.phoneNumber!,
         operatorId: finalOperatorId,
@@ -360,6 +363,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       );
 
       final receipt = result.getOrElseCompute((e) => throw e);
+      debugPrint('[FLOW] Recharge API Success');
 
       final walletAsync = ref.read(walletBalanceProvider);
       final finalReceipt = receipt.copyWith(
@@ -374,6 +378,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
         RechargeStatus.pending || RechargeStatus.processing => RechargeTransactionState.processing,
       };
 
+      debugPrint('[FLOW] Processing State');
       state = state.copyWith(
         isProcessing: receipt.status == RechargeStatus.pending || receipt.status == RechargeStatus.processing,
         transactionState: nextTxnState,
@@ -391,6 +396,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
         await repo.saveRecentContact(contact);
       }
 
+      debugPrint('[FLOW] Provider Update');
       // Invalidate dashboard wallet providers to trigger balance reload
       ref.invalidate(walletBalanceProvider);
       ref.invalidate(recentTransactionsProvider);
@@ -399,6 +405,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
 
       return finalReceipt;
     } catch (e) {
+      debugPrint('[FLOW] Processing State');
       state = state.copyWith(
         isProcessing: false,
         transactionState: RechargeTransactionState.failed,

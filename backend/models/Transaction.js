@@ -17,7 +17,7 @@ const transactionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['success', 'pending', 'failed', 'reversed'],
+    enum: ['initiated', 'success', 'pending', 'failed', 'reversed'],
     required: true,
   },
   service: {
@@ -45,8 +45,24 @@ const transactionSchema = new mongoose.Schema({
   operatorName: {
     type: String,
   },
+  operatorId: {
+    type: String,
+    default: null,
+  },
   apiReference: {
     type: String,
+  },
+  providerTransactionId: {
+    type: String,
+    default: null,
+  },
+  failureReason: {
+    type: String,
+    default: null,
+  },
+  providerMessage: {
+    type: String,
+    default: null,
   },
   paymentMethod: {
     type: String,

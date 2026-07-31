@@ -14,6 +14,7 @@ enum NotificationType {
   security,
   offers,
   failed,
+  processing,
 }
 
 enum DateGroup { today, yesterday, earlier }
@@ -474,6 +475,11 @@ class _NotificationCardContent extends ConsumerWidget {
   }
 
   void _handleNotificationAction(BuildContext context, String? action) {
+    if (action == null || action.isEmpty) return;
+    if (action.startsWith('/')) {
+      context.push(action);
+      return;
+    }
     switch (action) {
       case 'ROUTE_WALLET':
         context.go(RouteNames.wallet);
@@ -486,6 +492,11 @@ class _NotificationCardContent extends ConsumerWidget {
         break;
       case 'ROUTE_HISTORY':
         context.go(RouteNames.transactionHistory);
+        break;
+      default:
+        if (action.contains('transactions') || action.contains('details')) {
+          context.go(RouteNames.transactionHistory);
+        }
         break;
     }
   }
@@ -503,6 +514,10 @@ NotificationType _getNotificationType(AppNotification notif) {
       message.contains('failed') ||
       message.contains('unsuccessful')) {
     return NotificationType.failed;
+  }
+
+  if (title.contains('processing') || message.contains('processing') || message.contains('submitted')) {
+    return NotificationType.processing;
   }
 
   if (notif.category == NotificationCategory.offer ||
@@ -555,15 +570,21 @@ class _NotificationStyle {
     switch (type) {
       case NotificationType.recharge:
         return const _NotificationStyle(
-          icon: Icons.bolt_rounded,
-          iconColor: Color(0xFF2563EB), // Blue
-          iconBgColor: Color(0xFFDBEAFE),
+          icon: Icons.check_circle_rounded,
+          iconColor: Color(0xFF10B981), // Emerald Green
+          iconBgColor: Color(0xFFD1FAE5),
+        );
+      case NotificationType.processing:
+        return const _NotificationStyle(
+          icon: Icons.hourglass_top_rounded,
+          iconColor: Color(0xFFD97706), // Amber
+          iconBgColor: Color(0xFFFEF3C7),
         );
       case NotificationType.wallet:
         return const _NotificationStyle(
           icon: Icons.account_balance_wallet_rounded,
-          iconColor: Color(0xFF059669), // Green
-          iconBgColor: Color(0xFFD1FAE5),
+          iconColor: Color(0xFF2563EB), // Blue
+          iconBgColor: Color(0xFFDBEAFE),
         );
       case NotificationType.security:
         return const _NotificationStyle(

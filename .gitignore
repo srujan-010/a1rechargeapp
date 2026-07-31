@@ -85,3 +85,5 @@ app.*.map.json
 # Credentials & Secrets
 backend/config/firebase/serviceAccountKey.json
 serviceAccountKey.json
+backend/service-account.json
+service-account.json

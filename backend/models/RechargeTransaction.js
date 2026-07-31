@@ -43,8 +43,20 @@ const rechargeTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
-      default: 'PENDING',
+      enum: ['INITIATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
+      default: 'INITIATED',
+    },
+    operatorId: {
+      type: String,
+      default: null,
+    },
+    providerMessage: {
+      type: String,
+      default: null,
+    },
+    clientOrderId: {
+      type: String,
+      default: null,
     },
     reservedAmount: {
       type: Number,

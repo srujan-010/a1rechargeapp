@@ -205,7 +205,8 @@ class SettingsScreen extends ConsumerWidget {
     );
 
     if (confirm == true && context.mounted) {
-      ref.read(authNotifierProvider.notifier).logout();
+      await ref.read(authNotifierProvider.notifier).logout();
+      if (!context.mounted) return;
       context.go(RouteNames.otpLogin);
     }
   }
