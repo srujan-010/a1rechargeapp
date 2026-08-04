@@ -8,6 +8,7 @@ import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/widgets/app_button.dart';
 import '../domain/models/recharge_result.dart';
 import '../../history/presentation/history_providers.dart';
@@ -35,6 +36,11 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
   void initState() {
     super.initState();
     _currentReceipt = widget.receipt;
+
+    AppLogger.info(
+      '[Success Screen Opened] Operator shown on Success screen: ${_currentReceipt.operatorName} (Number: ${_currentReceipt.mobileNumber}, Amount: ${_currentReceipt.amountPaise})',
+      tag: 'RechargeReceipt',
+    );
 
     _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
     

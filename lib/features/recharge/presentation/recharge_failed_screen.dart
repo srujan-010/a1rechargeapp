@@ -5,6 +5,7 @@ import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/logger.dart';
 import '../domain/models/recharge_result.dart';
 
 class RechargeFailedScreen extends StatelessWidget {
@@ -14,6 +15,11 @@ class RechargeFailedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    AppLogger.info(
+      '[Failed Screen Opened] Operator shown on Failed screen: ${receipt.operatorName} (Reason: ${receipt.failureReason})',
+      tag: 'RechargeFailed',
+    );
+
     final formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(receipt.timestamp);
     final failureReason = receipt.failureReason ?? 'Transaction declined by operator.';
     final reasonLower = failureReason.toLowerCase();

@@ -21,7 +21,7 @@ const notificationSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['SUCCESS', 'INFO', 'WARNING', 'ERROR', 'OFFER', 'SYSTEM'],
+    enum: ['SUCCESS', 'INFO', 'WARNING', 'ERROR', 'OFFER', 'SYSTEM', 'SECURITY'],
     default: 'INFO'
   },
   priority: {

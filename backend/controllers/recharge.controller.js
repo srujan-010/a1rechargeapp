@@ -154,24 +154,31 @@ const executeRecharge = async (req, res, next) => {
 
     // Helper to handle validation / pre-check failures
     const handlePreCheckFailure = async (step, errorMsg, statusCode = 400, details = null) => {
-      console.log(`\n[${new Date().toISOString()}] EXIT POINT:\nFile: backend/controllers/recharge.controller.js\nFunction: executeRecharge\nStep: ${step}\nReason: ${errorMsg}\n`);
+      console.log(`\n====================================================`);
+      console.log(`[RECHARGE VALIDATION FAILURE]`);
+      console.log(`- Step / Validation Name: ${step}`);
+      console.log(`- Input Values:`, details || { mobileNumber, amount, amountPaise, operatorId, circleId, paymentMode, mpin: mpin ? '******' : 'MISSING' });
+      console.log(`- Failure Reason: ${errorMsg}`);
+      console.log(`====================================================\n`);
       
-      transaction.status = 'FAILED';
-      transaction.failureReason = errorMsg;
-      transaction.completedAt = new Date();
-      await transaction.save();
+      if (transaction) {
+        transaction.status = 'FAILED';
+        transaction.failureReason = errorMsg;
+        transaction.completedAt = new Date();
+        await transaction.save().catch(e => console.error(e));
+      }
 
-      globalTransaction.status = 'failed';
-      globalTransaction.failureReason = errorMsg;
-      globalTransaction.completedAt = new Date();
-      await globalTransaction.save();
+      if (globalTransaction) {
+        globalTransaction.status = 'failed';
+        globalTransaction.failureReason = errorMsg;
+        globalTransaction.completedAt = new Date();
+        await globalTransaction.save().catch(e => console.error(e));
+      }
 
       if (walletReserved) {
         await walletService.releaseReservation(userId, amountForRollback).catch(e => console.error('Release reservation error:', e));
         walletReserved = false;
       }
-
-      console.log(`[TXN UPDATED FAILED] orderId=${orderId}, failureReason=${errorMsg}`);
 
       notificationService.sendRechargeFailed({
         userId,
@@ -187,8 +194,10 @@ const executeRecharge = async (req, res, next) => {
         success: false,
         code: step === "MPIN Validation" ? "INVALID_MPIN" : (step === "Payload Validation" ? "INVALID_PAYLOAD" : "RECHARGE_FAILED"),
         message: errorMsg,
-        step,
         error: errorMsg,
+        reason: errorMsg,
+        failureReason: errorMsg,
+        step,
         details,
         data: {
           transactionId: orderId,
@@ -198,7 +207,7 @@ const executeRecharge = async (req, res, next) => {
           amountPaise: amount * 100,
           mobileNumber: mobileNumber,
           operatorName: String(operatorId || 'Operator').toUpperCase(),
-          timestamp: transaction.createdAt,
+          timestamp: transaction ? transaction.createdAt : new Date(),
           failureReason: errorMsg,
         }
       });
@@ -232,10 +241,35 @@ const executeRecharge = async (req, res, next) => {
     let operator;
     if (mongoose.Types.ObjectId.isValid(operatorId)) {
       operator = await ProviderOperator.findById(operatorId);
-    } else {
-      const legacyMap = { 'jio': 'RC', 'airtel': 'A', 'vi': 'V', 'bsnl': 'BT', 'dth_tata': 'TTV', 'dth_airtel': 'ATV', 'dth_dish': 'DTV' };
-      const mappedCode = legacyMap[String(operatorId).toLowerCase()] || 'RC';
-      operator = await ProviderOperator.findOne({ code: mappedCode, provider: 'A1Topup' });
+    }
+    
+    if (!operator) {
+      const codeLookup = String(operatorId || '').toUpperCase().trim();
+      operator = await ProviderOperator.findOne({ code: codeLookup, provider: 'A1Topup' });
+    }
+
+    if (!operator) {
+      const slug = String(operatorId || '').toLowerCase().trim();
+      const legacyMap = {
+        'jio': 'RC', 'reliance jio': 'RC', 'jio-topup': 'RC', 'jio_topup': 'RC', 'jio topup': 'RC',
+        'airtel': 'A', 'airtel-topup': 'A', 'airtel_topup': 'A', 'airtel topup': 'A',
+        'vi': 'V', 'vodafone': 'V', 'idea': 'V', 'vi-topup': 'V', 'vi_topup': 'V', 'vi topup': 'V',
+        'bsnl': 'BT', 'bsnl-topup': 'BT', 'bsnl topup': 'BT', 'bsnl_topup': 'BT', 'bsnl-special': 'BS', 'bsnl special': 'BS',
+        'dth_tata': 'TTV', 'tata sky': 'TTV', 'tatasky': 'TTV',
+        'dth_airtel': 'ATV', 'airtel dth': 'ATV',
+        'dth_dish': 'DTV', 'dish tv': 'DTV',
+        'sun direct': 'STV', 'dth_sun': 'STV',
+        'videocon': 'd2h', 'd2h': 'd2h', 'dth_d2h': 'd2h'
+      };
+      const mappedCode = legacyMap[slug];
+      if (mappedCode) {
+        operator = await ProviderOperator.findOne({ code: mappedCode, provider: 'A1Topup' });
+      }
+    }
+
+    if (!operator && req.body.operatorName) {
+      const firstWord = String(req.body.operatorName).trim().split(' ')[0];
+      operator = await ProviderOperator.findOne({ name: new RegExp(firstWord, 'i'), provider: 'A1Topup' });
     }
 
     if (!operator || !operator.status) {
@@ -243,8 +277,8 @@ const executeRecharge = async (req, res, next) => {
     }
 
     // Update names now that operator is resolved
-    globalTransaction.operatorName = operator.name;
-    globalTransaction.description = `Recharge for ${mobileNumber} - ${operator.name}`;
+    globalTransaction.operatorName = req.body.operatorName || operator.name;
+    globalTransaction.description = `Recharge for ${mobileNumber} - ${globalTransaction.operatorName}`;
     await globalTransaction.save();
 
     // Step 7: AFTER operator lookup
@@ -280,24 +314,8 @@ const executeRecharge = async (req, res, next) => {
     console.log(`[${new Date().toISOString()}] [8] AFTER DTH mapping: PASS`, { isDthService, operatorCode, circleCode });
 
     // Dynamic BSNL Routing
-    if (operator.name.toUpperCase() === 'BSNL') {
-      const PlanCache = require('../models/PlanCache');
-      const cache = await PlanCache.findOne({ operatorId: operator._id, circleId: circle ? circle._id : null }).sort({ createdAt: -1 });
-      if (cache && cache.plans) {
-        const plan = cache.plans.find(p => Number(p.amount) === Number(amount));
-        if (plan) {
-           const category = (plan.category || '').toLowerCase();
-           if (category.includes('top up') || category.includes('talktime')) {
-             operatorCode = 'BT';
-           } else {
-             operatorCode = 'BR';
-           }
-        } else {
-           operatorCode = 'BR';
-        }
-      } else {
-         operatorCode = 'BR';
-      }
+    if (operator.name.toUpperCase().includes('BSNL')) {
+      operatorCode = operator.code || 'BT';
     }
 
     amountForRollback = amount;
@@ -364,66 +382,88 @@ const executeRecharge = async (req, res, next) => {
 
     // 6. Handle Success / Failure / Pending
     if (providerResponse.status === 'SUCCESS') {
-      // Deduct Wallet
-      await walletService.commitReservation(userId, amount);
+      // Step A: Immediately commit wallet reservation & mark walletReserved = false
+      try {
+        await walletService.commitReservation(userId, amount);
+      } catch (commitErr) {
+        console.error(`[Wallet Commit Warning] orderId=${orderId}:`, commitErr.message);
+      }
+      walletReserved = false;
 
-      // Ledger Logging for Deduction
-      await ledgerService.logTransaction({
-        userId,
-        type: 'DEBIT',
-        amount,
-        referenceType: 'RECHARGE',
-        referenceId: transaction._id,
-        description: `Recharge for ${mobileNumber} - Order ID: ${orderId}`,
-      });
-
-      // Calculate & Credit Commission
-      const commission = await commissionService.calculateCommission(operatorCode, amount, operator.name);
-      if (commission.retailerCommissionAmount > 0) {
-        await walletService.addBalance(userId, commission.retailerCommissionAmount);
+      // Step B: Post-success operations (Ledger, Commission, CommissionHistory, Notifications)
+      try {
         await ledgerService.logTransaction({
           userId,
-          type: 'CREDIT',
-          amount: commission.retailerCommissionAmount,
-          referenceType: 'COMMISSION',
+          type: 'DEBIT',
+          amount,
+          referenceType: 'RECHARGE',
           referenceId: transaction._id,
-          description: `Commission for Recharge ${orderId}`,
-        });
-        
-        await Transaction.create({
-          userId,
-          type: 'credit',
-          amountPaise: commission.retailerCommissionAmount * 100,
-          status: 'success',
-          service: 'commission',
-          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-          description: `Commission for Recharge ${orderId}`,
-          apiReference: transaction._id.toString(),
-          paymentMethod: 'wallet',
-          operatorName: operator.name,
-        });
+          description: `Recharge for ${mobileNumber} - Order ID: ${orderId}`,
+        }).catch(e => console.error('[Ledger Debit Warning]:', e.message));
+
+        const commission = await commissionService.calculateCommission(operatorCode, amount, operator.name);
+        const safeRetailerCommission = Number(commission?.retailerCommissionAmount || 0);
+
+        if (safeRetailerCommission > 0) {
+          try {
+            await walletService.addBalance(userId, safeRetailerCommission);
+            await ledgerService.logTransaction({
+              userId,
+              type: 'CREDIT',
+              amount: safeRetailerCommission,
+              referenceType: 'COMMISSION',
+              referenceId: transaction._id,
+              description: `Commission for Recharge ${orderId}`,
+            });
+            
+            await Transaction.create({
+              userId,
+              type: 'credit',
+              amountPaise: safeRetailerCommission * 100,
+              status: 'success',
+              service: 'commission',
+              referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+              description: `Commission for Recharge ${orderId}`,
+              apiReference: transaction._id.toString(),
+              paymentMethod: 'wallet',
+              operatorName: operator.name,
+            });
+          } catch (commCreditErr) {
+            console.error('[Commission Credit Warning]:', commCreditErr.message);
+          }
+        }
+
+        // Record Commission History (Non-blocking with safe NaN filtering)
+        try {
+          const safeNum = (v) => {
+            const n = Number(v);
+            return isNaN(n) || !isFinite(n) ? 0 : Number(n.toFixed(2));
+          };
+
+          await CommissionHistory.create({
+            transactionId: transaction._id,
+            userId,
+            operatorCode: String(operatorCode || 'UNKNOWN'),
+            rechargeAmount: safeNum(amount),
+            providerCommissionPercentage: safeNum(commission?.providerCommissionPercentage),
+            providerCommissionAmount: safeNum(commission?.providerCommissionAmount),
+            retailerCommissionPercentage: safeNum(commission?.retailerCommissionPercentage),
+            retailerCommissionAmount: safeNum(commission?.retailerCommissionAmount),
+            companyProfitPercentage: safeNum(commission?.companyProfitPercentage),
+            companyProfitAmount: safeNum(commission?.companyProfitAmount),
+          });
+        } catch (commHistErr) {
+          console.error('[CommissionHistory Save Warning (Non-blocking)]:', commHistErr.message);
+        }
+
+        transaction.commissionCalculated = true;
+        globalTransaction.status = 'success';
+        globalTransaction.apiReference = providerResponse.providerTransactionId;
+        globalTransaction.commissionEarnedPaise = safeRetailerCommission * 100;
+        await globalTransaction.save().catch(e => console.error(e));
+      } catch (postProcErr) {
+        console.error('[Post-Success Processing Warning]:', postProcErr.message);
       }
-
-      // Record Commission History
-      await CommissionHistory.create({
-        transactionId: transaction._id,
-        userId,
-        operatorCode,
-        rechargeAmount: amount,
-        providerCommissionPercentage: commission.providerCommissionPercentage,
-        providerCommissionAmount: commission.providerCommissionAmount,
-        retailerCommissionPercentage: commission.retailerCommissionPercentage,
-        retailerCommissionAmount: commission.retailerCommissionAmount,
-        companyProfitPercentage: commission.companyProfitPercentage,
-        companyProfitAmount: commission.companyProfitAmount,
-      });
-
-      transaction.commissionCalculated = true;
-      globalTransaction.status = 'success';
-      globalTransaction.apiReference = providerResponse.providerTransactionId;
-      globalTransaction.commissionEarnedPaise = commission.retailerCommissionAmount * 100;
-      await globalTransaction.save();
-      walletReserved = false;
 
       console.log(`[TXN UPDATED SUCCESS] orderId=${orderId}, providerTransactionId=${providerResponse.providerTransactionId}`);
 
@@ -437,7 +477,6 @@ const executeRecharge = async (req, res, next) => {
         number: mobileNumber,
       });
 
-      // Automatically send Fast2SMS WhatsApp Recharge Success Utility Template
       fast2smsService.sendRechargeSuccessTemplate({
         customerName: req.user.name || req.user.shopName || 'Valued Retailer',
         mobileNumber: mobileNumber,
@@ -492,7 +531,15 @@ const executeRecharge = async (req, res, next) => {
     const isSuccess = statusLower === 'success';
     const isPending = statusLower === 'pending';
 
-    res.status(200).json({
+    let commissionEarnedPaise = 0;
+    try {
+      if (transaction.commissionCalculated) {
+        const commHist = await CommissionHistory.findOne({ transactionId: transaction._id }).catch(() => null);
+        commissionEarnedPaise = (commHist?.retailerCommissionAmount || 0) * 100;
+      }
+    } catch (_) {}
+
+    return res.status(200).json({
       success: isSuccess || isPending,
       message: isSuccess 
         ? 'Recharge successful' 
@@ -503,7 +550,7 @@ const executeRecharge = async (req, res, next) => {
         operatorRef: transaction.operatorReference || transaction.providerTransactionId || (isPending ? 'Processing...' : 'N/A'),
         status: statusLower, // 'success', 'failed', 'pending'
         amountPaise: transaction.amount * 100,
-        commissionEarnedPaise: transaction.commissionCalculated ? ((await CommissionHistory.findOne({ transactionId: transaction._id }))?.retailerCommissionAmount || 0) * 100 : 0,
+        commissionEarnedPaise,
         walletDebitedPaise: (isSuccess && paymentMode === 'wallet') ? transaction.amount * 100 : 0,
         walletBalanceAfterPaise: 0,
         mobileNumber: transaction.mobileNumber,
@@ -517,6 +564,26 @@ const executeRecharge = async (req, res, next) => {
   } catch (error) {
     console.error("STEP ERROR: Catch Block in executeRecharge", error);
     const errorMsg = error.message || 'Internal server error';
+
+    // GUARD: If transaction is already SUCCESS or PENDING, NEVER mark it as FAILED!
+    if (transaction && (transaction.status === 'SUCCESS' || transaction.status === 'PENDING')) {
+      console.warn(`[RECHARGE CATCH GUARD] Transaction ${orderId} is already ${transaction.status}. Suppressing failure fallback.`);
+      const statusLower = transaction.status.toLowerCase();
+      return res.status(200).json({
+        success: true,
+        message: statusLower === 'success' ? 'Recharge successful' : 'Recharge pending verification',
+        data: {
+          transactionId: transaction.orderId,
+          referenceId: transaction.orderId,
+          operatorRef: transaction.operatorReference || transaction.providerTransactionId || 'Processing...',
+          status: statusLower,
+          amountPaise: (transaction.amount || 0) * 100,
+          mobileNumber: transaction.mobileNumber,
+          operatorName: String(operator ? operator.name : 'OPERATOR').toUpperCase(),
+          timestamp: transaction.createdAt,
+        }
+      });
+    }
 
     if (transaction) {
       transaction.status = 'FAILED';
@@ -534,13 +601,17 @@ const executeRecharge = async (req, res, next) => {
 
     if (walletReserved) {
       await walletService.releaseReservation(req.user._id, amountForRollback).catch(e => console.error(e));
+      walletReserved = false;
     }
 
     console.log(`[TXN UPDATED FAILED] orderId=${orderId}, failureReason=${errorMsg}`);
     
     return res.status(400).json({
-       step: "Exception Catch Block",
+       success: false,
+       code: "RECHARGE_FAILED",
+       message: errorMsg,
        error: errorMsg,
+       step: "Exception Catch Block",
        details: error.stack,
        data: {
          transactionId: orderId,
@@ -550,7 +621,7 @@ const executeRecharge = async (req, res, next) => {
          amountPaise: (amount || 0) * 100,
          mobileNumber: mobileNumber,
          operatorName: 'OPERATOR',
-         timestamp: new Date(),
+         timestamp: transaction ? transaction.createdAt : new Date(),
          failureReason: errorMsg,
        }
     });

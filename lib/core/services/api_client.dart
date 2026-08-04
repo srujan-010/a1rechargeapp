@@ -255,6 +255,65 @@ class ApiClient {
 
   // ─── Exception Mapping ────────────────────────────────────────────
 
+  String _extractBackendErrorMessage(dynamic data) {
+    if (data is! Map) {
+      if (data is String && data.trim().isNotEmpty) return data.trim();
+      return 'An unexpected error occurred.';
+    }
+
+    final map = data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data);
+
+    // 1. response.data.message
+    if (map['message'] != null && map['message'].toString().trim().isNotEmpty) {
+      return map['message'].toString().trim();
+    }
+
+    // 2. response.data.error
+    if (map['error'] != null && map['error'].toString().trim().isNotEmpty) {
+      return map['error'].toString().trim();
+    }
+
+    // 3. response.data.reason
+    if (map['reason'] != null && map['reason'].toString().trim().isNotEmpty) {
+      return map['reason'].toString().trim();
+    }
+
+    // 4. response.data.failureReason
+    if (map['failureReason'] != null && map['failureReason'].toString().trim().isNotEmpty) {
+      return map['failureReason'].toString().trim();
+    }
+
+    // 5. response.data.details.failureReason / error / message
+    if (map['details'] is Map) {
+      final details = Map<String, dynamic>.from(map['details'] as Map);
+      if (details['failureReason'] != null && details['failureReason'].toString().trim().isNotEmpty) {
+        return details['failureReason'].toString().trim();
+      }
+      if (details['error'] != null && details['error'].toString().trim().isNotEmpty) {
+        return details['error'].toString().trim();
+      }
+      if (details['message'] != null && details['message'].toString().trim().isNotEmpty) {
+        return details['message'].toString().trim();
+      }
+    }
+
+    // 6. response.data.errors[0]
+    if (map['errors'] != null) {
+      final errors = map['errors'];
+      if (errors is List && errors.isNotEmpty) {
+        return errors.first.toString().trim();
+      }
+      if (errors is Map && errors.isNotEmpty) {
+        return errors.values.first.toString().trim();
+      }
+      if (errors is String && errors.trim().isNotEmpty) {
+        return errors.trim();
+      }
+    }
+
+    return 'An unexpected error occurred.';
+  }
+
   AppException _mapDioException(DioException e) {
     AppLogger.error('DioException mapped', tag: 'ApiClient', error: e);
 
@@ -285,28 +344,37 @@ class ApiClient {
 
       case DioExceptionType.badResponse:
         final statusCode = e.response?.statusCode;
-        final responseData = e.response?.data as Map<String, dynamic>?;
-        final message = responseData?['message'] as String? ?? 'An error occurred';
-        final code = responseData?['code'] as String?;
+        final responseData = e.response?.data;
+        final message = _extractBackendErrorMessage(responseData);
+        final code = (responseData is Map) ? responseData['code']?.toString() : null;
 
         if (statusCode == 401) {
-          return AuthException.sessionExpired;
+          return AuthException(
+            message: message != 'An unexpected error occurred.' ? message : 'Your session has expired. Please log in again.',
+            code: code ?? 'SESSION_EXPIRED',
+            isSessionExpired: true,
+          );
         }
         if (statusCode == 403) {
-          return AuthException.unauthorized;
+          return AuthException(
+            message: message != 'An unexpected error occurred.' ? message : 'You are not authorized to perform this action.',
+            code: code ?? 'UNAUTHORIZED',
+            isUnauthorized: true,
+          );
         }
         if (statusCode == 402) {
-          return TransactionException.insufficientBalance;
-        }
-        if (statusCode == 400 && message.toLowerCase().contains('invalid mpin')) {
-          return AuthException.invalidMpin;
+          return TransactionException(
+            message: message != 'An unexpected error occurred.' ? message : 'Insufficient wallet balance.',
+            code: code ?? 'INSUFFICIENT_BALANCE',
+          );
         }
         if (statusCode == 422 || statusCode == 400) {
-          final fieldErrors = (responseData?['errors'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v.toString())) ?? {};
+          final fieldErrors = (responseData is Map && responseData['errors'] is Map)
+              ? (responseData['errors'] as Map).map((k, v) => MapEntry(k.toString(), v.toString()))
+              : <String, String>{};
           return ValidationException(
             message: message,
-            code: code,
+            code: code ?? 'VALIDATION_ERROR',
             fieldErrors: fieldErrors,
           );
         }

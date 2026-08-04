@@ -46,21 +46,29 @@ const allowedOrigins = [
   'https://staging.a1recharge.com',
 ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow any origin in dev or if explicitly allowed
-    if (process.env.NODE_ENV !== 'production') return callback(null, true);
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    
-    // Allow flutter web local development even when backend is in production
-    if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
-    
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-App-Platform', 'X-App-Version', 'Accept'],
-}));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const isAllowed = !origin ||
+    process.env.NODE_ENV !== 'production' ||
+    allowedOrigins.includes(origin) ||
+    /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
+
+  if (isAllowed && origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  const reqHeaders = req.headers['access-control-request-headers'];
+  res.setHeader('Access-Control-Allow-Headers', reqHeaders || '*');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
 app.use(express.json());
 // app.use(helmet());
 app.use(morgan('dev'));

@@ -262,23 +262,31 @@ class RechargeRepositoryImpl implements RechargeRepository {
       if (!response.success || response.data == null) {
         return Failure(ServerException(message: response.message));
       }
-      final data = response.data!['data'];
-      final statusStr = (data?['status'] as String? ?? 'PENDING').toLowerCase();
-      final isSuccess = statusStr == 'success';
-      final isPending = statusStr == 'pending';
+      final rawObj = response.data!;
+      final Map<String, dynamic> data = (rawObj['data'] is Map<String, dynamic>)
+          ? rawObj['data'] as Map<String, dynamic>
+          : rawObj;
+
+      final rawStatus = (data['status'] ?? data['Status'] ?? data['providerStatus'] ?? 'PENDING').toString().toUpperCase().trim();
+      final isSuccess = rawStatus == 'SUCCESS' || rawStatus == 'COMPLETED';
+      final isFailed = rawStatus == 'FAILED' || rawStatus == 'FAILURE' || rawStatus == 'ERROR';
+      final isPending = !isSuccess && !isFailed;
+
+      final rawFailureReason = data['message'] ?? data['failureReason'] ?? data['error'] ?? data['details']?['failureReason'];
+      final String? failureReason = rawFailureReason?.toString();
 
       final receipt = RechargeReceipt(
-        transactionId: data?['orderId'] ?? orderId,
-        referenceId: data?['orderId'] ?? orderId,
-        operatorRef: data?['operatorReference'] ?? data?['providerTransactionId'],
+        transactionId: (data['orderId'] as String?) ?? orderId,
+        referenceId: (data['orderId'] as String?) ?? orderId,
+        operatorRef: (data['operatorReference'] as String?) ?? (data['providerTransactionId'] as String?),
         status: isSuccess
             ? RechargeStatus.success
-            : (isPending ? RechargeStatus.pending : RechargeStatus.failed),
-        amountPaise: 0, // preserved from UI
-        mobileNumber: '',
-        operatorName: '',
+            : (isFailed ? RechargeStatus.failed : RechargeStatus.pending),
+        amountPaise: (data['amountPaise'] as num?)?.toInt() ?? 0,
+        mobileNumber: (data['mobileNumber'] as String?) ?? '',
+        operatorName: (data['operatorName'] as String?) ?? '',
         timestamp: DateTime.now(),
-        failureReason: data?['message'],
+        failureReason: failureReason,
       );
 
       return Success(receipt);

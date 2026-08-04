@@ -7,6 +7,7 @@ import '../../../core/constants/route_names.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/logger.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
+import '../../../core/models/app_exception.dart';
 import '../domain/models/recharge_result.dart';
 import 'recharge_providers.dart';
 
@@ -35,6 +36,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   int _currentStep = 1; // 0: Wallet, 1: Request, 2: Operator, 3: Finalizing
   bool _isNavigated = false;
   bool _isSuccess = false;
+  int _pollingAttempt = 0;
 
   final List<String> _statusMessages = [
     'Verifying Wallet...',
@@ -48,6 +50,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   @override
   void initState() {
     super.initState();
+    AppLogger.info('[Processing Screen Opened]', tag: 'RechargeProcessing');
 
     // Orbiting dot controller (2 seconds infinite loop)
     _orbitController = AnimationController(
@@ -99,38 +102,53 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     final paymentMode = (widget.data['paymentMode'] as String?) ?? 'wallet';
 
     try {
-      debugPrint('[FLOW] Processing State');
+      AppLogger.info('[Recharge Creation Initiated]', tag: 'RechargeProcessing');
       final receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(
             mpin: mpin,
             paymentMode: paymentMode,
           );
 
       _activeReceipt = receipt;
+      final orderId = receipt.transactionId;
+      AppLogger.info('[Recharge Created] Order ID: $orderId, Initial Status: ${receipt.status.name}', tag: 'RechargeProcessing');
 
       if (!mounted) return;
 
       if (receipt.isSuccess) {
+        AppLogger.info('[Status Changed: SUCCESS]', tag: 'RechargeProcessing');
         _handleSuccess(receipt);
       } else if (receipt.status == RechargeStatus.failed) {
+        AppLogger.info('[Status Changed: FAILED]', tag: 'RechargeProcessing');
         _handleFailure(receipt);
       } else {
-        // Status is PENDING.
-        // Start 35-second timeout window & poll every 1.0 second
-        _startPendingPolling(receipt.transactionId);
+        // Status is PENDING or PROCESSING.
+        // Start 20-second timeout window & poll every 2 seconds
+        _startPendingPolling(orderId);
       }
     } catch (e) {
-      AppLogger.error('Recharge initiation exception: $e', tag: 'RechargeProcessing');
+      final errorMsg = (e is AppException) ? e.message : e.toString().replaceAll('Exception: ', '');
+      AppLogger.error('Recharge initiation exception: $errorMsg', tag: 'RechargeProcessing');
       if (!mounted) return;
-      _handleError(e.toString());
+      _handleError(errorMsg);
     }
   }
 
   void _startPendingPolling(String orderId) {
-    const timeoutSeconds = 35;
+    const timeoutSeconds = 20;
+    const pollIntervalSeconds = 2;
     final startTime = DateTime.now();
 
-    _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (_isNavigated || !mounted) return;
+    AppLogger.info('[Polling Started]', tag: 'RechargeProcessing');
+    AppLogger.info('[Polling Order ID: $orderId]', tag: 'RechargeProcessing');
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: pollIntervalSeconds), (timer) async {
+      if (_isNavigated || !mounted) {
+        _cancelTimers();
+        return;
+      }
+
+      _pollingAttempt++;
+      AppLogger.info('[Polling Attempt #$_pollingAttempt]', tag: 'RechargeProcessing');
 
       try {
         final repo = ref.read(rechargeRepositoryProvider);
@@ -138,30 +156,37 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
         final latestReceipt = result.valueOrNull;
 
         if (latestReceipt != null) {
+          AppLogger.info('[Polling Response: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
+          AppLogger.info('[Current Status: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
+
           if (latestReceipt.isSuccess) {
-            timer.cancel();
+            AppLogger.info('[Status Changed: SUCCESS]', tag: 'RechargeProcessing');
+            _cancelTimers();
             _handleSuccess(latestReceipt);
             return;
           } else if (latestReceipt.status == RechargeStatus.failed) {
-            timer.cancel();
+            AppLogger.info('[Status Changed: FAILED]', tag: 'RechargeProcessing');
+            _cancelTimers();
             _handleFailure(latestReceipt);
             return;
           }
+        } else if (result.isFailure) {
+          AppLogger.warning('Status polling returned failure: ${result.errorOrNull?.message}', tag: 'RechargeProcessing');
         }
       } catch (e) {
-        AppLogger.warning('Status polling attempt failed: $e', tag: 'RechargeProcessing');
+        AppLogger.warning('Status polling attempt exception: $e', tag: 'RechargeProcessing');
       }
 
-      // Check if 35s elapsed
+      // Check if 20s elapsed
       if (DateTime.now().difference(startTime).inSeconds >= timeoutSeconds) {
-        timer.cancel();
+        _cancelTimers();
         _handleTimeoutPending();
       }
     });
 
     _timeoutTimer = Timer(const Duration(seconds: timeoutSeconds), () {
       if (!_isNavigated && mounted) {
-        _pollingTimer?.cancel();
+        _cancelTimers();
         _handleTimeoutPending();
       }
     });
@@ -169,51 +194,69 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
   void _handleSuccess(RechargeReceipt receipt) async {
     if (_isNavigated) return;
+    _isNavigated = true;
+
+    AppLogger.info('[Navigation Triggered] -> Success Screen', tag: 'RechargeProcessing');
+    _cancelTimers();
+
+    final finalReceipt = (_activeReceipt != null)
+        ? _activeReceipt!.copyWith(
+            status: RechargeStatus.success,
+            operatorRef: receipt.operatorRef ?? _activeReceipt!.operatorRef,
+          )
+        : receipt;
 
     setState(() {
       _isSuccess = true;
       _currentStep = 3;
     });
 
-    _cancelTimers();
     await _successController.forward();
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future.delayed(const Duration(milliseconds: 300));
 
     if (!mounted) return;
-    _isNavigated = true;
 
-    debugPrint('[FLOW] Provider Update');
-    // Invalidate wallet & transaction providers
+    AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
     ref.invalidate(walletBalanceProvider);
     ref.invalidate(recentTransactionsProvider);
     ref.invalidate(earningsSummaryProvider);
 
-    debugPrint('[FLOW] Navigation');
     context.go(RouteNames.dashboard);
     context.push(
-      RouteNames.rechargeReceipt.replaceFirst(':txnId', receipt.transactionId),
-      extra: receipt,
+      RouteNames.rechargeReceipt.replaceFirst(':txnId', finalReceipt.transactionId),
+      extra: finalReceipt,
     );
   }
 
   void _handleFailure(RechargeReceipt receipt) {
     if (_isNavigated) return;
     _isNavigated = true;
+
+    final failureReason = receipt.failureReason ?? _activeReceipt?.failureReason ?? 'Operator rejected the recharge.';
+    AppLogger.info('[Navigation Triggered] -> Failure Screen. Reason: $failureReason', tag: 'RechargeProcessing');
     _cancelTimers();
+
+    final finalReceipt = (_activeReceipt != null)
+        ? _activeReceipt!.copyWith(
+            status: RechargeStatus.failed,
+            failureReason: failureReason,
+          )
+        : receipt;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      debugPrint('[FLOW] Provider Update');
+      AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
       ref.invalidate(walletBalanceProvider);
 
-      debugPrint('[FLOW] Navigation');
-      context.go(RouteNames.rechargeFailed, extra: receipt);
+      context.go(RouteNames.rechargeFailed, extra: finalReceipt);
     });
   }
 
   void _handleError(String errorMsg) {
     if (_isNavigated) return;
     _isNavigated = true;
+
+    AppLogger.info('[Navigation Triggered] -> Error Failure Screen. Reason: $errorMsg', tag: 'RechargeProcessing');
     _cancelTimers();
 
     final fallbackReceipt = RechargeReceipt(
@@ -230,7 +273,6 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      debugPrint('[FLOW] Navigation');
       context.go(RouteNames.rechargeFailed, extra: fallbackReceipt);
     });
   }
@@ -238,6 +280,8 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   void _handleTimeoutPending() {
     if (_isNavigated) return;
     _isNavigated = true;
+
+    AppLogger.info('[Navigation Triggered] -> Pending Screen after 20s timeout', tag: 'RechargeProcessing');
     _cancelTimers();
 
     final receipt = _activeReceipt ??
@@ -254,19 +298,26 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      debugPrint('[FLOW] Navigation');
       context.go(RouteNames.rechargePending, extra: receipt);
     });
   }
 
   void _cancelTimers() {
+    if (_messageTimer != null || _pollingTimer != null || _timeoutTimer != null) {
+      AppLogger.info('[Polling Stopped]', tag: 'RechargeProcessing');
+      AppLogger.info('[Timer Cancelled]', tag: 'RechargeProcessing');
+    }
     _messageTimer?.cancel();
     _pollingTimer?.cancel();
     _timeoutTimer?.cancel();
+    _messageTimer = null;
+    _pollingTimer = null;
+    _timeoutTimer = null;
   }
 
   @override
   void dispose() {
+    AppLogger.info('[Screen Disposed]', tag: 'RechargeProcessing');
     _cancelTimers();
     _orbitController.dispose();
     _signalController.dispose();
@@ -277,9 +328,14 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
   @override
   Widget build(BuildContext context) {
-    final amountPaise = widget.data['amountPaise'] as int? ?? 23900;
-    final phoneNumber = widget.data['phoneNumber'] as String? ?? '8309628088';
-    final operatorName = widget.data['operatorName'] as String? ?? 'Reliance Jio';
+    final amountPaise = widget.data['amountPaise'] as int? ?? 0;
+    final phoneNumber = widget.data['phoneNumber'] as String? ?? '';
+    final operatorName = widget.data['operatorName'] as String? ?? 'Operator';
+
+    AppLogger.info(
+      '[Processing Screen Render] Operator shown on Processing screen: $operatorName (Phone: $phoneNumber, Amount: $amountPaise)',
+      tag: 'RechargeProcessing',
+    );
 
     return PopScope(
       canPop: false,

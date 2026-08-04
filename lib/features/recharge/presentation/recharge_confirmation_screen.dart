@@ -12,6 +12,7 @@ import '../../dashboard/presentation/dashboard_providers.dart';
 import '../domain/models/operator.dart';
 import 'recharge_providers.dart';
 import '../../../core/utils/upi_handler.dart';
+import '../../../core/utils/logger.dart';
 
 
 enum PaymentMethod { wallet, upi }
@@ -44,16 +45,22 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       return;
     }
 
-    debugPrint('[FLOW] Navigation');
-    // Instantly navigate to dedicated full-screen RechargeProcessingScreen
+    AppLogger.info(
+      '[Payment Screen] Operator passed to request: ${state.operator!.name} (ID: ${state.operator!.id}, Code: ${state.operator!.shortCode}), Number: ${state.phoneNumber}, Amount: ${state.customAmountPaise}',
+      tag: 'RechargeConfirmation',
+    );
+
     context.push(
       RouteNames.rechargeProcessing,
       extra: {
         'mpin': pin,
         'paymentMode': 'wallet',
         'phoneNumber': state.phoneNumber,
+        'operatorId': state.operator!.id,
+        'operatorCode': state.operator!.shortCode,
         'operatorName': state.operator!.name,
         'amountPaise': state.customAmountPaise,
+        'circle': state.circle?.state,
       },
     );
   }
@@ -83,14 +90,22 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
 
       final state = ref.read(rechargeFlowProvider);
       if (!mounted) return;
-      debugPrint('[FLOW] Navigation');
+
+      AppLogger.info(
+        '[Payment Screen] Operator passed to request (UPI): ${state.operator!.name} (ID: ${state.operator!.id}, Code: ${state.operator!.shortCode}), Number: ${state.phoneNumber}, Amount: ${state.customAmountPaise}',
+        tag: 'RechargeConfirmation',
+      );
+
       context.push(
         RouteNames.rechargeProcessing,
         extra: {
           'paymentMode': 'upi',
           'phoneNumber': state.phoneNumber,
+          'operatorId': state.operator!.id,
+          'operatorCode': state.operator!.shortCode,
           'operatorName': state.operator!.name,
           'amountPaise': state.customAmountPaise,
+          'circle': state.circle?.state,
         },
       );
     } catch (e) {

@@ -180,18 +180,27 @@ class PendingRechargeWorker {
             });
           }
 
-          await CommissionHistory.create({
-            transactionId: transaction._id,
-            userId: transaction.userId,
-            operatorCode: transaction.operatorCode,
-            rechargeAmount: transaction.amount,
-            providerCommissionPercentage: commission.providerCommissionPercentage,
-            providerCommissionAmount: commission.providerCommissionAmount,
-            retailerCommissionPercentage: commission.retailerCommissionPercentage,
-            retailerCommissionAmount: commission.retailerCommissionAmount,
-            companyProfitPercentage: commission.companyProfitPercentage,
-            companyProfitAmount: commission.companyProfitAmount,
-          });
+          try {
+            const safeNum = (v) => {
+              const n = Number(v);
+              return isNaN(n) || !isFinite(n) ? 0 : Number(n.toFixed(2));
+            };
+
+            await CommissionHistory.create({
+              transactionId: transaction._id,
+              userId: transaction.userId,
+              operatorCode: String(transaction.operatorCode || 'UNKNOWN'),
+              rechargeAmount: safeNum(transaction.amount),
+              providerCommissionPercentage: safeNum(commission?.providerCommissionPercentage),
+              providerCommissionAmount: safeNum(commission?.providerCommissionAmount),
+              retailerCommissionPercentage: safeNum(commission?.retailerCommissionPercentage),
+              retailerCommissionAmount: safeNum(commission?.retailerCommissionAmount),
+              companyProfitPercentage: safeNum(commission?.companyProfitPercentage),
+              companyProfitAmount: safeNum(commission?.companyProfitAmount),
+            });
+          } catch (commHistErr) {
+            console.error(`[Worker] CommissionHistory Save Warning for ${transaction.orderId}:`, commHistErr.message);
+          }
         } catch (walletErr) {
           console.error(`[Worker] Wallet/Commission processing warning for ${transaction.orderId}:`, walletErr.message);
         }
