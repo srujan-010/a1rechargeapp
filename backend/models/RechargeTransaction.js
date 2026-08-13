@@ -78,6 +78,30 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: String,
       default: 'mobile',
     },
+    providerOperatorCode: {
+      type: String,
+      default: null,
+    },
+    planId: {
+      type: String,
+      default: null,
+    },
+    planName: {
+      type: String,
+      default: null,
+    },
+    planType: {
+      type: String,
+      default: null,
+    },
+    internalOperatorId: {
+      type: String,
+      default: null,
+    },
+    internalOperatorName: {
+      type: String,
+      default: null,
+    },
     completedAt: {
       type: Date,
       default: null,

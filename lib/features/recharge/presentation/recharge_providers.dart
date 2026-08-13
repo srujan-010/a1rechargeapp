@@ -211,6 +211,9 @@ class RechargeState {
   final Operator? manualOperator;
   final Circle? manualCircle;
   final MobilePlan? selectedPlan;
+  final String? selectedPlanCategory;
+  final String? selectedPlanType;
+  final String? providerOperatorCode;
   final int? customAmountPaise;
   final bool isDetecting;
   final bool isProcessing;
@@ -228,6 +231,9 @@ class RechargeState {
     this.manualOperator,
     this.manualCircle,
     this.selectedPlan,
+    this.selectedPlanCategory,
+    this.selectedPlanType,
+    this.providerOperatorCode,
     this.customAmountPaise,
     this.isDetecting = false,
     this.isProcessing = false,
@@ -241,6 +247,9 @@ class RechargeState {
     Operator? manualOperator,
     Circle? manualCircle,
     MobilePlan? selectedPlan,
+    String? selectedPlanCategory,
+    String? selectedPlanType,
+    String? providerOperatorCode,
     int? customAmountPaise,
     bool? isDetecting,
     bool? isProcessing,
@@ -256,6 +265,9 @@ class RechargeState {
       manualOperator: clearManual ? null : (manualOperator ?? this.manualOperator),
       manualCircle: clearManual ? null : (manualCircle ?? this.manualCircle),
       selectedPlan: selectedPlan ?? (clearPlan ? null : this.selectedPlan),
+      selectedPlanCategory: selectedPlanCategory ?? (clearPlan ? null : this.selectedPlanCategory),
+      selectedPlanType: selectedPlanType ?? (clearPlan ? null : this.selectedPlanType),
+      providerOperatorCode: providerOperatorCode ?? (clearPlan ? null : this.providerOperatorCode),
       customAmountPaise: customAmountPaise ?? (clearPlan ? null : this.customAmountPaise),
       isDetecting: isDetecting ?? this.isDetecting,
       isProcessing: isProcessing ?? this.isProcessing,
@@ -301,8 +313,38 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
     state = state.copyWith(manualCircle: circle, clearPlan: true);
   }
 
-  void setPlan(MobilePlan plan) {
-    state = state.copyWith(selectedPlan: plan, customAmountPaise: (double.tryParse(plan.rs ?? '0') ?? 0).toInt() * 100);
+  void setPlan(MobilePlan plan, {String? categoryName}) {
+    final catName = categoryName ?? '';
+    final op = state.operator;
+    final opNameUpper = (op?.name ?? '').toUpperCase();
+    
+    String planType = 'TOPUP';
+    String? providerCode = op?.shortCode ?? op?.code;
+
+    if (opNameUpper.contains('BSNL')) {
+      final catUpper = catName.toUpperCase();
+      if (catUpper.contains('TOPUP') || catUpper.contains('FULLTT') || catUpper.contains('TALKTIME')) {
+        planType = 'TOPUP';
+        providerCode = 'BT';
+      } else {
+        planType = 'STV';
+        providerCode = 'BR';
+      }
+    } else {
+      if (catName.toUpperCase().contains('TOPUP') || catName.toUpperCase().contains('FULLTT')) {
+        planType = 'TOPUP';
+      } else {
+        planType = 'STV';
+      }
+    }
+
+    state = state.copyWith(
+      selectedPlan: plan,
+      customAmountPaise: (double.tryParse(plan.rs ?? '0') ?? 0).toInt() * 100,
+      selectedPlanCategory: catName,
+      selectedPlanType: planType,
+      providerOperatorCode: providerCode,
+    );
   }
 
   void setAmount(int amountPaise) {
@@ -360,6 +402,11 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
         amountPaise: state.customAmountPaise!,
         mpin: mpin,
         paymentMode: paymentMode,
+        planId: state.selectedPlan?.id,
+        planName: state.selectedPlan?.desc,
+        planType: state.selectedPlanType,
+        selectedCategory: state.selectedPlanCategory,
+        providerOperatorCode: state.providerOperatorCode,
       );
 
       final receipt = result.getOrElseCompute((e) => throw e);

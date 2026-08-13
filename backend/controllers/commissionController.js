@@ -135,19 +135,70 @@ const updateCommission = async (req, res, next) => {
   }
 };
 
-const getCommissionForOperator = async (operatorName) => {
-  return await OperatorCommission.findOne({
-    operatorName: { $regex: new RegExp(`^${operatorName}$`, 'i') },
-    status: 'ACTIVE',
-  }).lean();
+const getOperatorCodeAliases = (identifier = '') => {
+  const clean = String(identifier || '').trim().toUpperCase();
+  const map = {
+    'A': ['A', 'AT', 'AIRTEL'],
+    'AT': ['A', 'AT', 'AIRTEL'],
+    'AIRTEL': ['A', 'AT', 'AIRTEL'],
+    'RC': ['RC', 'JO', 'JIO', 'RELIANCE - JIO'],
+    'JO': ['RC', 'JO', 'JIO', 'RELIANCE - JIO'],
+    'JIO': ['RC', 'JO', 'JIO', 'RELIANCE - JIO'],
+    'V': ['V', 'VI', 'VODAFONE', 'IDEA'],
+    'VI': ['V', 'VI', 'VODAFONE', 'IDEA'],
+    'VODAFONE': ['V', 'VI', 'VODAFONE', 'IDEA'],
+    'BT': ['BT', 'BR', 'BSNL'],
+    'BR': ['BT', 'BR', 'BSNL'],
+    'BSNL': ['BT', 'BR', 'BSNL'],
+  };
+  return map[clean] || [clean];
 };
 
-const getCommissionForOperatorAndService = async (serviceType, operatorName) => {
-  return await OperatorCommission.findOne({
-    serviceType: serviceType.toLowerCase(),
-    operatorName: { $regex: new RegExp(`^${operatorName}$`, 'i') },
+const getCommissionForOperator = async (operatorIdentifier) => {
+  if (!operatorIdentifier) return null;
+  const aliases = getOperatorCodeAliases(operatorIdentifier);
+  const cleanName = String(operatorIdentifier).trim();
+
+  let record = await OperatorCommission.findOne({
     status: 'ACTIVE',
+    $or: [
+      { operatorCode: { $in: aliases } },
+      { operatorName: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
+      { operatorName: { $regex: new RegExp(cleanName, 'i') } }
+    ]
   }).lean();
+
+  return record;
+};
+
+const getCommissionForOperatorAndService = async (serviceType = 'mobile', operatorIdentifier = '') => {
+  if (!operatorIdentifier) return null;
+  const sType = String(serviceType).toLowerCase().trim();
+  const aliases = getOperatorCodeAliases(operatorIdentifier);
+  const cleanName = String(operatorIdentifier).trim();
+
+  let record = await OperatorCommission.findOne({
+    status: 'ACTIVE',
+    serviceType: sType,
+    $or: [
+      { operatorCode: { $in: aliases } },
+      { operatorName: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
+      { operatorName: { $regex: new RegExp(cleanName, 'i') } }
+    ]
+  }).lean();
+
+  if (!record) {
+    record = await OperatorCommission.findOne({
+      status: 'ACTIVE',
+      $or: [
+        { operatorCode: { $in: aliases } },
+        { operatorName: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
+        { operatorName: { $regex: new RegExp(cleanName, 'i') } }
+      ]
+    }).lean();
+  }
+
+  return record;
 };
 
 module.exports = {
@@ -155,4 +206,5 @@ module.exports = {
   updateCommission,
   getCommissionForOperator,
   getCommissionForOperatorAndService,
+  getOperatorCodeAliases,
 };

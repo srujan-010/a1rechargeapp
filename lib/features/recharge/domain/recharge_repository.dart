@@ -22,6 +22,11 @@ abstract class RechargeRepository {
     required int amountPaise,
     String? mpin,
     String? paymentMode,
+    String? planId,
+    String? planName,
+    String? planType,
+    String? selectedCategory,
+    String? providerOperatorCode,
   });
 
   /// Fetches recent recharge contacts

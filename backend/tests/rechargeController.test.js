@@ -117,7 +117,7 @@ describe('Recharge Controller - executeRecharge', () => {
 
     expect(walletService.reserveAmount).toHaveBeenCalled();
     expect(walletService.releaseReservation).toHaveBeenCalled();
-    expect(mockRes.status).toHaveBeenCalledWith(400);
+    expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
       success: false,
       message: 'Insufficient balance at provider'
@@ -149,9 +149,8 @@ describe('Recharge Controller - executeRecharge', () => {
 
     await executeRecharge(mockReq, mockRes, mockNext);
 
-    // If it throws an error in recharge(), executeRecharge's catch block runs
     expect(walletService.reserveAmount).toHaveBeenCalled();
     expect(walletService.releaseReservation).toHaveBeenCalled(); // Released in catch block
-    expect(mockNext).toHaveBeenCalled();
+    expect(mockRes.status).toHaveBeenCalledWith(400);
   });
 });

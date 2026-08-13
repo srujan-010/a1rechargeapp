@@ -103,6 +103,11 @@ class RechargeRepositoryImpl implements RechargeRepository {
     required int amountPaise,
     String? mpin,
     String? paymentMode,
+    String? planId,
+    String? planName,
+    String? planType,
+    String? selectedCategory,
+    String? providerOperatorCode,
   }) async {
     try {
       final response = await apiClient.post<RechargeReceipt>(
@@ -116,6 +121,11 @@ class RechargeRepositoryImpl implements RechargeRepository {
           'amountPaise': amountPaise,
           if (mpin != null) 'mpin': mpin,
           if (paymentMode != null) 'paymentMode': paymentMode,
+          if (planId != null) 'planId': planId,
+          if (planName != null) 'planName': planName,
+          if (planType != null) 'planType': planType,
+          if (selectedCategory != null) 'selectedCategory': selectedCategory,
+          if (providerOperatorCode != null) 'providerOperatorCode': providerOperatorCode,
         },
         fromJson: (json) => RechargeReceipt.fromJson(json is Map ? Map<String, dynamic>.from(json) : {}),
       );

@@ -732,7 +732,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                           child: _PremiumPlanCard(
                                             plan: plan,
                                             isSelected: isSelected,
-                                            onTap: () => ref.read(rechargeFlowProvider.notifier).setPlan(plan),
+                                            onTap: () => ref.read(rechargeFlowProvider.notifier).setPlan(plan, categoryName: _selectedCategory),
                                             onDetailsTap: () {
                                               showModalBottomSheet(
                                                 context: context,
@@ -740,7 +740,7 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
                                                 backgroundColor: Colors.transparent,
                                                 builder: (context) => _PlanDetailsSheet(plan: plan, onRecharge: () {
                                                   Navigator.pop(context);
-                                                  ref.read(rechargeFlowProvider.notifier).setPlan(plan);
+                                                  ref.read(rechargeFlowProvider.notifier).setPlan(plan, categoryName: _selectedCategory);
                                                 }),
                                               );
                                             },

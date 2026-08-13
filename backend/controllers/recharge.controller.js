@@ -1,6 +1,7 @@
 const a1TopupProvider = require('../services/providers/a1topup/provider.service');
 const fast2smsService = require('../services/fast2sms.service');
 const notificationService = require('../services/notification.service');
+const { resolveProviderOperatorCode, isBsnlOperator } = require('../utils/operatorMapper');
 
 const ProviderWallet = require('../models/ProviderWallet');
 const ProviderOperator = require('../models/ProviderOperator');
@@ -95,6 +96,130 @@ const CommissionHistory = require('../models/CommissionHistory');
 const walletService = require('../services/wallet/wallet.service');
 const commissionService = require('../services/commission/commission.service');
 const ledgerService = require('../services/ledger/ledger.service');
+/**
+ * Process retailer commission and record CommissionHistory safely and idempotently
+ */
+const processSuccessCommission = async ({ transaction, globalTransaction, userId, orderId, mobileNumber, operator, operatorCode, amount, planType, serviceType = 'mobile' }) => {
+  try {
+    // Step 9: Prevent Duplicate Commission (Idempotency Guard)
+    if (transaction.commissionCalculated) {
+      console.log(`[COMMISSION IDEMPOTENT] Commission already processed for orderId ${orderId}. Skipping duplicate credit.`);
+      return;
+    }
+
+    const existingHist = await CommissionHistory.findOne({ transactionId: transaction._id }).catch(() => null);
+    if (existingHist) {
+      transaction.commissionCalculated = true;
+      await transaction.save().catch(() => {});
+      console.log(`[COMMISSION IDEMPOTENT] CommissionHistory record already exists for orderId ${orderId}. Skipping duplicate credit.`);
+      return;
+    }
+
+    // Step 3 & 4: Commission Lookup & Calculation
+    const commission = await commissionService.calculateCommission(
+      operatorCode,
+      amount,
+      operator ? operator.name : (transaction.internalOperatorName || ''),
+      serviceType,
+      {
+        orderId,
+        retailerId: userId ? userId.toString() : 'N/A',
+        operatorId: transaction.internalOperatorId || 'N/A',
+        planType: planType || transaction.planType || 'N/A',
+      }
+    );
+
+    const safeVal = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+    };
+
+    const providerCommissionPercent = safeVal(commission?.providerCommissionPercentage);
+    const providerCommissionAmount = safeVal(commission?.providerCommissionAmount);
+    const retailerCommissionPercent = safeVal(commission?.retailerCommissionPercentage);
+    const retailerCommissionAmount = safeVal(commission?.retailerCommissionAmount);
+    const companyProfitPercent = safeVal(commission?.companyProfitPercentage);
+    const companyProfitAmount = safeVal(commission?.companyProfitAmount);
+
+    let ledgerEntryId = 'N/A';
+
+    // Step 6: Credit Retailer Commission
+    if (retailerCommissionAmount > 0) {
+      const walletBefore = await walletService.getWalletBalance(userId);
+      await walletService.addBalance(userId, retailerCommissionAmount);
+      const walletAfter = await walletService.getWalletBalance(userId);
+
+      const ledgerLog = await ledgerService.logTransaction({
+        userId,
+        type: 'CREDIT',
+        amount: retailerCommissionAmount,
+        referenceType: 'COMMISSION',
+        referenceId: transaction._id,
+        description: `Commission for Recharge ${orderId}`,
+      }).catch(e => { console.error('[Ledger Credit Warning]:', e.message); return null; });
+
+      if (ledgerLog && ledgerLog._id) {
+        ledgerEntryId = ledgerLog._id.toString();
+      }
+
+      await Transaction.create({
+        userId,
+        type: 'credit',
+        amountPaise: Math.round(retailerCommissionAmount * 100),
+        status: 'success',
+        service: 'commission',
+        referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
+        description: `Commission for Recharge ${orderId}`,
+        apiReference: transaction._id.toString(),
+        paymentMethod: 'wallet',
+        operatorName: operator ? operator.name : (transaction.internalOperatorName || 'Operator'),
+      }).catch(e => console.error('[Global Transaction Commission Warning]:', e.message));
+
+      console.log('\n====================================================');
+      console.log('[COMMISSION CREDIT]');
+      console.log(`orderId: ${orderId}`);
+      console.log(`retailerId: ${userId}`);
+      console.log(`rechargeAmount: ${amount}`);
+      console.log(`retailerCommissionPercent: ${retailerCommissionPercent}`);
+      console.log(`retailerCommissionAmount: ${retailerCommissionAmount}`);
+      console.log(`walletBefore: ${walletBefore}`);
+      console.log(`walletAfter: ${walletAfter}`);
+      console.log(`ledgerEntryId: ${ledgerEntryId}`);
+      console.log('====================================================\n');
+    }
+
+    // Step 7: Commission History Record (strictly finite numbers)
+    await CommissionHistory.create({
+      transactionId: transaction._id,
+      userId,
+      operatorCode: String(operatorCode || 'UNKNOWN'),
+      rechargeAmount: safeVal(amount),
+      providerCommissionPercentage: providerCommissionPercent,
+      providerCommissionAmount: providerCommissionAmount,
+      retailerCommissionPercentage: retailerCommissionPercent,
+      retailerCommissionAmount: retailerCommissionAmount,
+      companyProfitPercentage: companyProfitPercent,
+      companyProfitAmount: companyProfitAmount,
+    }).catch(e => console.error('[CommissionHistory Save Error (Suppressed)]:', e.message));
+
+    transaction.commissionCalculated = true;
+    await transaction.save().catch(() => {});
+
+    if (globalTransaction) {
+      globalTransaction.commissionEarnedPaise = Math.round(retailerCommissionAmount * 100);
+      await globalTransaction.save().catch(() => {});
+    }
+
+    console.log('\n====================================================');
+    console.log('[COMMISSION HISTORY]');
+    console.log('created successfully');
+    console.log('====================================================\n');
+
+  } catch (err) {
+    // Step 8: Successful recharge MUST NOT become failed
+    console.error(`[COMMISSION PROCESSING ERROR - RECHARGE REMAINS SUCCESS] orderId=${orderId}:`, err.message);
+  }
+};
 
 // @desc    Execute a recharge transaction
 // @route   POST /api/recharge/mobile
@@ -109,7 +234,19 @@ const executeRecharge = async (req, res, next) => {
 
   // Compatibility Layer for Flutter payload (accept mobileNumber, phoneNumber, or subscriberNumber)
   let mobileNumber = req.body.mobileNumber || req.body.phoneNumber || req.body.subscriberNumber || 'N/A';
-  let { amount, operatorId, circleId, amountPaise, mpin, paymentMode = 'wallet' } = req.body;
+  let {
+    amount,
+    operatorId,
+    circleId,
+    amountPaise,
+    mpin,
+    paymentMode = 'wallet',
+    planId,
+    planName,
+    planType,
+    selectedCategory,
+    providerOperatorCode: reqProviderOpCode,
+  } = req.body;
   const userId = req.user._id;
 
   // Convert amountPaise to amount (INR) if provided
@@ -133,6 +270,11 @@ const executeRecharge = async (req, res, next) => {
       reservedAmount: 0,
       operatorId: operatorId || null,
       serviceType: req.body.serviceType || 'mobile',
+      planId: planId || null,
+      planName: planName || null,
+      planType: planType || null,
+      internalOperatorId: operatorId || null,
+      internalOperatorName: req.body.operatorName || null,
     });
 
     globalTransaction = await Transaction.create({
@@ -254,7 +396,7 @@ const executeRecharge = async (req, res, next) => {
         'jio': 'RC', 'reliance jio': 'RC', 'jio-topup': 'RC', 'jio_topup': 'RC', 'jio topup': 'RC',
         'airtel': 'A', 'airtel-topup': 'A', 'airtel_topup': 'A', 'airtel topup': 'A',
         'vi': 'V', 'vodafone': 'V', 'idea': 'V', 'vi-topup': 'V', 'vi_topup': 'V', 'vi topup': 'V',
-        'bsnl': 'BT', 'bsnl-topup': 'BT', 'bsnl topup': 'BT', 'bsnl_topup': 'BT', 'bsnl-special': 'BS', 'bsnl special': 'BS',
+        'bsnl': 'BT', 'bsnl-topup': 'BT', 'bsnl topup': 'BT', 'bsnl_topup': 'BT', 'bsnl-special': 'BR', 'bsnl special': 'BR',
         'dth_tata': 'TTV', 'tata sky': 'TTV', 'tatasky': 'TTV',
         'dth_airtel': 'ATV', 'airtel dth': 'ATV',
         'dth_dish': 'DTV', 'dish tv': 'DTV',
@@ -310,12 +452,41 @@ const executeRecharge = async (req, res, next) => {
       }
     }
 
-    // Step 8: AFTER DTH mapping
-    console.log(`[${new Date().toISOString()}] [8] AFTER DTH mapping: PASS`, { isDthService, operatorCode, circleCode });
+    // Step 8: Centralized Operator & Plan Type Provider Code Resolution
+    const providerOperatorCode = resolveProviderOperatorCode({
+      operator,
+      operatorId,
+      operatorName: req.body.operatorName,
+      planType,
+      selectedCategory,
+      planName,
+      providerOperatorCode: reqProviderOpCode,
+    });
 
-    // Dynamic BSNL Routing
-    if (operator.name.toUpperCase().includes('BSNL')) {
-      operatorCode = operator.code || 'BT';
+    if (!isDthService) {
+      operatorCode = providerOperatorCode;
+    }
+
+    // TASK 10 — PREVENT REGRESSION VALIDATION
+    const isBsnl = isBsnlOperator(operator?.name, operatorId, operatorCode);
+    const normPlanType = String(planType || '').toUpperCase().trim();
+    if (isBsnl) {
+      if ((normPlanType === 'STV' || reqProviderOpCode === 'BR') && providerOperatorCode !== 'BR') {
+        return await handlePreCheckFailure(
+          "Operator Code Validation",
+          `Invalid provider operator code for BSNL STV. Expected BR but got ${providerOperatorCode}`,
+          400,
+          { selectedPlanType: planType, providerOperatorCode }
+        );
+      }
+      if ((normPlanType === 'TOPUP' || reqProviderOpCode === 'BT') && providerOperatorCode !== 'BT') {
+        return await handlePreCheckFailure(
+          "Operator Code Validation",
+          `Invalid provider operator code for BSNL TOPUP. Expected BT but got ${providerOperatorCode}`,
+          400,
+          { selectedPlanType: planType, providerOperatorCode }
+        );
+      }
     }
 
     amountForRollback = amount;
@@ -334,21 +505,32 @@ const executeRecharge = async (req, res, next) => {
     transaction.operatorCode = operatorCode;
     transaction.circleCode = circleCode;
     transaction.reservedAmount = amount;
+    transaction.providerOperatorCode = providerOperatorCode;
+    transaction.planId = planId || null;
+    transaction.planName = planName || null;
+    transaction.planType = planType || null;
+    transaction.internalOperatorId = operatorId || null;
+    transaction.internalOperatorName = operator ? operator.name : (req.body.operatorName || null);
     await transaction.save();
 
     globalTransaction.status = 'pending';
     globalTransaction.service = transactionService;
     await globalTransaction.save();
 
-    // Step 9: IMMEDIATELY BEFORE calling a1TopupProvider.recharge()
-    console.log(`[${new Date().toISOString()}] [9] IMMEDIATELY BEFORE calling a1TopupProvider.recharge()`, {
-      orderId,
-      mobileNumber,
-      amount,
-      operatorCode,
-      circleCode,
-      serviceType: operator.serviceType,
-    });
+    // TASK 2 — SAFE DEBUG LOGGING (No credentials printed)
+    console.log('\n====================================================');
+    console.log('[A1TOPUP FINAL REQUEST]');
+    console.log(`orderid: ${orderId}`);
+    console.log(`number: ${mobileNumber}`);
+    console.log(`amount: ${amount}`);
+    console.log(`circlecode: ${circleCode}`);
+    console.log(`internalOperatorId: ${operatorId || 'N/A'}`);
+    console.log(`internalOperatorName: ${operator ? operator.name : (req.body.operatorName || 'N/A')}`);
+    console.log(`selectedPlanId: ${planId || 'N/A'}`);
+    console.log(`selectedPlanName: ${planName || 'N/A'}`);
+    console.log(`selectedPlanType: ${planType || 'N/A'}`);
+    console.log(`providerOperatorCode: ${providerOperatorCode}`);
+    console.log('====================================================\n');
 
     // 4. Call Provider
     const providerResponse = await a1TopupProvider.recharge({
@@ -401,65 +583,21 @@ const executeRecharge = async (req, res, next) => {
           description: `Recharge for ${mobileNumber} - Order ID: ${orderId}`,
         }).catch(e => console.error('[Ledger Debit Warning]:', e.message));
 
-        const commission = await commissionService.calculateCommission(operatorCode, amount, operator.name);
-        const safeRetailerCommission = Number(commission?.retailerCommissionAmount || 0);
+        await processSuccessCommission({
+          transaction,
+          globalTransaction,
+          userId,
+          orderId,
+          mobileNumber,
+          operator,
+          operatorCode,
+          amount,
+          planType,
+          serviceType: transactionService,
+        });
 
-        if (safeRetailerCommission > 0) {
-          try {
-            await walletService.addBalance(userId, safeRetailerCommission);
-            await ledgerService.logTransaction({
-              userId,
-              type: 'CREDIT',
-              amount: safeRetailerCommission,
-              referenceType: 'COMMISSION',
-              referenceId: transaction._id,
-              description: `Commission for Recharge ${orderId}`,
-            });
-            
-            await Transaction.create({
-              userId,
-              type: 'credit',
-              amountPaise: safeRetailerCommission * 100,
-              status: 'success',
-              service: 'commission',
-              referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-              description: `Commission for Recharge ${orderId}`,
-              apiReference: transaction._id.toString(),
-              paymentMethod: 'wallet',
-              operatorName: operator.name,
-            });
-          } catch (commCreditErr) {
-            console.error('[Commission Credit Warning]:', commCreditErr.message);
-          }
-        }
-
-        // Record Commission History (Non-blocking with safe NaN filtering)
-        try {
-          const safeNum = (v) => {
-            const n = Number(v);
-            return isNaN(n) || !isFinite(n) ? 0 : Number(n.toFixed(2));
-          };
-
-          await CommissionHistory.create({
-            transactionId: transaction._id,
-            userId,
-            operatorCode: String(operatorCode || 'UNKNOWN'),
-            rechargeAmount: safeNum(amount),
-            providerCommissionPercentage: safeNum(commission?.providerCommissionPercentage),
-            providerCommissionAmount: safeNum(commission?.providerCommissionAmount),
-            retailerCommissionPercentage: safeNum(commission?.retailerCommissionPercentage),
-            retailerCommissionAmount: safeNum(commission?.retailerCommissionAmount),
-            companyProfitPercentage: safeNum(commission?.companyProfitPercentage),
-            companyProfitAmount: safeNum(commission?.companyProfitAmount),
-          });
-        } catch (commHistErr) {
-          console.error('[CommissionHistory Save Warning (Non-blocking)]:', commHistErr.message);
-        }
-
-        transaction.commissionCalculated = true;
         globalTransaction.status = 'success';
         globalTransaction.apiReference = providerResponse.providerTransactionId;
-        globalTransaction.commissionEarnedPaise = safeRetailerCommission * 100;
         await globalTransaction.save().catch(e => console.error(e));
       } catch (postProcErr) {
         console.error('[Post-Success Processing Warning]:', postProcErr.message);
@@ -579,7 +717,7 @@ const executeRecharge = async (req, res, next) => {
           status: statusLower,
           amountPaise: (transaction.amount || 0) * 100,
           mobileNumber: transaction.mobileNumber,
-          operatorName: String(operator ? operator.name : 'OPERATOR').toUpperCase(),
+          operatorName: String(transaction.internalOperatorName || 'OPERATOR').toUpperCase(),
           timestamp: transaction.createdAt,
         }
       });
@@ -678,54 +816,19 @@ const checkStatus = async (req, res, next) => {
         description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
       });
 
-      // Calculate & Credit Commission
-      const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
-      if (commission.retailerCommissionAmount > 0) {
-        await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
-        await ledgerService.logTransaction({
-          userId: transaction.userId,
-          type: 'CREDIT',
-          amount: commission.retailerCommissionAmount,
-          referenceType: 'COMMISSION',
-          referenceId: transaction._id,
-          description: `Commission for Recharge ${transaction.orderId}`,
-        });
-        
-        await Transaction.create({
-          userId: transaction.userId,
-          type: 'credit',
-          amountPaise: commission.retailerCommissionAmount * 100,
-          status: 'success',
-          service: 'commission',
-          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-          description: `Commission for Recharge ${transaction.orderId}`,
-          apiReference: transaction._id.toString(),
-          paymentMethod: 'wallet',
-          completedAt: now,
-        });
-      }
-      
-      await CommissionHistory.create({
-        transactionId: transaction._id,
+      // Calculate & Credit Commission safely and idempotently
+      await processSuccessCommission({
+        transaction,
+        globalTransaction: null,
         userId: transaction.userId,
-        operatorCode: transaction.operatorCode,
-        rechargeAmount: transaction.amount,
-        providerCommissionPercentage: commission.providerCommissionPercentage,
-        providerCommissionAmount: commission.providerCommissionAmount,
-        retailerCommissionPercentage: commission.retailerCommissionPercentage,
-        retailerCommissionAmount: commission.retailerCommissionAmount,
-        companyProfitPercentage: commission.companyProfitPercentage,
-        companyProfitAmount: commission.companyProfitAmount,
+        orderId: transaction.orderId,
+        mobileNumber: transaction.mobileNumber,
+        operator: { name: transaction.internalOperatorName || transaction.operatorName },
+        operatorCode: transaction.providerOperatorCode || transaction.operatorCode,
+        amount: transaction.amount,
+        planType: transaction.planType,
+        serviceType: 'mobile',
       });
-
-      await Transaction.updateOne({ referenceId: transaction.orderId }, { 
-        status: 'success', 
-        apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
-        commissionEarnedPaise: commission.retailerCommissionAmount * 100,
-        completedAt: now,
-      });
-
-      await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
 
       notificationService.sendRechargeSuccess({
         userId: transaction.userId,
@@ -770,7 +873,17 @@ const checkStatus = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: statusResponse,
+      data: {
+        ...statusResponse,
+        orderId: transaction.orderId,
+        internalOperator: transaction.internalOperatorName || transaction.operatorId,
+        providerOperatorCode: transaction.providerOperatorCode || transaction.operatorCode,
+        planType: transaction.planType || 'N/A',
+        amount: transaction.amount,
+        circle: transaction.circleCode,
+        providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId,
+        providerStatus: statusResponse.status || transaction.status,
+      },
     });
   } catch (error) {
     next(error);

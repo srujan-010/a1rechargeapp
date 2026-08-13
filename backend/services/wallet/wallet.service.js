@@ -127,6 +127,16 @@ class WalletService {
     );
     return result.modifiedCount > 0;
   }
+
+  /**
+   * Fetches current available balance in Rupees for a given user
+   */
+  async getWalletBalance(userId) {
+    const Wallet = require('../../models/Wallet');
+    const wallet = await Wallet.findOne({ userId }).lean();
+    if (!wallet) return 0;
+    return Number(((wallet.balancePaise || 0) / 100).toFixed(2));
+  }
 }
 
 module.exports = new WalletService();
