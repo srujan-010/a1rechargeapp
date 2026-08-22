@@ -129,6 +129,9 @@ abstract final class RouteNames {
   static const String fastagRechargeAmount = '/fastag/recharge/:billerId';
   static const String fastagPayConfirm = '/fastag/pay/:billerId';
 
+  // ─── Admin Module ────────────────────────────────────────────────
+  static const String adminWalletCredit = '/admin/wallet-credit';
+
   // ─── Distributor Module — route reserved
   static const String distributor = '/distributor';
 }

@@ -9,6 +9,7 @@ class WalletBalance extends Equatable {
     required this.walletId,
     this.onHoldPaise = 0,
     this.pendingSettlementPaise = 0,
+    this.walletFundingMode = 'ADMIN_ONLY',
   });
 
   /// All monetary values in PAISE (integer). Never use double for money.
@@ -18,6 +19,10 @@ class WalletBalance extends Equatable {
   final int pendingSettlementPaise;
   final DateTime lastUpdated;
   final String walletId;
+  final String walletFundingMode;
+
+  bool get isAddMoneyEnabled =>
+      walletFundingMode == 'RAZORPAY' || walletFundingMode == 'PAYMENT_GATEWAY' || walletFundingMode == 'BOTH';
 
   factory WalletBalance.fromJson(Map<String, dynamic> json) => WalletBalance(
         availablePaise: (json['availablePaise'] as num?)?.toInt() ??
@@ -36,6 +41,7 @@ class WalletBalance extends Equatable {
             ? DateTime.parse(json['lastUpdated'] as String)
             : DateTime.now(),
         walletId: json['walletId'] as String? ?? '',
+        walletFundingMode: json['walletFundingMode'] as String? ?? 'ADMIN_ONLY',
       );
 
   Map<String, dynamic> toJson() => {
@@ -45,6 +51,7 @@ class WalletBalance extends Equatable {
         'pendingSettlementPaise': pendingSettlementPaise,
         'lastUpdated': lastUpdated.toIso8601String(),
         'walletId': walletId,
+        'walletFundingMode': walletFundingMode,
       };
 
   factory WalletBalance.fake() => WalletBalance(
@@ -54,6 +61,7 @@ class WalletBalance extends Equatable {
         pendingSettlementPaise: 18000, // ₹180.00
         lastUpdated: DateTime.now(),
         walletId: 'RET000001',
+        walletFundingMode: 'ADMIN_ONLY',
       );
 
   factory WalletBalance.zero() => WalletBalance(
@@ -61,6 +69,7 @@ class WalletBalance extends Equatable {
         ledgerBalancePaise: 0,
         lastUpdated: DateTime.now(),
         walletId: 'UNKNOWN',
+        walletFundingMode: 'ADMIN_ONLY',
       );
 
   WalletBalance copyWith({
@@ -70,6 +79,7 @@ class WalletBalance extends Equatable {
     int? pendingSettlementPaise,
     DateTime? lastUpdated,
     String? walletId,
+    String? walletFundingMode,
   }) =>
       WalletBalance(
         availablePaise: availablePaise ?? this.availablePaise,
@@ -78,9 +88,10 @@ class WalletBalance extends Equatable {
         pendingSettlementPaise: pendingSettlementPaise ?? this.pendingSettlementPaise,
         lastUpdated: lastUpdated ?? this.lastUpdated,
         walletId: walletId ?? this.walletId,
+        walletFundingMode: walletFundingMode ?? this.walletFundingMode,
       );
 
   @override
   List<Object?> get props =>
-      [availablePaise, ledgerBalancePaise, onHoldPaise, pendingSettlementPaise, lastUpdated, walletId];
+      [availablePaise, ledgerBalancePaise, onHoldPaise, pendingSettlementPaise, lastUpdated, walletId, walletFundingMode];
 }

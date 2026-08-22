@@ -2,12 +2,15 @@ const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const Notification = require('../models/Notification');
 
+const { getWalletFundingMode, isPaymentGatewayEnabled } = require('../config/walletConfig');
+
 const getTransactionTitle = (serviceType, operatorName) => {
   const serviceMap = {
     'mobile': 'Mobile Recharge',
     'mobile_recharge': 'Mobile Recharge',
     'dth': 'DTH Recharge',
     'wallet_topup': 'Wallet Top-up',
+    'admin_credit': 'ADMIN CREDIT',
     'commission': 'Commission Earned',
     'dmt': 'Money Transfer',
     'aeps': 'AEPS Withdrawal',
@@ -34,28 +37,31 @@ const getTransactionTitle = (serviceType, operatorName) => {
   return serviceType.charAt(0).toUpperCase() + serviceType.slice(1).replace('_', ' ');
 };
 
-// @desc    Get wallet balance
+// @desc    Get wallet balance (Find or Create single canonical wallet)
 // @route   GET /api/wallet/balance
 // @access  Private
 const getBalance = async (req, res, next) => {
   try {
-    const wallet = await Wallet.findOne({ userId: req.user._id })
-      .select('balancePaise onHoldPaise currency')
-      .lean()
-      .maxTimeMS(3000);
+    let wallet = await Wallet.findOne({ userId: req.user._id });
     
     if (!wallet) {
-      res.status(404);
-      throw new Error('Wallet not found');
+      console.log(`[WALLET] Initializing new wallet for user: ${req.user._id}`);
+      wallet = await Wallet.create({
+        userId: req.user._id,
+        balancePaise: 0,
+        onHoldPaise: 0,
+        currency: 'INR',
+      });
     }
 
     res.status(200).json({
       success: true,
       data: {
-        balancePaise: wallet.balancePaise,
-        onHoldPaise: wallet.onHoldPaise,
-        availablePaise: wallet.balancePaise - wallet.onHoldPaise,
-        currency: wallet.currency
+        balancePaise: wallet.balancePaise || 0,
+        onHoldPaise: wallet.onHoldPaise || 0,
+        availablePaise: (wallet.balancePaise || 0) - (wallet.onHoldPaise || 0),
+        currency: wallet.currency || 'INR',
+        walletFundingMode: getWalletFundingMode(),
       }
     });
   } catch (error) {
@@ -86,8 +92,8 @@ const getStatement = async (req, res, next) => {
         serviceType: t.service,
         operatorName: t.operatorName || '',
         operatorId: t.operatorId || null,
-        transactionTitle: getTransactionTitle(t.service, t.operatorName),
-        customerIdentifier: t.mobileNumber || t.recipientName || '',
+        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service, t.operatorName),
+        customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
         amount: t.amountPaise,
         commission: t.commissionEarnedPaise || 0,
         status: t.status,
@@ -101,6 +107,7 @@ const getStatement = async (req, res, next) => {
         providerTransactionId: t.providerTransactionId || t.apiReference || null,
         failureReason: t.failureReason || null,
         providerMessage: t.providerMessage || null,
+        description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
       }))
     });
   } catch (error) {
@@ -113,6 +120,14 @@ const getStatement = async (req, res, next) => {
 // @access  Private
 const topupWallet = async (req, res, next) => {
   try {
+    if (!isPaymentGatewayEnabled()) {
+      return res.status(400).json({
+        success: false,
+        code: 'WALLET_FUNDING_DISABLED',
+        message: 'Online wallet funding is currently unavailable. Please contact your administrator.'
+      });
+    }
+
     const { amountPaise } = req.body;
     
     if (!amountPaise || amountPaise <= 0) {
@@ -124,7 +139,9 @@ const topupWallet = async (req, res, next) => {
     if (!wallet) {
       wallet = await Wallet.create({
         userId: req.user._id,
-        balancePaise: 0
+        balancePaise: 0,
+        onHoldPaise: 0,
+        currency: 'INR'
       });
     }
 
@@ -220,7 +237,7 @@ const getDashboardSummary = async (req, res, next) => {
     let pendingTransactions = 0;
 
     for (const tx of transactions) {
-      if (tx.service !== 'wallet_topup' && tx.service !== 'commission') {
+      if (tx.service !== 'wallet_topup' && tx.service !== 'commission' && tx.service !== 'admin_credit') {
         todayTransactions++;
         if (tx.status === 'success') successfulTransactions++;
         if (tx.status === 'failed') failedTransactions++;
@@ -303,7 +320,7 @@ const getDashboardAnalytics = async (req, res, next) => {
       for (const tx of txns) {
         if (tx.service === 'commission' && tx.type === 'credit') {
           commission += tx.amountPaise;
-        } else if (tx.service !== 'wallet_topup' && tx.service !== 'commission') {
+        } else if (tx.service !== 'wallet_topup' && tx.service !== 'commission' && tx.service !== 'admin_credit') {
           count++;
           if (tx.type === 'debit' && tx.status === 'success') {
             recharge += tx.amountPaise;

@@ -106,7 +106,9 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-              child: const _QuickActionsRow(),
+              child: _QuickActionsRow(
+                showAddMoney: balanceAsync.valueOrNull?.isAddMoneyEnabled ?? false,
+              ),
             ),
           ),
 
@@ -219,14 +221,17 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
             data: (txns) {
               final filtered = _filterTransactions(txns);
               if (filtered.isEmpty) {
+                final isAddMoney = ref.read(walletBalanceProvider).valueOrNull?.isAddMoneyEnabled ?? false;
                 return SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(32.0),
                     child: EmptyStateWidget(
                       title: 'No wallet activity yet.',
-                      description: 'Top up your wallet to start recharging.',
-                      ctaLabel: 'Add Money',
-                      onCtaTap: () => context.push(RouteNames.walletTopup),
+                      description: isAddMoney
+                          ? 'Top up your wallet to start recharging.'
+                          : 'Wallet balance is credited by your administrator.',
+                      ctaLabel: isAddMoney ? 'Add Money' : null,
+                      onCtaTap: isAddMoney ? () => context.push(RouteNames.walletTopup) : null,
                     ),
                   ),
                 );
@@ -382,6 +387,46 @@ class _PremiumWalletCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                
+                if (!balance.isAddMoneyEnabled) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.white, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Wallet funded by administrator',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                'Contact your administrator to add balance.',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -424,29 +469,29 @@ class _BalanceItem extends StatelessWidget {
 
 // ─── Component: Quick Actions ─────────────────────────────────────────────
 class _QuickActionsRow extends StatelessWidget {
-  const _QuickActionsRow();
+  final bool showAddMoney;
+  const _QuickActionsRow({this.showAddMoney = false});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _ActionButton(
-          icon: Icons.add,
-          label: 'Add Money',
-          onTap: () => context.push(RouteNames.walletTopup),
-        ),
+        if (showAddMoney)
+          _ActionButton(
+            icon: Icons.add,
+            label: 'Add Money',
+            onTap: () => context.push(RouteNames.walletTopup),
+          ),
         _ActionButton(
           icon: Icons.description_outlined,
           label: 'Statement',
           onTap: () => context.push(RouteNames.walletStatement),
         ),
         _ActionButton(
-          icon: Icons.receipt_long_outlined,
-          label: 'Ledger',
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ledger view coming soon')));
-          },
+          icon: Icons.history,
+          label: 'History',
+          onTap: () => context.push(RouteNames.transactionHistory),
         ),
       ],
     );
@@ -652,6 +697,7 @@ class _WalletTransactionTile extends StatelessWidget {
     }
     
     IconData getIcon() {
+      if (txn.serviceType == 'admin_credit') return Icons.admin_panel_settings;
       if (txn.serviceType == 'wallet_topup') return Icons.account_balance_wallet;
       if (txn.serviceType == 'commission') return Icons.star;
       if (txn.serviceType == 'mobile_recharge' || txn.serviceType == 'mobile' || txn.serviceType == 'dth') return Icons.phone_android;
@@ -660,10 +706,12 @@ class _WalletTransactionTile extends StatelessWidget {
     }
 
     String getTitle() {
+      if (txn.serviceType == 'admin_credit') return 'ADMIN CREDIT';
       return txn.transactionTitle;
     }
     
     String getSubtitle() {
+      if (txn.serviceType == 'admin_credit') return 'Wallet credited by administrator';
       if (txn.serviceType == 'wallet_topup') return 'UPI';
       if (txn.customerIdentifier.isNotEmpty) return txn.customerIdentifier;
       if (txn.referenceId.isNotEmpty) return 'Ref: ${txn.referenceId}';

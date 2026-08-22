@@ -263,29 +263,23 @@ class ApiClient {
 
     final map = data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data);
 
-    // 1. response.data.message
-    if (map['message'] != null && map['message'].toString().trim().isNotEmpty) {
-      return map['message'].toString().trim();
+    // 1. response.data.error (Map with description/message)
+    if (map['error'] is Map) {
+      final errMap = Map<String, dynamic>.from(map['error'] as Map);
+      if (errMap['description'] != null && errMap['description'].toString().trim().isNotEmpty) {
+        return errMap['description'].toString().trim();
+      }
+      if (errMap['message'] != null && errMap['message'].toString().trim().isNotEmpty) {
+        return errMap['message'].toString().trim();
+      }
     }
 
-    // 2. response.data.error
-    if (map['error'] != null && map['error'].toString().trim().isNotEmpty) {
-      return map['error'].toString().trim();
-    }
-
-    // 3. response.data.reason
-    if (map['reason'] != null && map['reason'].toString().trim().isNotEmpty) {
-      return map['reason'].toString().trim();
-    }
-
-    // 4. response.data.failureReason
-    if (map['failureReason'] != null && map['failureReason'].toString().trim().isNotEmpty) {
-      return map['failureReason'].toString().trim();
-    }
-
-    // 5. response.data.details.failureReason / error / message
+    // 2. response.data.details (Map with providerDescription/failureReason)
     if (map['details'] is Map) {
       final details = Map<String, dynamic>.from(map['details'] as Map);
+      if (details['providerDescription'] != null && details['providerDescription'].toString().trim().isNotEmpty) {
+        return details['providerDescription'].toString().trim();
+      }
       if (details['failureReason'] != null && details['failureReason'].toString().trim().isNotEmpty) {
         return details['failureReason'].toString().trim();
       }
@@ -297,7 +291,27 @@ class ApiClient {
       }
     }
 
-    // 6. response.data.errors[0]
+    // 3. response.data.message
+    if (map['message'] != null && map['message'].toString().trim().isNotEmpty) {
+      return map['message'].toString().trim();
+    }
+
+    // 4. response.data.error string
+    if (map['error'] != null && map['error'].toString().trim().isNotEmpty) {
+      return map['error'].toString().trim();
+    }
+
+    // 5. response.data.reason
+    if (map['reason'] != null && map['reason'].toString().trim().isNotEmpty) {
+      return map['reason'].toString().trim();
+    }
+
+    // 6. response.data.failureReason
+    if (map['failureReason'] != null && map['failureReason'].toString().trim().isNotEmpty) {
+      return map['failureReason'].toString().trim();
+    }
+
+    // 7. response.data.errors[0]
     if (map['errors'] != null) {
       final errors = map['errors'];
       if (errors is List && errors.isNotEmpty) {

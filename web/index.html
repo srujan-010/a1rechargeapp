@@ -35,6 +35,133 @@
     /* Hide reCAPTCHA badge to prevent overlapping with bottom navigation */
     .grecaptcha-badge { visibility: hidden !important; }
   </style>
+  <!-- Official Razorpay Checkout JS -->
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script>
+    console.log('[RAZORPAY BRIDGE] HTML script initializing...');
+    console.log('[RAZORPAY BRIDGE] Razorpay SDK: ' + typeof window.Razorpay);
+
+    function openRazorpayWebCheckout(optionsInput, successCb, errorCb, dismissCb) {
+      console.log('[RAZORPAY BRIDGE] openRazorpayWebCheckout called with options:', optionsInput);
+
+      var options = optionsInput;
+      if (typeof optionsInput === 'string') {
+        try {
+          options = JSON.parse(optionsInput);
+        } catch(e) {
+          console.error('[RAZORPAY BRIDGE] Failed to parse options JSON:', e);
+        }
+      }
+
+      if (typeof Razorpay === 'undefined' || !window.Razorpay) {
+        console.error('[RAZORPAY BRIDGE] Razorpay JS SDK is undefined in window scope!');
+        if (errorCb) {
+          errorCb(JSON.stringify({
+            code: 'SDK_NOT_LOADED',
+            description: 'Razorpay Checkout SDK failed to load. Please check internet connection.',
+            source: 'client',
+            step: 'initialization',
+            reason: 'sdk_unavailable',
+            order_id: (options && options.order_id) || '',
+            payment_id: ''
+          }));
+        }
+        return;
+      }
+
+      console.log('[RAZORPAY BRIDGE] Creating Razorpay instance for Order ID:', options ? options.order_id : null);
+      console.log('[RAZORPAY BRIDGE] Opening Razorpay Checkout UI...');
+
+      var rzpOptions = {
+        key: options.key,
+        amount: options.amount,
+        currency: options.currency || 'INR',
+        name: options.name || 'A1 Recharge',
+        description: options.description || 'Wallet Add Money',
+        order_id: options.order_id,
+        prefill: {
+          contact: (options.prefill && options.prefill.contact) || '',
+          email: (options.prefill && options.prefill.email) || ''
+        },
+        theme: {
+          color: (options.theme && options.theme.color) || '#1565FF'
+        },
+        handler: function(response) {
+          console.log('[RAZORPAY BRIDGE] Payment Success Callback:', response);
+          if (successCb) {
+            successCb(
+              response.razorpay_payment_id || '',
+              response.razorpay_order_id || options.order_id,
+              response.razorpay_signature || ''
+            );
+          }
+        },
+        modal: {
+          ondismiss: function() {
+            console.log('[RAZORPAY BRIDGE] Checkout Modal Dismissed by user');
+            if (dismissCb) dismissCb();
+          }
+        }
+      };
+
+      try {
+        var rzp = new window.Razorpay(rzpOptions);
+        rzp.on('payment.failed', function(resp) {
+          var err = resp ? resp.error : null;
+          console.log('[RAZORPAY] PAYMENT FAILURE');
+          if (err) {
+            console.log('[RAZORPAY] code:', err.code);
+            console.log('[RAZORPAY] description:', err.description);
+            console.log('[RAZORPAY] source:', err.source);
+            console.log('[RAZORPAY] step:', err.step);
+            console.log('[RAZORPAY] reason:', err.reason);
+            console.log('[RAZORPAY] order_id:', (err.metadata && err.metadata.order_id) || (options && options.order_id) || '');
+            console.log('[RAZORPAY] payment_id:', (err.metadata && err.metadata.payment_id) || '');
+          }
+
+          if (errorCb) {
+            var errorPayload = JSON.stringify({
+              code: (err && err.code) || 'PAYMENT_FAILED',
+              description: (err && err.description) || 'Payment could not be completed.',
+              source: (err && err.source) || 'gateway',
+              step: (err && err.step) || 'checkout',
+              reason: (err && err.reason) || 'payment_failed',
+              order_id: (err && err.metadata && err.metadata.order_id) || (options && options.order_id) || '',
+              payment_id: (err && err.metadata && err.metadata.payment_id) || ''
+            });
+            errorCb(errorPayload);
+          }
+        });
+        rzp.open();
+        console.log('[RAZORPAY BRIDGE] rzp.open() executed successfully');
+      } catch (err) {
+        console.error('[RAZORPAY BRIDGE EXCEPTION]', err);
+        if (errorCb) {
+          errorCb(JSON.stringify({
+            code: 'EXCEPTION',
+            description: err ? err.toString() : 'Payment checkout exception',
+            source: 'client',
+            step: 'initialization',
+            reason: 'exception',
+            order_id: (options && options.order_id) || '',
+            payment_id: ''
+          }));
+        }
+      }
+    }
+
+    // Assign globally
+    window.openRazorpayWebCheckout = openRazorpayWebCheckout;
+    if (typeof globalThis !== 'undefined') globalThis.openRazorpayWebCheckout = openRazorpayWebCheckout;
+    if (typeof self !== 'undefined') self.openRazorpayWebCheckout = openRazorpayWebCheckout;
+    if (typeof top !== 'undefined' && top !== window) {
+      try { top.openRazorpayWebCheckout = openRazorpayWebCheckout; } catch(e) {}
+    }
+
+    console.log('[RAZORPAY BRIDGE] HTML script registration complete');
+    console.log('[RAZORPAY BRIDGE] typeof window.openRazorpayWebCheckout: ' + typeof window.openRazorpayWebCheckout);
+    console.log('[RAZORPAY BRIDGE] typeof globalThis.openRazorpayWebCheckout: ' + (typeof globalThis !== 'undefined' ? typeof globalThis.openRazorpayWebCheckout : 'N/A'));
+  </script>
 </head>
 <body>
   <!--

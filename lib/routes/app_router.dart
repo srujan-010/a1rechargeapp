@@ -91,6 +91,7 @@ import '../features/profile/presentation/bank_details_screen.dart';
 import '../features/profile/presentation/add_bank_screen.dart';
 import '../features/profile/presentation/personal_info_screen.dart';
 import '../features/profile/presentation/kyc_screen.dart';
+import '../features/admin/presentation/admin_wallet_screen.dart';
 
 import 'shell_scaffold.dart';
 
@@ -743,6 +744,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RouteNames.support,
         name: 'support',
         pageBuilder: (c, s) => _slideRightPage(state: s, child: const SupportScreen()),
+      ),
+      GoRoute(
+        path: RouteNames.adminWalletCredit,
+        name: 'admin-wallet-credit',
+        pageBuilder: (c, s) => _slideRightPage(state: s, child: const AdminWalletScreen()),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

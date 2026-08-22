@@ -4,7 +4,8 @@ const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { calculateCommission } = require('../utils/commissionEngine');
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const connectDB = require('../config/db');
 
 jest.mock('../utils/commissionEngine', () => ({

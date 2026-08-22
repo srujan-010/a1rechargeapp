@@ -92,6 +92,13 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                         const _Divider(),
                         _ProfileMenuItem(
+                          icon: Icons.admin_panel_settings_outlined,
+                          label: 'Admin Wallet Credit',
+                          subtitle: 'Fund retailer wallets & view audit logs',
+                          onTap: () => context.push(RouteNames.adminWalletCredit),
+                        ),
+                        const _Divider(),
+                        _ProfileMenuItem(
                           icon: Icons.restore,
                           label: 'Forgot MPIN',
                           subtitle: 'Reset your security PIN',

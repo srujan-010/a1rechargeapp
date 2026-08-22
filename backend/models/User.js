@@ -188,6 +188,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     id: this._id,
     retailerId: this.retailerId,
     name: this.name,
+    role: this.role || 'retailer',
     phone: this.phone,
     email: this.email,
     dob: this.dob,

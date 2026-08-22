@@ -88,7 +88,10 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/user', require('./routes/userRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
+app.use('/api/wallet', require('./routes/razorpayRoutes'));
+app.post('/api/webhooks/razorpay', require('./controllers/razorpayWalletController').handleWebhook);
 app.use('/api/wallet-mpin', require('./routes/walletMpinRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
@@ -136,6 +139,7 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`[Wallet Funding] Mode: ${require('./config/walletConfig').getWalletFundingMode()}`);
   
   // Print registered routes
   console.log('Registered Routes:');
