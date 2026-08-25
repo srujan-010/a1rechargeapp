@@ -9,6 +9,8 @@ abstract class WalletRepository {
   Future<Result<List<WalletTransaction>, AppException>> getStatement({
     int page = 1,
     int pageSize = 20,
+    String? type,
+    int? days,
     DateTime? from,
     DateTime? to,
   });

@@ -44,6 +44,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _handleBiometricToggle(bool val) async {
+    final bioState = ref.read(biometricStateProvider);
+    if (bioState.isProcessing) return;
+
     final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(val);
     if (!mounted) return;
 
@@ -54,15 +57,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         SnackBar(
           content: Text(error),
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 4),
           margin: const EdgeInsets.only(bottom: 90, left: 16, right: 16),
-          backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
+          backgroundColor: error.contains('Set up') || error.contains('not available') || error.contains('app') ? Colors.orange.shade800 : AppColors.error,
         ),
       );
-    } else if (val && ref.read(biometricStateProvider)) {
+    } else if (val && ref.read(biometricStateProvider).isEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Biometric login enabled successfully.'),
+          content: Text('Biometric login enabled'),
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 3),
           margin: EdgeInsets.only(bottom: 90, left: 16, right: 16),
@@ -83,7 +86,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final mpinState = ref.watch(walletMpinProvider);
     final bool isWalletMpinConfigured = mpinState.walletMpinConfigured ?? (user?.hasWalletMpin ?? false);
 
-    final bool isBiometricEnabled = ref.watch(biometricStateProvider);
+    final bioState = ref.watch(biometricStateProvider);
+    final bool isBiometricEnabled = bioState.isEnabled;
+    final bool isBiometricProcessing = bioState.isProcessing;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -166,13 +171,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         _ProfileMenuItem(
                           icon: Icons.fingerprint,
                           label: 'Biometric Login',
-                          subtitle: 'Use fingerprint or Face ID for faster sign-in',
-                          trailing: Switch.adaptive(
-                            value: isBiometricEnabled,
-                            activeTrackColor: AppColors.primaryBlue,
-                            onChanged: (val) => _handleBiometricToggle(val),
-                          ),
-                          onTap: () => _handleBiometricToggle(!isBiometricEnabled),
+                          subtitle: isBiometricEnabled
+                              ? 'Fingerprint / Face Unlock enabled'
+                              : 'Use fingerprint or Face ID for faster sign-in',
+                          trailing: isBiometricProcessing
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryBlue),
+                                  ),
+                                )
+                              : Switch.adaptive(
+                                  value: isBiometricEnabled,
+                                  activeTrackColor: AppColors.primaryBlue,
+                                  onChanged: (val) => _handleBiometricToggle(val),
+                                ),
+                          onTap: () {
+                            if (!isBiometricProcessing) _handleBiometricToggle(!isBiometricEnabled);
+                          },
                         ),
                       ],
                     ),

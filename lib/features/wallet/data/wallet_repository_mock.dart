@@ -24,7 +24,7 @@ class WalletRepositoryMock implements WalletRepository {
 
   @override
   Future<Result<List<WalletTransaction>, AppException>> getStatement({
-    int page = 1, int pageSize = 20, DateTime? from, DateTime? to,
+    int page = 1, int pageSize = 20, String? type, int? days, DateTime? from, DateTime? to,
   }) async {
     await _delay();
     return Success(WalletTransaction.fakeList(count: pageSize));

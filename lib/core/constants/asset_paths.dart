@@ -16,6 +16,7 @@ abstract final class AssetPaths {
   static const String splashLogo = 'assets/images/logo.png';
   static const String placeholderBanner = 'assets/images/placeholder_banner.png';
   static const String placeholderOperator = 'assets/images/placeholder_operator.png';
+  static const String securityVault = 'assets/images/security_vault.png';
 
   // ─── Icons (SVG) ──────────────────────────────────────────────────
   static const String iconMobileRecharge = 'assets/icons/mobile_recharge.svg';

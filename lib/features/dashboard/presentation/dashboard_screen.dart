@@ -740,19 +740,58 @@ class _TodayStatsRow extends ConsumerWidget {
           ),
         )),
       ),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (err, stack) {
+        AppLogger.warning('Dashboard summary load error: $err', tag: 'DashboardScreen');
+        final defaultStats = [
+          const _StatData(
+            label: "Today's Recharge",
+            value: '₹0.00',
+            icon: Icons.bolt,
+            color: AppColors.primaryBlue,
+            bgColor: AppColors.primaryBlueLight,
+          ),
+          const _StatData(
+            label: 'Commission',
+            value: '₹0.00',
+            icon: Icons.percent,
+            color: AppColors.success,
+            bgColor: AppColors.successLight,
+          ),
+          _StatData(
+            label: 'Transactions',
+            value: '0',
+            icon: Icons.receipt_long,
+            color: AppColors.warning,
+            bgColor: AppColors.warningLight,
+            onTap: () => context.go(RouteNames.transactionHistory),
+          ),
+        ];
+
+        return Row(
+          children: defaultStats.asMap().entries.map((entry) {
+            final i = entry.key;
+            final stat = entry.value;
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(left: i > 0 ? 8.0 : 0),
+                child: _StatCard(data: stat),
+              ),
+            );
+          }).toList(),
+        );
+      },
       data: (earnings) {
         final stats = [
           _StatData(
             label: "Today's Recharge",
-            value: CurrencyFormatter.fromPaise(earnings['todayRechargeAmountPaise'] as int? ?? 0),
+            value: CurrencyFormatter.fromPaise(earnings['todayRechargeAmountPaise'] as int? ?? earnings['todayRechargeAmount'] as int? ?? 0),
             icon: Icons.bolt,
             color: AppColors.primaryBlue,
             bgColor: AppColors.primaryBlueLight,
           ),
           _StatData(
             label: 'Commission',
-            value: CurrencyFormatter.fromPaise(earnings['todayCommissionPaise'] as int? ?? 0),
+            value: CurrencyFormatter.fromPaise(earnings['todayCommissionPaise'] as int? ?? earnings['todayCommission'] as int? ?? 0),
             icon: Icons.percent,
             color: AppColors.success,
             bgColor: AppColors.successLight,
@@ -763,6 +802,7 @@ class _TodayStatsRow extends ConsumerWidget {
             icon: Icons.receipt_long,
             color: AppColors.warning,
             bgColor: AppColors.warningLight,
+            onTap: () => context.go(RouteNames.transactionHistory),
           ),
         ];
 
@@ -790,12 +830,14 @@ class _StatData {
     required this.icon,
     required this.color,
     required this.bgColor,
+    this.onTap,
   });
   final String label;
   final String value;
   final IconData icon;
   final Color color;
   final Color bgColor;
+  final VoidCallback? onTap;
 }
 
 class _StatCard extends StatelessWidget {
@@ -805,7 +847,6 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -817,41 +858,52 @@ class _StatCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: data.bgColor,
-              borderRadius: BorderRadius.circular(8),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: data.onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: data.bgColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(data.icon, size: 16, color: data.color),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  data.value,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  data.label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-            child: Icon(data.icon, size: 16, color: data.color),
           ),
-          const SizedBox(height: 10),
-          Text(
-            data.value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w800,
-              fontSize: 14,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            data.label,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1208,16 +1260,16 @@ class _TransactionTile extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (txn.commissionEarnedPaise != null && txn.commissionEarnedPaise! > 0) ...[
+                        if (txn.commissionEarnedPaise > 0) ...[
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.success.withOpacity(0.1),
+                              color: AppColors.success.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              'Earned +₹${(txn.commissionEarnedPaise! / 100).toStringAsFixed(2)}',
+                              'Earned +₹${(txn.commissionEarnedPaise / 100).toStringAsFixed(2)}',
                               style: const TextStyle(
                                 color: AppColors.success,
                                 fontSize: 9,

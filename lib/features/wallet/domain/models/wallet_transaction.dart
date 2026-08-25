@@ -23,6 +23,7 @@ class WalletTransaction extends Equatable {
     this.apiReference,
     this.description,
     this.closingBalancePaise,
+    this.type,
   });
 
   final String id;
@@ -40,12 +41,11 @@ class WalletTransaction extends Equatable {
   final String? apiReference;
   final String? description;
   final int? closingBalancePaise;
+  final String? type;
 
   String get displayOperatorName => OperatorFormatter.getDisplayOperatorName(operatorName);
 
-  // We infer credit/debit conceptually from service type or amount sign, 
-  // but let's assume if it's commission or topup it's a credit, otherwise debit.
-  bool get isCredit => serviceType == 'wallet_topup' || serviceType == 'commission';
+  bool get isCredit => type == 'credit' || serviceType == 'wallet_topup' || serviceType == 'commission' || serviceType == 'admin_credit';
   bool get isDebit => !isCredit;
 
   factory WalletTransaction.fromJson(Map<String, dynamic> json) {
@@ -74,6 +74,7 @@ class WalletTransaction extends Equatable {
       apiReference: json['apiReference'] as String?,
       description: json['description'] as String?,
       closingBalancePaise: (json['closingBalancePaise'] as num?)?.toInt(),
+      type: json['type'] as String?,
     );
   }
 

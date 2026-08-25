@@ -35,6 +35,8 @@ class WalletRepositoryImpl implements WalletRepository {
   Future<Result<List<WalletTransaction>, AppException>> getStatement({
     int page = 1,
     int pageSize = 20,
+    String? type,
+    int? days,
     DateTime? from,
     DateTime? to,
   }) async {
@@ -42,6 +44,8 @@ class WalletRepositoryImpl implements WalletRepository {
       final queryParams = {
         'page': page,
         'limit': pageSize,
+        if (type != null && type != 'all') 'type': type,
+        if (days != null) 'days': days,
         if (from != null) 'from': from.toIso8601String(),
         if (to != null) 'to': to.toIso8601String(),
       };

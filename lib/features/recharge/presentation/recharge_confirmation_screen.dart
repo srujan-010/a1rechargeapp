@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/utils/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
@@ -17,6 +19,7 @@ import '../../../core/utils/razorpay_web_helper.dart';
 import '../../../core/utils/logger.dart';
 
 enum PaymentMethod { wallet, upi }
+enum PaymentResultStatus { cancelled, failed, pending, unknown, success }
 
 class RechargeConfirmationScreen extends ConsumerStatefulWidget {
   const RechargeConfirmationScreen({super.key});
@@ -31,10 +34,251 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
   bool _isLoading = false;
   PaymentMethod? _selectedPaymentMethod; // Null = auto-select based on balance
 
+  late Razorpay _razorpay;
+  String? _pendingInternalTransactionId;
+  String? _pendingRazorpayOrderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccessNative);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentErrorNative);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWalletNative);
+  }
+
   @override
   void dispose() {
+    _razorpay.clear();
     _pinController.dispose();
     super.dispose();
+  }
+
+  void _handlePaymentSuccessNative(PaymentSuccessResponse response) {
+    AppLogger.info(
+      '[Razorpay Mobile Success] Payment ID: ${response.paymentId}, Order ID: ${response.orderId}',
+      tag: 'RechargeConfirmation',
+    );
+    final paymentId = response.paymentId ?? '';
+    final orderId = response.orderId ?? _pendingRazorpayOrderId ?? '';
+    final signature = response.signature ?? '';
+
+    _executePaymentVerification(
+      paymentId: paymentId,
+      razorpayOrderId: orderId,
+      signature: signature,
+    );
+  }
+
+  void _handlePaymentErrorNative(PaymentFailureResponse response) {
+    AppLogger.error(
+      '[Razorpay Mobile Error] Code: ${response.code}, Message: ${response.message}',
+      tag: 'RechargeConfirmation',
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    // Code 2 is PAYMENT_CANCELLED in Razorpay SDK
+    final isCancelled = response.code == 2 ||
+        (response.message != null &&
+            (response.message!.toLowerCase().contains('cancel') ||
+                response.message!.toLowerCase().contains('dismiss')));
+
+    if (isCancelled) {
+      AppLogger.info('[Razorpay] User cancelled checkout', tag: 'RechargeConfirmation');
+      _showPaymentStatusModal(
+        status: PaymentResultStatus.cancelled,
+        title: 'Payment Cancelled',
+        message: 'No amount was charged.',
+      );
+    } else {
+      AppLogger.error('[Razorpay] Payment failed: ${response.message}', tag: 'RechargeConfirmation');
+      _showPaymentStatusModal(
+        status: PaymentResultStatus.failed,
+        title: 'Payment Failed',
+        message: response.message ?? 'Your payment could not be completed.',
+      );
+    }
+  }
+
+  void _handleExternalWalletNative(ExternalWalletResponse response) {
+    AppLogger.info('[Razorpay Mobile External Wallet] ${response.walletName}', tag: 'RechargeConfirmation');
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Redirected to external wallet: ${response.walletName}'),
+        backgroundColor: AppColors.primaryBlue,
+      ),
+    );
+  }
+
+  Future<void> _executePaymentVerification({
+    required String paymentId,
+    required String razorpayOrderId,
+    required String signature,
+  }) async {
+    final internalTxId = _pendingInternalTransactionId;
+    if (internalTxId == null || internalTxId.isEmpty) {
+      AppLogger.error('[Razorpay Verify] Internal transaction ID missing', tag: 'RechargeConfirmation');
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+        });
+      }
+
+      AppLogger.info('[Razorpay] Sending verification request to backend...', tag: 'RechargeConfirmation');
+      final repo = ref.read(rechargeRepositoryProvider);
+      final verifyResult = await repo.verifyRazorpayRechargePayment(
+        internalTransactionId: internalTxId,
+        razorpayOrderId: razorpayOrderId,
+        razorpayPaymentId: paymentId,
+        razorpaySignature: signature,
+      );
+
+      if (!mounted) return;
+      ref.invalidate(walletBalanceProvider);
+      ref.invalidate(recentTransactionsProvider);
+      ref.invalidate(earningsSummaryProvider);
+
+      final state = ref.read(rechargeFlowProvider);
+      final receipt = verifyResult.valueOrNull;
+
+      if (receipt != null) {
+        AppLogger.info('[Razorpay] Backend verification: VERIFIED / SUCCESS', tag: 'RechargeConfirmation');
+        context.push(
+          RouteNames.rechargeProcessing,
+          extra: {
+            'orderId': internalTxId,
+            'receipt': receipt,
+            'paymentMode': 'upi',
+            'phoneNumber': state.phoneNumber,
+            'operatorId': state.operator?.id,
+            'operatorCode': state.operator?.shortCode,
+            'operatorName': state.operator?.name,
+            'amountPaise': state.customAmountPaise,
+            'circle': state.circle?.state,
+          },
+        );
+      } else {
+        final err = verifyResult.errorOrNull?.message ?? 'Verification failed';
+        AppLogger.error('[Razorpay] Backend verification error: $err', tag: 'RechargeConfirmation');
+        _showPaymentStatusModal(
+          status: PaymentResultStatus.failed,
+          title: 'Payment Verification Failed',
+          message: err,
+        );
+      }
+    } catch (e) {
+      AppLogger.error('[Razorpay Verification Exception] $e', tag: 'RechargeConfirmation');
+      if (!mounted) return;
+      _showPaymentStatusModal(
+        status: PaymentResultStatus.pending,
+        title: 'Payment Verification Pending',
+        message: 'We are confirming your payment with Razorpay. Please don\'t pay again.',
+        orderId: internalTxId,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showPaymentStatusModal({
+    required PaymentResultStatus status,
+    required String title,
+    required String message,
+    String? orderId,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final IconData iconData = switch (status) {
+          PaymentResultStatus.cancelled => Icons.cancel_outlined,
+          PaymentResultStatus.failed => Icons.error_outline,
+          PaymentResultStatus.pending || PaymentResultStatus.unknown => Icons.hourglass_top,
+          PaymentResultStatus.success => Icons.check_circle_outline,
+        };
+
+        final Color iconColor = switch (status) {
+          PaymentResultStatus.cancelled => Colors.orange,
+          PaymentResultStatus.failed => AppColors.error,
+          PaymentResultStatus.pending || PaymentResultStatus.unknown => Colors.blue,
+          PaymentResultStatus.success => AppColors.success,
+        };
+
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(iconData, size: 48, color: iconColor),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: AppTextTheme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: AppTextTheme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              if (status == PaymentResultStatus.pending && orderId != null) ...[
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    context.push(
+                      RouteNames.rechargeProcessing,
+                      extra: {
+                        'orderId': orderId,
+                        'paymentMode': 'upi',
+                      },
+                    );
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Check Status'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 48),
+                    backgroundColor: AppColors.primaryBlue,
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('OK'),
+                  ),
+                ),
+              ]
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _processRecharge(String pin) {
@@ -84,6 +328,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         return;
       }
 
+      AppLogger.info('[Razorpay] Creating order...', tag: 'RechargeConfirmation');
       final repo = ref.read(rechargeRepositoryProvider);
       final serviceType = switch (state.operator!.type) {
         OperatorType.prepaid => 'mobile',
@@ -122,83 +367,79 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       final razorpayKeyId = orderData['razorpayKeyId'] as String;
       final payablePaise = (orderData['payableAmountPaise'] as num).toInt();
 
+      _pendingInternalTransactionId = internalTxId;
+      _pendingRazorpayOrderId = razorpayOrderId;
+
       AppLogger.info(
-        '[Razorpay Recharge Order] Created order $razorpayOrderId for internalTx $internalTxId with payable amount $payablePaise paise',
+        '[Razorpay Order Created] Order ID: $razorpayOrderId, Internal Tx: $internalTxId, Payable: $payablePaise paise',
         tag: 'RechargeConfirmation',
       );
 
-      // Step 2: Open real Razorpay Checkout modal
-      openRazorpayWebCheckout(
-        key: razorpayKeyId,
-        amount: payablePaise,
-        orderId: razorpayOrderId,
-        contact: state.phoneNumber!,
-        email: 'retailer@a1recharge.com',
-        onSuccess: (paymentId, rzpOrderId, signature) async {
-          AppLogger.info(
-            '[Razorpay Recharge Success] Payment ID: $paymentId, Order ID: $rzpOrderId',
-            tag: 'RechargeConfirmation',
-          );
-          try {
-            // Step 3: Verify Payment Signature & Execute Recharge Server-Side
-            final verifyResult = await repo.verifyRazorpayRechargePayment(
-              internalTransactionId: internalTxId,
+      // Step 2: Open Razorpay Checkout modal (Platform specific)
+      if (kIsWeb) {
+        AppLogger.info('[Razorpay] Opening Web Checkout JS', tag: 'RechargeConfirmation');
+        openRazorpayWebCheckout(
+          key: razorpayKeyId,
+          amount: payablePaise,
+          orderId: razorpayOrderId,
+          contact: state.phoneNumber!,
+          email: 'retailer@a1recharge.com',
+          onSuccess: (paymentId, rzpOrderId, signature) {
+            _executePaymentVerification(
+              paymentId: paymentId,
               razorpayOrderId: rzpOrderId,
-              razorpayPaymentId: paymentId,
-              razorpaySignature: signature,
+              signature: signature,
             );
-
+          },
+          onError: (err) {
             if (!mounted) return;
-            ref.invalidate(walletBalanceProvider);
-            ref.invalidate(recentTransactionsProvider);
-            ref.invalidate(earningsSummaryProvider);
-
-            final receipt = verifyResult.valueOrNull;
-            if (receipt != null) {
-              context.push(
-                RouteNames.rechargeProcessing,
-                extra: {
-                  'orderId': internalTxId,
-                  'receipt': receipt,
-                  'paymentMode': 'upi',
-                  'phoneNumber': state.phoneNumber,
-                  'operatorId': state.operator!.id,
-                  'operatorCode': state.operator!.shortCode,
-                  'operatorName': state.operator!.name,
-                  'amountPaise': state.customAmountPaise,
-                  'circle': state.circle?.state,
-                },
+            setState(() => _isLoading = false);
+            final isCancelled = err.toLowerCase().contains('cancel') || err.toLowerCase().contains('dismiss');
+            if (isCancelled) {
+              _showPaymentStatusModal(
+                status: PaymentResultStatus.cancelled,
+                title: 'Payment Cancelled',
+                message: 'No amount was charged.',
               );
             } else {
-              final errMsg = verifyResult.errorOrNull?.message ?? 'Payment verification or recharge execution failed.';
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(errMsg), backgroundColor: AppColors.error),
+              _showPaymentStatusModal(
+                status: PaymentResultStatus.failed,
+                title: 'Payment Failed',
+                message: err.isNotEmpty ? err : 'Your payment could not be completed.',
               );
             }
-          } catch (e) {
+          },
+          onDismiss: () {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Verification error: ${e.toString()}'), backgroundColor: AppColors.error),
+            setState(() => _isLoading = false);
+            _showPaymentStatusModal(
+              status: PaymentResultStatus.cancelled,
+              title: 'Payment Cancelled',
+              message: 'No amount was charged.',
             );
-          } finally {
-            if (mounted) setState(() => _isLoading = false);
+          },
+        );
+      } else {
+        AppLogger.info('[Razorpay] Opening Native Mobile SDK', tag: 'RechargeConfirmation');
+        final options = {
+          'key': razorpayKeyId,
+          'amount': payablePaise,
+          'name': 'A1 Recharge',
+          'description': '${state.operator!.name} Recharge (${state.phoneNumber})',
+          'order_id': razorpayOrderId,
+          'prefill': {
+            'contact': state.phoneNumber ?? '',
+            'email': 'retailer@a1recharge.com',
+          },
+          'theme': {
+            'color': '#1565FF',
           }
-        },
-        onError: (err) {
-          AppLogger.error('[Razorpay Recharge Error] $err', tag: 'RechargeConfirmation');
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment Cancelled or Failed.'), backgroundColor: AppColors.error),
-          );
-          setState(() => _isLoading = false);
-        },
-        onDismiss: () {
-          AppLogger.info('[Razorpay Recharge Modal Dismissed]', tag: 'RechargeConfirmation');
-          if (!mounted) return;
-          setState(() => _isLoading = false);
-        },
-      );
+        };
+
+        _razorpay.open(options);
+      }
     } catch (e) {
+      AppLogger.error('[Razorpay Order Creation Exception] $e', tag: 'RechargeConfirmation');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: AppColors.error),

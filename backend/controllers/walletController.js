@@ -74,11 +74,32 @@ const getBalance = async (req, res, next) => {
 // @access  Private
 const getStatement = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, type, days } = req.query;
     const skip = (page - 1) * limit;
 
-    const transactions = await Transaction.find({ userId: req.user._id })
-      .select('_id service operatorName operatorId mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference providerTransactionId failureReason providerMessage')
+    const query = { userId: req.user._id };
+
+    if (type === 'credits' || type === 'credit') {
+      query.$or = [
+        { type: 'credit' },
+        { service: { $in: ['wallet_topup', 'commission', 'admin_credit'] } }
+      ];
+    } else if (type === 'debits' || type === 'debit') {
+      query.$or = [
+        { type: 'debit' },
+        { service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] } }
+      ];
+    }
+
+    if (days && !isNaN(Number(days))) {
+      const daysNum = Number(days);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysNum);
+      query.createdAt = { $gte: startDate };
+    }
+
+    const transactions = await Transaction.find(query)
+      .select('_id service type operatorName operatorId mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference providerTransactionId failureReason providerMessage description')
       .sort({ createdAt: -1 })
       .skip(Number(skip))
       .limit(Number(limit))
@@ -87,28 +108,32 @@ const getStatement = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: transactions.map(t => ({
-        id: t._id,
-        serviceType: t.service,
-        operatorName: t.operatorName || '',
-        operatorId: t.operatorId || null,
-        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service, t.operatorName),
-        customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
-        amount: t.amountPaise,
-        commission: t.commissionEarnedPaise || 0,
-        status: t.status,
-        createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
-        completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
-        updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
-        paymentMethod: t.paymentMethod || 'wallet',
-        referenceNumber: t.referenceId,
-        clientOrderId: t.referenceId,
-        apiReference: t.apiReference || '',
-        providerTransactionId: t.providerTransactionId || t.apiReference || null,
-        failureReason: t.failureReason || null,
-        providerMessage: t.providerMessage || null,
-        description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
-      }))
+      data: transactions.map(t => {
+        const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
+        return {
+          id: t._id,
+          type: isCred ? 'credit' : 'debit',
+          serviceType: t.service,
+          operatorName: t.operatorName || '',
+          operatorId: t.operatorId || null,
+          transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service, t.operatorName),
+          customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
+          amount: t.amountPaise,
+          commission: t.commissionEarnedPaise || 0,
+          status: t.status,
+          createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
+          completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
+          updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
+          paymentMethod: t.paymentMethod || 'wallet',
+          referenceNumber: t.referenceId,
+          clientOrderId: t.referenceId,
+          apiReference: t.apiReference || '',
+          providerTransactionId: t.providerTransactionId || t.apiReference || null,
+          failureReason: t.failureReason || null,
+          providerMessage: t.providerMessage || null,
+          description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
+        };
+      })
     });
   } catch (error) {
     next(error);
@@ -220,48 +245,78 @@ const getISTDateBounds = (daysOffset = 0) => {
 const getDashboardSummary = async (req, res, next) => {
   try {
     const { start: todayStart, end: todayEnd } = getISTDateBounds(0);
+    const userObjectId = new mongoose.Types.ObjectId(req.user._id);
 
-    const transactions = await Transaction.find({
-      userId: req.user._id,
-      createdAt: { $gte: todayStart, $lte: todayEnd }
-    })
-    .select('service type status amountPaise')
-    .lean()
-    .maxTimeMS(3000);
-
-    let todayRechargeAmount = 0;
-    let todayCommission = 0;
-    let todayTransactions = 0;
-    let successfulTransactions = 0;
-    let failedTransactions = 0;
-    let pendingTransactions = 0;
-
-    for (const tx of transactions) {
-      if (tx.service !== 'wallet_topup' && tx.service !== 'commission' && tx.service !== 'admin_credit') {
-        todayTransactions++;
-        if (tx.status === 'success') successfulTransactions++;
-        if (tx.status === 'failed') failedTransactions++;
-        if (tx.status === 'pending') pendingTransactions++;
-        
-        if (tx.type === 'debit' && tx.status === 'success') {
-          todayRechargeAmount += tx.amountPaise;
+    // MongoDB Aggregation on RechargeTransaction (Primary source for Wallet & UPI recharges + commissions)
+    // Filter test transactions BEFORE aggregation ($sum, $count)
+    const rechargeAgg = await RechargeTransaction.aggregate([
+      {
+        $match: {
+          userId: userObjectId,
+          status: { $in: ['SUCCESS', 'PAYMENT_SUCCESS'] },
+          isTest: { $ne: true },
+          orderId: { $not: /^TEST/i },
+          createdAt: { $gte: todayStart, $lte: todayEnd }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRechargeAmountRupees: { $sum: '$amount' },
+          totalCommissionRupees: { $sum: { $ifNull: ['$commissionAmount', 0] } },
+          totalTransactionsCount: { $sum: 1 }
         }
       }
-      
-      if (tx.service === 'commission' && tx.type === 'credit') {
-        todayCommission += tx.amountPaise;
+    ]);
+
+    // Fallback/Complement aggregation on Transaction model for legacy debit transactions
+    const txAgg = await Transaction.aggregate([
+      {
+        $match: {
+          userId: userObjectId,
+          status: 'success',
+          type: 'debit',
+          isTest: { $ne: true },
+          referenceId: { $not: /^TEST/i },
+          service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] },
+          createdAt: { $gte: todayStart, $lte: todayEnd }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRechargeAmountPaise: { $sum: '$amountPaise' },
+          totalCommissionPaise: { $sum: { $ifNull: ['$commissionEarnedPaise', 0] } },
+          totalTransactionsCount: { $sum: 1 }
+        }
       }
+    ]);
+
+    let todayRechargeAmountPaise = 0;
+    let todayCommissionPaise = 0;
+    let todayTransactions = 0;
+
+    if (rechargeAgg.length > 0 && rechargeAgg[0].totalTransactionsCount > 0) {
+      todayRechargeAmountPaise = Math.round((rechargeAgg[0].totalRechargeAmountRupees || 0) * 100);
+      todayCommissionPaise = Math.round((rechargeAgg[0].totalCommissionRupees || 0) * 100);
+      todayTransactions = rechargeAgg[0].totalTransactionsCount || 0;
+    } else if (txAgg.length > 0) {
+      todayRechargeAmountPaise = txAgg[0].totalRechargeAmountPaise || 0;
+      todayCommissionPaise = txAgg[0].totalCommissionPaise || 0;
+      todayTransactions = txAgg[0].totalTransactionsCount || 0;
     }
 
     res.status(200).json({
       success: true,
       data: {
-        todayRechargeAmount,
-        todayCommission,
-        todayTransactions,
-        successfulTransactions,
-        failedTransactions,
-        pendingTransactions
+        todayRechargeAmount: todayRechargeAmountPaise,
+        todayRechargeAmountPaise: todayRechargeAmountPaise,
+        todayCommission: todayCommissionPaise,
+        todayCommissionPaise: todayCommissionPaise,
+        todayTransactions: todayTransactions,
+        successfulTransactions: todayTransactions,
+        failedTransactions: 0,
+        pendingTransactions: 0
       }
     });
   } catch (error) {

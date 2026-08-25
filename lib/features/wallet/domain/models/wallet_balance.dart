@@ -21,6 +21,8 @@ class WalletBalance extends Equatable {
   final String walletId;
   final String walletFundingMode;
 
+  int get balancePaise => availablePaise;
+
   bool get isAddMoneyEnabled =>
       walletFundingMode == 'RAZORPAY' || walletFundingMode == 'PAYMENT_GATEWAY' || walletFundingMode == 'BOTH';
 

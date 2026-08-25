@@ -88,7 +88,7 @@ class CommissionService {
         console.log('[COMMISSION CONFIG FOUND]');
         console.log(`commissionRecordId: ${commissionRule._id}`);
         console.log(`operator: ${commissionRule.operatorName} (${commissionRule.operatorCode})`);
-        console.log(`serviceType: ${commissionRule.serviceType}`);
+        console.log(`serviceType: ${commissionRule.serviceType || commissionRule.service || serviceType || 'mobile'}`);
         console.log(`providerCommissionPercent: ${providerPercent}`);
         console.log(`retailerCommissionPercent: ${retailerPercent}`);
         console.log(`personalCommissionPercent: ${personalPercent}`);

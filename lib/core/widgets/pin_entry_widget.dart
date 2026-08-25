@@ -60,8 +60,8 @@ class _PinEntryWidgetState extends State<PinEntryWidget> {
   }
 
   PinTheme get _defaultTheme => PinTheme(
-        width: 48,
-        height: 52,
+        width: 52,
+        height: 54,
         textStyle: AppTextTheme.textTheme.titleLarge?.copyWith(
           fontSize: 22,
           color: AppColors.primaryBlue,

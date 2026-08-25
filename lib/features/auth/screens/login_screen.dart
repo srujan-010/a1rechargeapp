@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/providers/core_providers.dart';
+import '../../../core/services/biometric_service.dart';
+import '../../../core/utils/logger.dart';
 import '../models/auth_state.dart';
 import '../provider/auth_provider.dart';
 
@@ -29,6 +32,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isPhoneValid = false;
   bool _isFocused = false;
   bool _isButtonPressed = false;
+  bool _showBiometricOption = false;
 
   @override
   void initState() {
@@ -40,7 +44,39 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
+      _checkBiometricAvailability();
     });
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    try {
+      final storage = ref.read(secureStorageProvider);
+      final isBioEnabled = await storage.isBiometricEnabled();
+      final hasToken = await storage.isTokenValid();
+      if (isBioEnabled && hasToken) {
+        final bioService = BiometricService();
+        final capability = await bioService.checkCapability();
+        if (capability == BiometricCapability.available && mounted) {
+          setState(() => _showBiometricOption = true);
+        }
+      }
+    } catch (e) {
+      AppLogger.warning('Biometric check failed on login screen: $e', tag: 'Login');
+    }
+  }
+
+  Future<void> _handleBiometricLogin() async {
+    try {
+      final bioService = BiometricService();
+      final result = await bioService.authenticate(
+        reason: 'Sign in to A1 Recharge with your fingerprint or face',
+      );
+      if (result == BiometricAuthResult.success && mounted) {
+        context.go(RouteNames.dashboard);
+      }
+    } catch (e) {
+      AppLogger.warning('Biometric login failed: $e', tag: 'Login');
+    }
   }
 
   @override
@@ -325,6 +361,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ),
                           ),
+                          if (_showBiometricOption) ...[
+                            const SizedBox(height: 16),
+                            OutlinedButton.icon(
+                              onPressed: _handleBiometricLogin,
+                              icon: const Icon(Icons.fingerprint, color: textBlue, size: 22),
+                              label: const Text(
+                                'Sign in with Biometrics',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: textBlue,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 48),
+                                side: const BorderSide(color: textBlue, width: 1.5),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 24),
                           
                           // Trust Row
