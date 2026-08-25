@@ -8,6 +8,9 @@ import '../../../core/utils/logger.dart';
 import '../../../core/widgets/app_card.dart';
 import 'providers/dth_providers.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+
 class DthPlansScreen extends ConsumerWidget {
   const DthPlansScreen({super.key});
 
@@ -18,7 +21,13 @@ class DthPlansScreen extends ConsumerWidget {
 
     if (operator == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('DTH Packs')),
+        appBar: AppBar(
+          title: const Text('DTH Packs'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dthRecharge),
+          ),
+        ),
         body: const Center(child: Text('No operator selected')),
       );
     }
@@ -29,6 +38,10 @@ class DthPlansScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text('${operator.name} Packs'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dthRecharge),
+        ),
         backgroundColor: AppColors.background,
         elevation: 0,
         centerTitle: true,

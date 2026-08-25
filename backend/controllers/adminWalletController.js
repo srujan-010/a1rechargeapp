@@ -4,6 +4,7 @@ const WalletLedger = require('../models/WalletLedger');
 const Transaction = require('../models/Transaction');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const Notification = require('../models/Notification');
+const notificationService = require('../services/notification.service');
 
 /**
  * @desc    Credit retailer wallet manually (Admin Only)
@@ -139,15 +140,16 @@ const creditRetailerWallet = async (req, res, next) => {
       referenceId: effectiveRefId,
     });
 
-    // 8. Create Notification for retailer
-    await Notification.create({
-      userId: retailerUser._id,
-      title: 'Wallet Credited by Admin',
-      message: `₹${amountRupeesVal.toFixed(2)} has been credited to your wallet by administrator.`,
-      category: 'SUCCESS',
-      priority: 'HIGH',
-      action: 'ROUTE_WALLET',
-    }).catch(err => console.error('Failed to create notification for admin credit:', err));
+    // 8. Create Notification for retailer via Central Notification Service
+    try {
+      notificationService.notifyAdminWalletCredit({
+        userId: retailerUser._id,
+        amount: amountRupeesVal,
+        referenceId: effectiveRefId
+      });
+    } catch (err) {
+      console.error('Failed to create notification for admin credit:', err);
+    }
 
     return res.status(200).json({
       success: true,

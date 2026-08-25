@@ -3,6 +3,7 @@ const Transaction = require('../models/Transaction');
 const a1TopupProvider = require('./providers/a1topup/provider.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
+const notificationService = require('./notification.service');
 
 /**
  * Independent Status Service for DTH Orders
@@ -115,13 +116,41 @@ class DthStatusService {
       }
     );
 
-    // Ledger / Wallet settlement
+    // Ledger / Wallet settlement & Notifications
     if (isSuccess) {
       await walletService.commitReservation(txn.userId, txn.amount, commissionEarnedPaise);
       console.log(`[DTH] Polling Complete: Order ${orderId} transitioned to SUCCESS`);
+
+      notificationService.notifyRechargeSuccess({
+        userId: txn.userId,
+        orderId,
+        transactionId: providerRes.providerTransactionId || orderId,
+        providerTransactionId: providerRes.providerTransactionId || '',
+        amount: txn.amount,
+        operator: 'DTH',
+        mobileNumber: txn.mobileNumber,
+        commissionAmount: commissionEarnedPaise / 100
+      });
+
+      if (commissionEarnedPaise > 0) {
+        notificationService.notifyCommissionEarned({
+          userId: txn.userId,
+          commissionAmount: commissionEarnedPaise / 100
+        });
+      }
     } else if (isFailed) {
       await walletService.releaseReservation(txn.userId, txn.amount);
       console.log(`[DTH] Polling Complete: Order ${orderId} transitioned to FAILED (wallet hold released)`);
+
+      notificationService.notifyRechargeFailed({
+        userId: txn.userId,
+        orderId,
+        transactionId: providerRes.providerTransactionId || orderId,
+        amount: txn.amount,
+        operator: 'DTH',
+        mobileNumber: txn.mobileNumber,
+        reason: providerRes.message || 'DTH recharge failed at operator'
+      });
     }
 
     return {

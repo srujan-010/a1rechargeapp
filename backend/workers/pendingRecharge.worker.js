@@ -71,11 +71,18 @@ class PendingRechargeWorker {
       // Step 1: Verify Mongo query by looking up document by orderId
       const foundDoc = await RechargeTransaction.findOne({ orderId: transaction.orderId });
       console.log(`\n[Worker] Mongo Query Verification for orderId '${transaction.orderId}':`);
-      if (foundDoc) {
-        console.log(`  Returned Document ID: ${foundDoc._id}`);
-        console.log(`  Returned Status: ${foundDoc.status}`);
-      } else {
-        console.error(`  ERROR: Query returned NULL. The query is wrong! orderId=${transaction.orderId}`);
+      if (!foundDoc) {
+        console.error(`  ERROR: Query returned NULL. orderId=${transaction.orderId}`);
+        return;
+      }
+      console.log(`  Returned Document ID: ${foundDoc._id}`);
+      console.log(`  Returned Status: ${foundDoc.status}`);
+
+      if (!foundDoc.providerRequestSent && (foundDoc.paymentMethod === 'RAZORPAY_UPI' || foundDoc.paymentMethod === 'RAZORPAY' || foundDoc.razorpayPaymentId)) {
+        console.log(`[Worker] Executing missing A1Topup recharge for order ${foundDoc.orderId}`);
+        const rechargeController = require('../controllers/recharge.controller');
+        const globalTx = await Transaction.findOne({ referenceId: foundDoc.orderId });
+        await rechargeController.dispatchA1TopupRecharge({ transaction: foundDoc, globalTransaction: globalTx, userId: foundDoc.userId });
         return;
       }
 
@@ -129,77 +136,51 @@ class PendingRechargeWorker {
           return;
         }
 
-        // Send Fast2SMS WhatsApp Recharge Success Notification
-        fast2smsService.sendRechargeSuccessTemplate({
-          customerName: 'Valued Retailer',
-          mobileNumber: transaction.mobileNumber,
-          amount: transaction.amount,
-          operator: transaction.operatorCode || 'Mobile',
-          transactionId: statusResponse.providerTransactionId || transaction.orderId,
-        }).catch(err => console.error('[WORKER WHATSAPP NOTIFICATION ERROR]:', err));
+        // Recharge success WhatsApp message disabled
+        console.log('[WHATSAPP] Recharge success message disabled');
+        console.log('[WHATSAPP] Template recharge_success / 26992 was NOT sent');
 
-        // Deduct Wallet & Calculate Commission
-        let commissionAmountPaise = 0;
+        // Handle Wallet commit / Razorpay confirmation & Calculate Commission
         try {
-          await walletService.commitReservation(transaction.userId, transaction.amount);
+          const commitAmount = transaction.reservedAmount || transaction.payableAmount || transaction.amount;
+          if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
+            await walletService.commitReservation(transaction.userId, commitAmount).catch(e => console.error('[Worker Wallet Commit Warning]:', e.message));
+          }
           
           await ledgerService.logTransaction({
             userId: transaction.userId,
             type: 'DEBIT',
-            amount: transaction.amount,
+            amount: commitAmount,
             referenceType: 'RECHARGE',
             referenceId: transaction._id,
             description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
-          });
+          }).catch(() => {});
 
-          // Calculate & Credit Commission
+          // Calculate & Record Commission
           const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
-          if (commission.retailerCommissionAmount > 0) {
-            commissionAmountPaise = commission.retailerCommissionAmount * 100;
-            await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
-            await ledgerService.logTransaction({
-              userId: transaction.userId,
-              type: 'CREDIT',
-              amount: commission.retailerCommissionAmount,
-              referenceType: 'COMMISSION',
-              referenceId: transaction._id,
-              description: `Commission for Recharge ${transaction.orderId}`,
-            });
+          const safeNum = (v) => {
+            const n = Number(v);
+            return isNaN(n) || !isFinite(n) ? 0 : Number(n.toFixed(2));
+          };
 
-            await Transaction.create({
-              userId: transaction.userId,
-              type: 'credit',
-              amountPaise: commissionAmountPaise,
-              status: 'success',
-              service: 'commission',
-              referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-              description: `Commission for Recharge ${transaction.orderId}`,
-              apiReference: transaction._id.toString(),
-              paymentMethod: 'wallet',
-              completedAt: now,
-            });
-          }
+          const retailerComm = safeNum(commission?.retailerCommissionAmount);
+          const providerComm = safeNum(commission?.providerCommissionAmount);
 
-          try {
-            const safeNum = (v) => {
-              const n = Number(v);
-              return isNaN(n) || !isFinite(n) ? 0 : Number(n.toFixed(2));
-            };
-
+          if (Number.isFinite(providerComm) && Number.isFinite(retailerComm)) {
             await CommissionHistory.create({
               transactionId: transaction._id,
               userId: transaction.userId,
               operatorCode: String(transaction.operatorCode || 'UNKNOWN'),
               rechargeAmount: safeNum(transaction.amount),
               providerCommissionPercentage: safeNum(commission?.providerCommissionPercentage),
-              providerCommissionAmount: safeNum(commission?.providerCommissionAmount),
+              providerCommissionAmount: providerComm,
               retailerCommissionPercentage: safeNum(commission?.retailerCommissionPercentage),
-              retailerCommissionAmount: safeNum(commission?.retailerCommissionAmount),
+              retailerCommissionAmount: retailerComm,
               companyProfitPercentage: safeNum(commission?.companyProfitPercentage),
               companyProfitAmount: safeNum(commission?.companyProfitAmount),
+            }).catch(commHistErr => {
+              console.error(`[Worker] CommissionHistory Save Warning for ${transaction.orderId}:`, commHistErr.message);
             });
-          } catch (commHistErr) {
-            console.error(`[Worker] CommissionHistory Save Warning for ${transaction.orderId}:`, commHistErr.message);
           }
         } catch (walletErr) {
           console.error(`[Worker] Wallet/Commission processing warning for ${transaction.orderId}:`, walletErr.message);
@@ -209,7 +190,6 @@ class PendingRechargeWorker {
         await Transaction.updateOne({ referenceId: transaction.orderId }, { 
           status: 'success', 
           apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
-          commissionEarnedPaise: commissionAmountPaise,
           completedAt: now,
         });
 
@@ -242,23 +222,37 @@ class PendingRechargeWorker {
           { new: true }
         );
 
-        const matchedCount = updated ? 1 : 0;
-        const modifiedCount = updated ? 1 : 0;
-
-        console.log(`\n[Worker] MongoDB Update Result:`);
-        console.log(`  Update Result: ${updated ? 'FAILED' : 'SKIPPED (Already resolved)'}`);
-        console.log(`  matchedCount: ${matchedCount}`);
-        console.log(`  modifiedCount: ${modifiedCount}`);
-
         if (!updated) {
           console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping.`);
           return;
         }
 
-        try {
-          await walletService.releaseReservation(transaction.userId, transaction.amount);
-        } catch (walletError) {
-          console.error(`[Worker] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+        const rollbackAmount = transaction.reservedAmount || transaction.payableAmount || transaction.amount;
+        if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
+          try {
+            await walletService.releaseReservation(transaction.userId, rollbackAmount);
+          } catch (walletError) {
+            console.error(`[Worker] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+          }
+        } else if (transaction.razorpayPaymentId) {
+          // Razorpay UPI Refund
+          try {
+            const Razorpay = require('razorpay');
+            const razorpay = new Razorpay({
+              key_id: (process.env.RAZORPAY_KEY_ID || '').trim(),
+              key_secret: (process.env.RAZORPAY_KEY_SECRET || '').trim(),
+            });
+            const payablePaise = Math.round((transaction.payableAmount || transaction.amount) * 100);
+            await razorpay.payments.refund(transaction.razorpayPaymentId, {
+              amount: payablePaise,
+              notes: { reason: 'Recharge failed at provider (poller)', orderId: transaction.orderId },
+            });
+            transaction.status = 'REFUNDED';
+            await transaction.save();
+            console.log(`[Worker] Refunded ${payablePaise} paise for Razorpay payment ${transaction.razorpayPaymentId}`);
+          } catch (rfErr) {
+            console.error(`[Worker] Razorpay Refund Error for ${transaction.orderId}:`, rfErr.message);
+          }
         }
         
         await Transaction.updateOne({ referenceId: transaction.orderId }, { 
@@ -267,7 +261,7 @@ class PendingRechargeWorker {
           completedAt: now,
         });
 
-        console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED. Funds refunded.`);
+        console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED.`);
       } else {
         console.log(`[Worker] Transaction ${transaction.orderId} is still PENDING at provider.`);
       }

@@ -79,6 +79,12 @@ import '../features/wallet_mpin/presentation/confirm_mpin_screen.dart';
 import '../features/wallet_mpin/presentation/change_mpin_screen.dart';
 import '../features/wallet_mpin/presentation/forgot_mpin_screen.dart';
 import '../features/wallet_mpin/presentation/reset_mpin_screen.dart';
+import '../features/wallet_mpin/presentation/wallet_mpin_screen.dart';
+import '../features/security_pin/presentation/security_pin_screen.dart';
+import '../features/security_pin/presentation/create_security_pin_screen.dart';
+import '../features/security_pin/presentation/change_security_pin_screen.dart';
+import '../features/security_pin/presentation/forgot_security_pin_screen.dart';
+import '../features/security_pin/presentation/reset_security_pin_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/settings/presentation/device_info_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
@@ -92,6 +98,7 @@ import '../features/profile/presentation/add_bank_screen.dart';
 import '../features/profile/presentation/personal_info_screen.dart';
 import '../features/profile/presentation/kyc_screen.dart';
 import '../features/admin/presentation/admin_wallet_screen.dart';
+import '../features/personal/presentation/benefits_savings_screen.dart';
 
 import 'shell_scaffold.dart';
 
@@ -179,6 +186,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ResetMpinScreen(),
       ),
 
+      // ─── Security PIN Flows ──────────────────────────────────────────
+      GoRoute(
+        path: RouteNames.createSecurityPin,
+        name: RouteNames.createSecurityPin,
+        builder: (context, state) => const CreateSecurityPinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.changeSecurityPin,
+        name: RouteNames.changeSecurityPin,
+        builder: (context, state) => const ChangeSecurityPinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.forgotSecurityPin,
+        name: RouteNames.forgotSecurityPin,
+        builder: (context, state) => const ForgotSecurityPinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.resetSecurityPin,
+        name: RouteNames.resetSecurityPin,
+        builder: (context, state) => const ResetSecurityPinScreen(),
+      ),
+
       // ─── Authentication ────────────────────────────────────────────
       GoRoute(
         path: RouteNames.otpLogin,
@@ -240,6 +269,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             child: NeedHelpScreen(transaction: txn),
           );
         },
+      ),
+      GoRoute(
+        path: '/personal/benefits',
+        name: RouteNames.personalBenefits,
+        pageBuilder: (context, state) => _slideRightPage(
+          state: state,
+          child: const BenefitsSavingsScreen(),
+        ),
       ),
       // GoRoute(
       //   path: RouteNames.mpinSetup,
@@ -359,6 +396,22 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (c, s) => _slideRightPage(
                       state: s,
                       child: const ChangeMpinScreen(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'wallet-mpin',
+                    name: 'wallet-mpin',
+                    pageBuilder: (c, s) => _slideRightPage(
+                      state: s,
+                      child: const WalletMpinScreen(),
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'security-pin',
+                    name: 'security-pin',
+                    pageBuilder: (c, s) => _slideRightPage(
+                      state: s,
+                      child: const SecurityPinScreen(),
                     ),
                   ),
                   GoRoute(
@@ -844,29 +897,7 @@ class _SessionListenable extends ChangeNotifier {
   }
 }
 
-// ─── Scan Placeholder ─────────────────────────────────────────────────────────
-// The real scanner is in Phase 5+ (mobile_scanner package with camera permission)
-
-class _ScanPlaceholder extends StatelessWidget {
-  const _ScanPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('QR Scanner')),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.qr_code_scanner, size: 80, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('QR Scanner — Coming in Phase 5'),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// ─── End Router ─────────────────────────────────────────────────────────────
 
 // ─── Generic Placeholder Screen ───────────────────────────────────────────────
 // Used for profile sub-routes that are not yet implemented.

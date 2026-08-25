@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -39,9 +41,18 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(dthFlowProvider.notifier).reset();
-      _subscriberIdController.clear();
-      _amountController.clear();
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'DTH') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('DTH');
+        _subscriberIdController.clear();
+        _amountController.clear();
+        _searchController.clear();
+      } else {
+        final state = ref.read(dthFlowProvider);
+        if (state.subscriberId != null) {
+          _subscriberIdController.text = state.subscriberId!;
+        }
+      }
     });
   }
 
@@ -235,10 +246,21 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
 
     final isValid = hasOperator && hasSubscriberId && hasAmount;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          ref.read(rechargeSessionProvider.notifier).endSession();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+
       appBar: AppBar(
         title: const Text('DTH Recharge'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
       ),
       body: CustomScrollView(
         slivers: [
@@ -526,6 +548,7 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
               ),
             )
           : null,
+      ),
     );
   }
 }

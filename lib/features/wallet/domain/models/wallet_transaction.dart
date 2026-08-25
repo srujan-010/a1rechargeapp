@@ -1,6 +1,8 @@
 // lib/features/wallet/domain/models/wallet_transaction.dart
 import 'package:equatable/equatable.dart';
 
+import '../../../../core/utils/operator_formatter.dart';
+
 enum TransactionType { credit, debit }
 enum TransactionStatus { success, pending, failed, reversed }
 
@@ -39,6 +41,8 @@ class WalletTransaction extends Equatable {
   final String? description;
   final int? closingBalancePaise;
 
+  String get displayOperatorName => OperatorFormatter.getDisplayOperatorName(operatorName);
+
   // We infer credit/debit conceptually from service type or amount sign, 
   // but let's assume if it's commission or topup it's a credit, otherwise debit.
   bool get isCredit => serviceType == 'wallet_topup' || serviceType == 'commission';
@@ -52,10 +56,12 @@ class WalletTransaction extends Equatable {
       return utc.add(const Duration(hours: 5, minutes: 30));
     }
 
+    final rawOp = json['operatorName'] as String? ?? json['operator'] as String? ?? json['operatorCode'] as String? ?? '';
+
     return WalletTransaction(
       id: json['id'] as String? ?? json['_id'] as String? ?? '',
       serviceType: json['serviceType'] as String? ?? json['service'] as String? ?? 'unknown',
-      operatorName: json['operatorName'] as String? ?? '',
+      operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
       transactionTitle: json['transactionTitle'] as String? ?? 'Transaction',
       customerIdentifier: json['customerIdentifier'] as String? ?? json['mobileNumber'] as String? ?? '',
       amountPaise: (json['amount'] as num?)?.toInt() ?? (json['amountPaise'] as num?)?.toInt() ?? 0,

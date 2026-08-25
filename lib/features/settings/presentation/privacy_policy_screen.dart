@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({super.key});
@@ -26,6 +28,10 @@ class PrivacyPolicyScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Privacy Policy'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
       ),

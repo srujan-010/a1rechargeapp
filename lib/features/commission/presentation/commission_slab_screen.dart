@@ -8,6 +8,9 @@ import '../../../core/widgets/empty_state_widget.dart';
 import '../domain/models/commission_slab.dart';
 import 'commission_providers.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+
 class CommissionSlabScreen extends ConsumerStatefulWidget {
   const CommissionSlabScreen({super.key});
 
@@ -42,6 +45,10 @@ class _CommissionSlabScreenState extends ConsumerState<CommissionSlabScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Commission Chart', style: TextStyle(fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,

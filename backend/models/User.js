@@ -84,6 +84,7 @@ const userSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    // Legacy MPIN fields (kept for migration fallback)
     mpinHash: {
       type: String,
       required: false,
@@ -104,6 +105,51 @@ const userSchema = new mongoose.Schema(
     lockUntil: {
       type: Date,
     },
+
+    // --- SECURITY PIN (APP ACCESS / ACCOUNT SECURITY ONLY) ---
+    securityPinHash: {
+      type: String,
+      required: false,
+    },
+    securityPinCreatedAt: {
+      type: Date,
+    },
+    securityPinUpdatedAt: {
+      type: Date,
+    },
+    failedSecurityPinAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lastSecurityPinAttempt: {
+      type: Date,
+    },
+    securityPinLockUntil: {
+      type: Date,
+    },
+
+    // --- WALLET MPIN (PAYMENT AUTHORIZATION ONLY) ---
+    walletMpinHash: {
+      type: String,
+      required: false,
+    },
+    walletMpinCreatedAt: {
+      type: Date,
+    },
+    walletMpinUpdatedAt: {
+      type: Date,
+    },
+    failedWalletMpinAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lastWalletMpinAttempt: {
+      type: Date,
+    },
+    walletMpinLockUntil: {
+      type: Date,
+    },
+
     kycStatus: {
       type: String,
       enum: ['notStarted', 'pending', 'verified', 'rejected'],
@@ -129,6 +175,43 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    accountType: {
+      type: String,
+      enum: ['PERSONAL', 'RETAILER'],
+      default: 'RETAILER',
+    },
+    hasPhysicalShop: {
+      type: Boolean,
+      default: true,
+    },
+    businessType: {
+      type: String,
+      default: null,
+    },
+    termsAccepted: {
+      type: Boolean,
+      default: false,
+    },
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    welcomeWhatsAppSent: {
+      type: Boolean,
+      default: false,
+    },
+    welcomeWhatsAppSentAt: {
+      type: Date,
+      default: null,
+    },
+    welcomeWhatsAppMessageId: {
+      type: String,
+      default: null,
+    },
+    welcomeWhatsAppStatus: {
+      type: String,
+      default: null,
+    },
     recentContacts: [
       {
         phone: { type: String, required: true },
@@ -144,38 +227,77 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Method to verify MPIN
-userSchema.methods.matchMpin = async function (enteredMpin) {
-  // Check if account is locked
-  if (this.lockUntil && this.lockUntil > Date.now()) {
-    throw new Error('Account locked due to too many failed attempts. Try again later.');
+// Method to verify Security PIN (App Access)
+userSchema.methods.matchSecurityPin = async function (enteredPin) {
+  if (this.securityPinLockUntil && this.securityPinLockUntil > Date.now()) {
+    throw new Error('Account security locked due to too many failed attempts. Try again later.');
   }
 
-  let isMatch = false;
-  if (!this.mpinHash) {
-    throw new Error('MPIN not configured for this user');
-  } else {
-    isMatch = await bcrypt.compare(enteredMpin, this.mpinHash);
+  if (!this.securityPinHash) {
+    throw new Error('Security PIN not configured for this user');
   }
+
+  const isMatch = await bcrypt.compare(enteredPin, this.securityPinHash);
 
   if (isMatch) {
-    // Reset failed attempts on success
-    this.failedMpinAttempts = 0;
-    this.lockUntil = undefined;
-    await this.save();
+    if (this.failedSecurityPinAttempts || this.securityPinLockUntil) {
+      this.failedSecurityPinAttempts = 0;
+      this.securityPinLockUntil = undefined;
+      if (this.db && this.db.readyState === 1) await this.save();
+    }
     return true;
   } else {
-    // Increment failed attempts
-    this.failedMpinAttempts += 1;
-    this.lastMpinAttempt = Date.now();
-    
-    // Lock for 15 minutes if 5 failed attempts
-    if (this.failedMpinAttempts >= 5) {
-      this.lockUntil = Date.now() + 15 * 60 * 1000;
+    this.failedSecurityPinAttempts = (this.failedSecurityPinAttempts || 0) + 1;
+    this.lastSecurityPinAttempt = Date.now();
+    if (this.failedSecurityPinAttempts >= 5) {
+      this.securityPinLockUntil = Date.now() + 15 * 60 * 1000;
     }
-    await this.save();
+    if (this.db && this.db.readyState === 1) await this.save();
     return false;
   }
+};
+
+// Method to verify Wallet MPIN (Payment Authorization)
+userSchema.methods.matchWalletMpin = async function (enteredMpin) {
+  const activeLock = this.walletMpinLockUntil || this.lockUntil;
+  if (activeLock && activeLock > Date.now()) {
+    throw new Error('Wallet payment locked due to too many failed MPIN attempts. Try again later.');
+  }
+
+  const targetHash = this.walletMpinHash || this.mpinHash;
+  if (!targetHash) {
+    throw new Error('Wallet MPIN not configured for this user');
+  }
+
+  const isMatch = await bcrypt.compare(enteredMpin, targetHash);
+
+  if (isMatch) {
+    if (this.failedWalletMpinAttempts || this.failedMpinAttempts || this.walletMpinLockUntil || this.lockUntil) {
+      this.failedWalletMpinAttempts = 0;
+      this.failedMpinAttempts = 0;
+      this.walletMpinLockUntil = undefined;
+      this.lockUntil = undefined;
+      if (this.db && this.db.readyState === 1) await this.save();
+    }
+    return true;
+  } else {
+    this.failedWalletMpinAttempts = (this.failedWalletMpinAttempts || 0) + 1;
+    this.failedMpinAttempts = (this.failedMpinAttempts || 0) + 1;
+    this.lastWalletMpinAttempt = Date.now();
+    this.lastMpinAttempt = Date.now();
+    if (this.failedWalletMpinAttempts >= 5 || this.failedMpinAttempts >= 5) {
+      const lockTime = Date.now() + 15 * 60 * 1000;
+      this.walletMpinLockUntil = lockTime;
+      this.lockUntil = lockTime;
+    }
+    if (this.db && this.db.readyState === 1) await this.save();
+    return false;
+  }
+};
+
+// Legacy alias to matchWalletMpin
+userSchema.methods.matchMpin = function (enteredMpin) {
+  return this.matchWalletMpin(enteredMpin);
 };
 
 // Safe client-facing representation (no hashes, masked PII).
@@ -204,8 +326,15 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     gstNumber: this.gstNumber ? mask(this.gstNumber) : null,
     kycStatus: this.kycStatus,
     isOnboarded: this.isOnboarded,
+    accountType: this.accountType || 'RETAILER',
+    hasPhysicalShop: this.hasPhysicalShop !== false,
+    businessType: this.businessType || null,
     isVerified: this.isVerified,
-    hasMpin: !!this.mpinHash,
+    hasSecurityPin: !!this.securityPinHash,
+    securityPinConfigured: !!this.securityPinHash,
+    hasWalletMpin: !!(this.walletMpinHash || this.mpinHash),
+    walletMpinConfigured: !!(this.walletMpinHash || this.mpinHash),
+    hasMpin: !!(this.walletMpinHash || this.mpinHash),
     recentContacts: this.recentContacts || [],
     fcmToken: this.fcmToken,
     createdAt: this.createdAt,

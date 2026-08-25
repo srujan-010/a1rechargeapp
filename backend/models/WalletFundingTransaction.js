@@ -70,7 +70,6 @@ const walletFundingTransactionSchema = new mongoose.Schema(
 );
 
 walletFundingTransactionSchema.index({ userId: 1, createdAt: -1 });
-walletFundingTransactionSchema.index({ razorpayOrderId: 1 });
 walletFundingTransactionSchema.index({ razorpayPaymentId: 1 });
 
 const WalletFundingTransaction = mongoose.model('WalletFundingTransaction', walletFundingTransactionSchema);

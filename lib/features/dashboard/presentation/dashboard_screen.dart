@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/operator_formatter.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/empty_state_widget.dart';
@@ -19,6 +21,7 @@ import '../../wallet_mpin/providers/wallet_mpin_provider.dart';
 import '../../commission/presentation/commission_providers.dart';
 import '../../commission/domain/models/commission_slab.dart';
 import 'dashboard_providers.dart';
+import '../../personal/presentation/personal_providers.dart';
 import 'package:flutter/services.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -59,6 +62,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final mpinState = ref.watch(walletMpinProvider);
     AppLogger.info('Dashboard Build Finished: User=${user?.name ?? "Guest/Loading"}', tag: 'Dashboard');
 
+    final isPersonal = user?.isPersonal ?? false;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -72,7 +77,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: _DashboardAppBar(user: user),
               ),
 
-              if (mpinState.walletMpinConfigured == false)
+              // ── RETAILER ONLY: MPIN Prompt ──
+              if (!isPersonal && mpinState.walletMpinConfigured == false)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.only(left: AppSpacing.pagePadding, right: AppSpacing.pagePadding, top: 16),
@@ -109,27 +115,53 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              // ── Wallet Balance Card ───────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
-                  child: _WalletBalanceCard(),
+              // ── RETAILER ONLY: Wallet Balance Card & Stats ──
+              if (!isPersonal) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: _WalletBalanceCard(),
+                  ),
                 ),
-              ),
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // ── Today's Stats ─────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
-                  child: _TodayStatsRow(),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: _TodayStatsRow(),
+                  ),
                 ),
-              ),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              ],
 
-              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              // ── PERSONAL ONLY: Lifetime Savings & Last Recharge ──
+              if (isPersonal) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: _PersonalSavingsCard(),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              // ── Quick Services ────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: _PersonalLastRechargeCard(),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: const _PersonalLastSuccessfulRechargeCard(),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              ],
+
+              // ── Quick Services Grid ───────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
@@ -137,7 +169,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Quick Services',
+                        'Recharge & Pay Bills',
                         style: AppTextTheme.textTheme.titleLarge,
                       ),
                       const SizedBox(height: 16),
@@ -149,15 +181,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
               const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-              // ── Commission Preview Card ───────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
-                  child: const _CommissionPreviewCard(),
+              // ── PERSONAL ONLY: Frequent Numbers & Benefits Banner ──
+              if (isPersonal) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: _PersonalFrequentNumbersRow(),
+                  ),
                 ),
-              ),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: const _PersonalBenefitsBanner(),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              ],
+
+              // ── RETAILER ONLY: Commission Preview Card ──
+              if (!isPersonal) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: const _CommissionPreviewCard(),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              ],
 
               // ── Recent Transactions ───────────────────────────────
               SliverToBoxAdapter(
@@ -179,6 +231,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               SliverToBoxAdapter(
                 child: _RecentTransactionsList(),
               ),
+
+              if (isPersonal) ...[
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
+                    child: const _WhyA1RechargeCard(),
+                  ),
+                ),
+              ],
               
               const SliverToBoxAdapter(child: SizedBox(height: 100)), // padding for floating bottom nav
             ],
@@ -347,25 +409,31 @@ class _DashboardAppBar extends ConsumerWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: user?.isPersonal == true ? const Color(0xFFF1F5F9) : const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(color: user?.isPersonal == true ? const Color(0xFFCBD5E1) : const Color(0xFFBFDBFE)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.storefront_rounded, size: 14, color: AppColors.primaryBlue),
+                          Icon(
+                            user?.isPersonal == true ? Icons.person_rounded : Icons.storefront_rounded,
+                            size: 14,
+                            color: user?.isPersonal == true ? const Color(0xFF475569) : AppColors.primaryBlue,
+                          ),
                           const SizedBox(width: 4),
                           Text(
-                            retailerId,
-                            style: const TextStyle(
-                              color: AppColors.primaryBlue,
+                            user?.isPersonal == true ? 'Personal' : retailerId,
+                            style: TextStyle(
+                              color: user?.isPersonal == true ? const Color(0xFF475569) : AppColors.primaryBlue,
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.copy_rounded, size: 12, color: AppColors.primaryBlue),
+                          if (user?.isPersonal != true) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.copy_rounded, size: 12, color: AppColors.primaryBlue),
+                          ],
                         ],
                       ),
                     ),
@@ -1400,6 +1468,807 @@ class _CommissionPreviewRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── PERSONAL HOME WIDGETS ───────────────────────────────────────────────────
+
+class _PersonalSavingsCard extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final savingsAsync = ref.watch(personalSavingsProvider);
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2563EB).withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: savingsAsync.when(
+          data: (s) {
+            final hasSavings = s.lifetimeSavings > 0;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.savings_outlined, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text('Your Savings', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 14)),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () => context.push(RouteNames.personalBenefits),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: const Text('View Savings →', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                if (hasSavings) ...[
+                  Text(
+                    '💰 You\'ve Saved ${CurrencyFormatter.fromRupees(s.lifetimeSavings)}',
+                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Lifetime Savings', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _SavingsStat(label: 'This Month', amount: CurrencyFormatter.fromRupees(s.monthlySavings)),
+                      _SavingsStat(label: 'Last Month', amount: CurrencyFormatter.fromRupees(s.previousMonthSavings)),
+                    ],
+                  ),
+                ] else ...[
+                  const Text(
+                    'Start saving with your first recharge 💙',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Get instant discounts on every prepaid mobile, DTH, and bill payment.',
+                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ],
+            );
+          },
+          loading: () => const SizedBox(height: 100, child: Center(child: CircularProgressIndicator(color: Colors.white))),
+          error: (err, _) => const Text('Savings unavailable', style: TextStyle(color: Colors.white70)),
+        ),
+      ),
+    );
+  }
+}
+
+class _SavingsStat extends StatelessWidget {
+  final String label;
+  final String amount;
+
+  const _SavingsStat({required this.label, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 2),
+        Text(amount, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+      ],
+    );
+  }
+}
+
+class _PersonalLastRechargeCard extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lastRechargeAsync = ref.watch(lastRechargeProvider);
+
+    return lastRechargeAsync.when(
+      data: (txn) {
+        if (txn == null) return const SizedBox.shrink();
+
+        final cardType = txn.cardType;
+
+        final displayOpName = OperatorFormatter.getDisplayOperatorName(txn.operatorName);
+
+        // ── CASE 1 & CASE 5: PLAN STATUS / NO PLAN ──
+        if (cardType == 'PLAN_STATUS' || cardType == 'NO_PLAN') {
+          final isExpired = txn.colorState == 'EXPIRED';
+          final isRed = txn.colorState == 'RED';
+          final isAmber = txn.colorState == 'AMBER';
+
+          Color statusColor = AppColors.success;
+          Color statusBg = AppColors.success.withOpacity(0.1);
+          if (isExpired || isRed) {
+            statusColor = AppColors.error;
+            statusBg = AppColors.error.withOpacity(0.1);
+          } else if (isAmber) {
+            statusColor = const Color(0xFFD97706); // Amber
+            statusBg = const Color(0xFFFEF3C7);
+          }
+
+          String badgeText = 'Active Plan';
+          if (isExpired) {
+            badgeText = 'Plan Expired';
+          } else if (txn.validity != null && txn.validity!.isNotEmpty) {
+            badgeText = txn.validity!;
+          } else if (txn.daysRemaining != null) {
+            badgeText = '${txn.daysRemaining} days remaining';
+          }
+
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primaryBlue),
+                        const SizedBox(width: 8),
+                        Text(
+                          txn.title.isNotEmpty ? txn.title : 'Your Plan',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        ),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () => context.push(RouteNames.mobileRecharge),
+                      child: const Text('View Details →', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (cardType == 'PLAN_STATUS') ...[
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
+                        child: Text(
+                          displayOpName.isNotEmpty ? displayOpName[0] : 'P',
+                          style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                if (txn.amount > 0) ...[
+                                  const SizedBox(width: 6),
+                                  Text(CurrencyFormatter.fromRupees(txn.amount), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.primaryBlue)),
+                                ],
+                              ],
+                            ),
+                            if (txn.mobileNumber.isNotEmpty)
+                              Text(txn.mobileNumber, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: statusBg,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  // CASE 5: New user with zero recharges
+                  const Text(
+                    'No active plan yet',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Start your first recharge and track your savings.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => context.push(RouteNames.mobileRecharge),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      isExpired
+                          ? 'Recharge Now'
+                          : (cardType == 'NO_PLAN' ? 'View Plans & Recharge' : 'Recharge Again'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ── STATE 2 & 3: PENDING / FAILED / SUCCESS RECHARGE CARD ──
+        final isPending = cardType == 'PENDING';
+        final isFailed = cardType == 'FAILED';
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isPending
+                  ? const Color(0xFFF59E0B)
+                  : (isFailed ? AppColors.error.withOpacity(0.5) : const Color(0xFFE2E8F0)),
+            ),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    txn.title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.textPrimary),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => context.go(RouteNames.transactionHistory),
+                    child: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: isPending
+                        ? const Color(0xFFFEF3C7)
+                        : (isFailed ? AppColors.error.withOpacity(0.1) : AppColors.primaryBlueLight.withOpacity(0.2)),
+                    child: Text(
+                      displayOpName.isNotEmpty ? displayOpName[0] : 'R',
+                      style: TextStyle(
+                        color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        const SizedBox(height: 2),
+                        Text(txn.mobileNumber, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                        if (isFailed && txn.failureReason != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            txn.failureReason!,
+                            style: const TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.w500),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        CurrencyFormatter.fromRupees(txn.amount),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primaryBlue),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isPending
+                              ? const Color(0xFFFEF3C7)
+                              : (isFailed ? AppColors.error.withOpacity(0.1) : AppColors.success.withOpacity(0.1)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          isPending ? 'PENDING' : (isFailed ? 'FAILED' : '✓ Successful'),
+                          style: TextStyle(
+                            color: isPending
+                                ? const Color(0xFFD97706)
+                                : (isFailed ? AppColors.error : AppColors.success),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    if (isPending) {
+                      context.go(RouteNames.transactionHistory);
+                    } else {
+                      context.pushNamed(
+                        RouteNames.mobileRecharge,
+                        extra: {
+                          'phoneNumber': txn.mobileNumber,
+                          'operatorCode': txn.operatorCode,
+                        },
+                      );
+                    }
+                  },
+                  icon: Icon(isPending ? Icons.info_outline : Icons.refresh_rounded, size: 18),
+                  label: Text(
+                    isPending ? 'View Details' : (isFailed ? 'Try Again' : 'Recharge Again'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
+                    side: BorderSide(
+                      color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _PersonalLastSuccessfulRechargeCard extends ConsumerWidget {
+  const _PersonalLastSuccessfulRechargeCard();
+
+  String _formatDate(String isoString) {
+    if (isoString.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return DateFormat('dd MMM yyyy').format(dt);
+    } catch (_) {
+      return isoString;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lastSuccessAsync = ref.watch(lastSuccessfulRechargeProvider);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.history_rounded, size: 18, color: AppColors.primaryBlue),
+                  SizedBox(width: 8),
+                  Text(
+                    'Last Recharge',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              TextButton(
+                onPressed: () => context.go(RouteNames.transactionHistory),
+                child: const Text(
+                  'View History →',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          lastSuccessAsync.when(
+            data: (txn) {
+              if (txn == null) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'No recharge yet',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Complete your first recharge to see your latest recharge here.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              final formattedDate = _formatDate(txn.rechargeDate);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
+                        child: Text(
+                          txn.operatorName.isNotEmpty ? txn.operatorName[0] : '📱',
+                          style: const TextStyle(
+                            color: AppColors.primaryBlue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              txn.operatorName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            if (txn.mobileNumber.isNotEmpty)
+                              Text(
+                                txn.mobileNumber,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            CurrencyFormatter.fromRupees(txn.amount),
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          if (formattedDate.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              formattedDate,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF15803D)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Successful',
+                              style: TextStyle(
+                                color: Color(0xFF15803D),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (err, _) => const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'No recharge yet',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Complete your first recharge to see your latest recharge here.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PersonalFrequentNumbersRow extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final frequentAsync = ref.watch(frequentNumbersProvider);
+
+    return frequentAsync.when(
+      data: (numbers) {
+        if (numbers.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Quick Recharge', style: AppTextTheme.textTheme.titleLarge),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: numbers.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final fn = numbers[index];
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: const Color(0xFFEFF6FF),
+                          child: Icon(
+                            fn.operatorName.contains('DTH') ? Icons.tv_rounded : Icons.phone_android_rounded,
+                            size: 16,
+                            color: AppColors.primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(fn.mobileNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                            Text(fn.operatorName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () {
+                            context.pushNamed(
+                              RouteNames.mobileRecharge,
+                              extra: {'phoneNumber': fn.mobileNumber},
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryBlue,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text('Recharge', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _PersonalBenefitsBanner extends StatelessWidget {
+  const _PersonalBenefitsBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push(RouteNames.personalBenefits),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(
+                color: AppColors.primaryBlue,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.percent_rounded, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Benefits & Savings Chart 📊', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.textPrimary)),
+                  SizedBox(height: 2),
+                  Text('Check active savings rates across all operators & services.', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.primaryBlue),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WhyA1RechargeCard extends StatelessWidget {
+  const _WhyA1RechargeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Why A1 Recharge? ⚡', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary)),
+          const SizedBox(height: 12),
+          _FeatureRow(icon: Icons.flash_on_rounded, title: 'Instant Processing', subtitle: 'Direct high-speed operator connections'),
+          const SizedBox(height: 10),
+          _FeatureRow(icon: Icons.savings_rounded, title: 'Instant Savings', subtitle: 'Automatic upfront discounts on every recharge'),
+          const SizedBox(height: 10),
+          _FeatureRow(icon: Icons.lock_outline_rounded, title: '100% Secure Payments', subtitle: 'Protected by Razorpay bank-grade encryption'),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _FeatureRow({required this.icon, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.primaryBlue, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text(subtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

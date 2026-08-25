@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { getBalance, getStatement, topupWallet, getDashboardSummary, getDashboardAnalytics } = require('../controllers/walletController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, requireRetailer } = require('../middleware/authMiddleware');
 
 router.use(protect);
+router.use(requireRetailer);
 
 router.get('/balance', getBalance);
 router.get('/statement', getStatement);

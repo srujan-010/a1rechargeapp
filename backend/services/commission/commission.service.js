@@ -73,9 +73,16 @@ class CommissionService {
         const retailerPercent = this._safeFloat(commissionRule.retailerCommission ?? commissionRule.commissionValue, 0);
         const companyPercent = this._safeFloat(commissionRule.companyCommission, 0);
 
+        // Personal rate is explicitly set on operator commission, or defaults to (retailer - adjustment)
+        const personalAdjustment = this._safeFloat(process.env.PERSONAL_COMMISSION_ADJUSTMENT, 0.20);
+        const personalPercent = commissionRule.personalCommission != null
+          ? this._safeFloat(commissionRule.personalCommission, 0)
+          : this._safeFloat(Math.max(0, retailerPercent - personalAdjustment), 0);
+
         const providerAmount = this._safeFloat((safeAmount * providerPercent) / 100, 0);
         const retailerAmount = this._safeFloat((safeAmount * retailerPercent) / 100, 0);
         const companyAmount = this._safeFloat((safeAmount * companyPercent) / 100, 0);
+        const personalDiscountAmount = this._safeFloat((safeAmount * personalPercent) / 100, 0);
 
         console.log('\n====================================================');
         console.log('[COMMISSION CONFIG FOUND]');
@@ -84,6 +91,7 @@ class CommissionService {
         console.log(`serviceType: ${commissionRule.serviceType}`);
         console.log(`providerCommissionPercent: ${providerPercent}`);
         console.log(`retailerCommissionPercent: ${retailerPercent}`);
+        console.log(`personalCommissionPercent: ${personalPercent}`);
         console.log(`active: ${commissionRule.status}`);
         console.log('====================================================\n');
 
@@ -92,6 +100,8 @@ class CommissionService {
           providerCommissionAmount: providerAmount,
           retailerCommissionPercentage: retailerPercent,
           retailerCommissionAmount: retailerAmount,
+          personalCommissionPercentage: personalPercent,
+          personalDiscountAmount: personalDiscountAmount,
           companyProfitPercentage: companyPercent,
           companyProfitAmount: companyAmount,
           commissionRecordId: String(commissionRule._id),

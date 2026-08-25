@@ -7,13 +7,30 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../domain/models/aeps_models.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import 'aeps_providers.dart';
 
-class AepsScreen extends ConsumerWidget {
+class AepsScreen extends ConsumerStatefulWidget {
   const AepsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AepsScreen> createState() => _AepsScreenState();
+}
+
+class _AepsScreenState extends ConsumerState<AepsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'AEPS') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('AEPS');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final types = [
       {
         'title': 'Cash Withdrawal',

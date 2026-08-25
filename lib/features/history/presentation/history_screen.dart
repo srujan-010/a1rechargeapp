@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
+import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -100,9 +101,23 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    void handleBack() {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(RouteNames.dashboard);
+      }
+    }
+
     if (widget.txnId != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Transaction Details')),
+        appBar: AppBar(
+          title: const Text('Transaction Details'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: handleBack,
+          ),
+        ),
         body: Center(
           child: Text('Details for ${widget.txnId} (Coming Soon)'),
         ),
@@ -161,7 +176,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               ),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => context.pop(),
+                onPressed: handleBack,
               ),
               titleSpacing: 0,
               title: _isSearchActive

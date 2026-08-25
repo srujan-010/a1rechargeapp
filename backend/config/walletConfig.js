@@ -29,7 +29,7 @@ const isAdminCreditEnabled = () => {
 };
 
 const getRazorpayKeyId = () => {
-  return process.env.RAZORPAY_KEY_ID || 'rzp_live_TKPje1gjpvHTve';
+  return process.env.RAZORPAY_KEY_ID || 'rzp_live_TT5zU7nK3KcH8Y';
 };
 
 module.exports = {

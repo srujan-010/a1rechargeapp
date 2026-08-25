@@ -6,6 +6,7 @@ const WalletLedger = require('../models/WalletLedger');
 const Transaction = require('../models/Transaction');
 const WalletFundingTransaction = require('../models/WalletFundingTransaction');
 const Notification = require('../models/Notification');
+const notificationService = require('../services/notification.service');
 const { isRazorpayEnabled, getRazorpayKeyId } = require('../config/walletConfig');
 
 /**
@@ -325,14 +326,13 @@ const verifyPayment = async (req, res, next) => {
       completedAt: new Date(),
     });
 
-    // Send Notification
-    await Notification.create({
+    // Send Notification via Central Notification Service
+    notificationService.notifyWalletTopupSuccess({
       userId: req.user._id,
-      title: 'Wallet Credited via Razorpay',
-      message: `₹${wft.amountRupees.toFixed(2)} added to wallet. New balance: ₹${walletAfterRupees.toFixed(2)}`,
-      category: 'SUCCESS',
-      priority: 'NORMAL',
-      action: 'ROUTE_WALLET',
+      amount: wft.amountRupees,
+      razorpayPaymentId,
+      referenceId: wft.internalTransactionId,
+      transactionId: wft.internalTransactionId
     });
 
     // Update Transaction State to SUCCESS

@@ -7,6 +7,9 @@ import '../../../core/widgets/app_card.dart';
 import 'kyc_provider.dart';
 import 'widgets/kyc_forms.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+
 class KycScreen extends ConsumerWidget {
   const KycScreen({super.key});
 
@@ -18,6 +21,10 @@ class KycScreen extends ConsumerWidget {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('KYC Verification'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.profileView),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: AppColors.textPrimary),

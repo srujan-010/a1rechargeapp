@@ -6,6 +6,9 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_card.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+
 class BbpsScreen extends StatelessWidget {
   const BbpsScreen({super.key});
 
@@ -26,6 +29,10 @@ class BbpsScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Pay Bills'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),

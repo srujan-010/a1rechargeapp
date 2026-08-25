@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
@@ -25,8 +27,8 @@ class MobileRechargeScreen extends ConsumerStatefulWidget {
   ConsumerState<MobileRechargeScreen> createState() => _MobileRechargeScreenState();
 }
 
-class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> with SingleTickerProviderStateMixin {
-  final _phoneController = TextEditingController();
+class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
+  final TextEditingController _phoneController = TextEditingController();
   final FocusNode _phoneFocusNode = FocusNode();
 
 
@@ -41,17 +43,19 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     _checkPermissionStatus();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final state = ref.read(rechargeFlowProvider);
-      // If previous state was DTH or stale, reset it
-      if (state.operator != null && state.operator!.type == OperatorType.dth) {
-        ref.read(rechargeFlowProvider.notifier).reset();
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'PREPAID') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('PREPAID');
         _phoneController.clear();
         _searchController.clear();
         _phoneFocusNode.requestFocus();
-      } else if (state.phoneNumber != null) {
-        _phoneController.text = state.phoneNumber!;
       } else {
-        _phoneFocusNode.requestFocus();
+        final state = ref.read(rechargeFlowProvider);
+        if (state.phoneNumber != null) {
+          _phoneController.text = state.phoneNumber!;
+        } else {
+          _phoneFocusNode.requestFocus();
+        }
       }
     });
   }
@@ -108,7 +112,8 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
   }
 
   Future<void> _resolveOperator(String phone) async {
-    debugPrint('[FLOW] Calling resolve API for phone: $phone');
+    final requestSessionId = ref.read(rechargeSessionProvider).sessionId;
+    debugPrint('[FLOW] Calling resolve API for phone: $phone (sessionId: $requestSessionId)');
     try {
       final repo = ref.read(mobilePlanRepositoryProvider);
       final result = await repo.detectOperator(phone);
@@ -118,6 +123,11 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
         ..onSuccess((res) async {
           debugPrint('[FLOW] Parsing JSON successful. Updating operator and circle.');
           if (!mounted) return;
+
+          // Guard against stale async responses from a previous session
+          if (!ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+            return;
+          }
           
           final operatorName = res.operatorName;
           final circleName = res.circleName;
@@ -135,6 +145,10 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
             orElse: () => Circle(id: '', state: circleName, code: res.circleCode ?? ''),
           );
 
+          if (!ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+            return;
+          }
+
           if (opResult != null && circleResult != null) {
             ref.read(rechargeFlowProvider.notifier).setAutoDetection(opResult, circleResult);
           } else {
@@ -144,12 +158,16 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
         })
         ..onFailure((err) {
           debugPrint('[FLOW] resolveOperator failed: $err');
-          ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+          if (ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+            ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+          }
         });
     } catch (e, st) {
       debugPrint('[FLOW] resolveOperator threw exception: $e');
       debugPrintStack(stackTrace: st);
-      ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+      if (ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+        ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+      }
     }
   }
 
@@ -375,13 +393,23 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
     final bool hasOperator = state.operator != null && state.circle != null;
     final bool hasPlan = state.customAmountPaise != null && state.customAmountPaise! > 0;
     
-    return Scaffold(
-      backgroundColor: AppColors.background,
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          ref.read(rechargeSessionProvider.notifier).endSession();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Mobile Recharge', style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context),
+        ),
       ),
       body: SafeArea(
         child: Column(
@@ -815,8 +843,9 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> wit
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _CategorySelectorDelegate extends SliverPersistentHeaderDelegate {

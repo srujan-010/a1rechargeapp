@@ -1,6 +1,7 @@
 const Wallet = require('../models/Wallet');
 const Bank = require('../models/Bank');
 const Kyc = require('../models/Kyc');
+const notificationService = require('../services/notification.service');
 
 // @desc    Get full retailer profile
 // @route   GET /api/user/profile
@@ -45,6 +46,8 @@ const updateProfile = async (req, res, next) => {
 
     Object.assign(req.user, updates);
     await req.user.save();
+
+    notificationService.notifyProfileUpdated({ userId: req.user._id });
 
     res.status(200).json({
       success: true,

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/utils/operator_formatter.dart';
 import '../../../core/utils/logger.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import '../../../core/models/app_exception.dart';
@@ -100,17 +101,46 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   Future<void> _initiateRecharge() async {
     final mpin = widget.data['mpin'] as String?;
     final paymentMode = (widget.data['paymentMode'] as String?) ?? 'wallet';
+    final existingReceipt = widget.data['receipt'] as RechargeReceipt?;
+    final existingOrderId = widget.data['orderId'] as String?;
 
     try {
-      AppLogger.info('[Recharge Creation Initiated]', tag: 'RechargeProcessing');
-      final receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(
-            mpin: mpin,
-            paymentMode: paymentMode,
-          );
+      RechargeReceipt receipt;
+
+      if (existingReceipt != null) {
+        AppLogger.info(
+          '[Processing Screen] Existing receipt provided (Mode: ${paymentMode.toUpperCase()}). Status: ${existingReceipt.status.name}, TxnID: ${existingReceipt.transactionId}',
+          tag: 'RechargeProcessing',
+        );
+        receipt = existingReceipt;
+      } else if (existingOrderId != null) {
+        AppLogger.info(
+          '[Processing Screen] Existing order ID provided: $existingOrderId. Checking status from backend...',
+          tag: 'RechargeProcessing',
+        );
+        final statusRes = await ref.read(rechargeRepositoryProvider).checkRechargeStatus(existingOrderId);
+        receipt = statusRes.valueOrNull ??
+            RechargeReceipt(
+              transactionId: existingOrderId,
+              referenceId: existingOrderId,
+              operatorRef: 'Processing...',
+              status: RechargeStatus.processing,
+              amountPaise: widget.data['amountPaise'] as int? ?? 0,
+              mobileNumber: widget.data['phoneNumber'] as String? ?? '',
+              operatorName: widget.data['operatorName'] as String? ?? 'Operator',
+              timestamp: DateTime.now(),
+            );
+      } else {
+        AppLogger.info('[Processing Screen] Initiating new Wallet recharge request...', tag: 'RechargeProcessing');
+        receipt = await ref.read(rechargeFlowProvider.notifier).processRecharge(
+              mpin: mpin,
+              paymentMode: paymentMode,
+            );
+      }
 
       _activeReceipt = receipt;
       final orderId = receipt.transactionId;
-      AppLogger.info('[Recharge Created] Order ID: $orderId, Initial Status: ${receipt.status.name}', tag: 'RechargeProcessing');
+      AppLogger.info('[Recharge Status Evaluated] Order ID: $orderId, Status: ${receipt.status.name}', tag: 'RechargeProcessing');
 
       if (!mounted) return;
 
@@ -488,7 +518,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '$operatorName • $phoneNumber',
+                    '${OperatorFormatter.getDisplayOperatorName(operatorName)} • $phoneNumber',
                     style: const TextStyle(
                       color: Color(0xFF64748B),
                       fontSize: 15,
@@ -503,6 +533,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
                     currentStep: _currentStep,
                     pulseAnimation: _pulseController,
                     isSuccess: _isSuccess,
+                    paymentMode: (widget.data['paymentMode'] as String?) ?? 'wallet',
                   ),
 
                   const SizedBox(height: 16),
@@ -807,14 +838,18 @@ class _StatusTimelineCard extends StatelessWidget {
   final AnimationController pulseAnimation;
   final bool isSuccess;
 
+  final String paymentMode;
+
   const _StatusTimelineCard({
     required this.currentStep,
     required this.pulseAnimation,
     required this.isSuccess,
+    this.paymentMode = 'wallet',
   });
 
   @override
   Widget build(BuildContext context) {
+    final isUpi = paymentMode.toLowerCase() != 'wallet';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 22.0),
@@ -836,8 +871,8 @@ class _StatusTimelineCard extends StatelessWidget {
           _StepItem(
             stepIndex: 0,
             currentStep: currentStep,
-            title: 'Wallet verified',
-            subtitle: 'Your wallet balance is verified',
+            title: isUpi ? 'Payment verified' : 'Wallet verified',
+            subtitle: isUpi ? 'Razorpay payment confirmed' : 'Your wallet balance is verified',
             pulseAnimation: pulseAnimation,
             isLast: false,
             isSuccess: isSuccess,

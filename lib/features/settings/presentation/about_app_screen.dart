@@ -3,6 +3,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/theme/app_spacing.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 
 class AboutAppScreen extends StatelessWidget {
   const AboutAppScreen({super.key});
@@ -13,6 +15,10 @@ class AboutAppScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('About A1 Recharge'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
       ),

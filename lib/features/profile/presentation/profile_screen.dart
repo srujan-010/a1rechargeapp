@@ -9,6 +9,10 @@ import '../../../core/providers/core_providers.dart';
 
 import '../../../core/widgets/premium_logout_sheet.dart';
 import '../../../features/auth/provider/auth_provider.dart';
+import '../../wallet_mpin/providers/wallet_mpin_provider.dart';
+import 'profile_providers.dart';
+
+import '../../security_pin/providers/security_pin_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -23,6 +27,14 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sessionAsync = ref.watch(sessionProvider);
     final user = sessionAsync.valueOrNull;
+
+    final secPinState = ref.watch(securityPinProvider);
+    final bool isSecPinConfigured = secPinState.securityPinConfigured ?? (user?.hasSecurityPin ?? false);
+
+    final mpinState = ref.watch(walletMpinProvider);
+    final bool isWalletMpinConfigured = mpinState.walletMpinConfigured ?? (user?.hasWalletMpin ?? false);
+
+    final bool isBiometricEnabled = ref.watch(biometricStateProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -85,24 +97,68 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                         const _Divider(),
                         _ProfileMenuItem(
-                          icon: Icons.lock_outline,
-                          label: 'Change MPIN',
-                          subtitle: 'Update your security PIN',
-                          onTap: () => context.push(RouteNames.changeMpin),
+                          icon: Icons.shield_outlined,
+                          label: 'Security PIN',
+                          subtitle: isSecPinConfigured
+                              ? 'Protecting app & account access'
+                              : 'Set up 6-digit PIN for app security',
+                          onTap: () => context.push(RouteNames.securityPin),
                         ),
                         const _Divider(),
                         _ProfileMenuItem(
-                          icon: Icons.admin_panel_settings_outlined,
-                          label: 'Admin Wallet Credit',
-                          subtitle: 'Fund retailer wallets & view audit logs',
-                          onTap: () => context.push(RouteNames.adminWalletCredit),
+                          icon: Icons.payment_outlined,
+                          label: 'Wallet MPIN',
+                          subtitle: isWalletMpinConfigured
+                              ? 'Authorize wallet payments'
+                              : 'Set up 6-digit payment MPIN',
+                          onTap: () => context.push(RouteNames.walletMpin),
                         ),
                         const _Divider(),
                         _ProfileMenuItem(
-                          icon: Icons.restore,
-                          label: 'Forgot MPIN',
-                          subtitle: 'Reset your security PIN',
-                          onTap: () => context.push(RouteNames.forgotMpin),
+                          icon: Icons.fingerprint,
+                          label: 'Biometric Login',
+                          subtitle: 'Use fingerprint or Face ID for faster sign-in',
+                          trailing: Switch.adaptive(
+                            value: isBiometricEnabled,
+                            activeColor: AppColors.primaryBlue,
+                            onChanged: (val) async {
+                              final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(val);
+                              if (error != null && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(error),
+                                    backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
+                                  ),
+                                );
+                              } else if (val && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Biometric login enabled successfully.'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          onTap: () async {
+                            final newValue = !isBiometricEnabled;
+                            final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(newValue);
+                            if (error != null && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(error),
+                                  backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
+                                ),
+                              );
+                            } else if (newValue && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Biometric login enabled successfully.'),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              );
+                            }
+                          },
                         ),
                       ],
                     ),

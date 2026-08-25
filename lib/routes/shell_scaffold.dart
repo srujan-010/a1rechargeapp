@@ -5,15 +5,19 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/theme/app_colors.dart';
+import '../core/services/recharge_session_manager.dart';
 
-class ShellScaffold extends StatelessWidget {
+import '../core/providers/core_providers.dart';
+
+class ShellScaffold extends ConsumerWidget {
   const ShellScaffold({super.key, required this.shell});
 
   final StatefulNavigationShell shell;
 
-  static const _tabs = [
+  static const _retailerTabs = [
     _TabItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home'),
     _TabItem(icon: Icons.history_outlined, activeIcon: Icons.history, label: 'History'),
     _TabItem(icon: Icons.grid_view_outlined, activeIcon: Icons.grid_view, label: 'Services'),
@@ -21,19 +25,50 @@ class ShellScaffold extends StatelessWidget {
     _TabItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile'),
   ];
 
+  static const _personalTabs = [
+    _TabItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home'),
+    _TabItem(icon: Icons.history_outlined, activeIcon: Icons.history, label: 'History'),
+    _TabItem(icon: Icons.grid_view_outlined, activeIcon: Icons.grid_view, label: 'Services'),
+    _TabItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Profile'),
+  ];
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userSession = ref.watch(sessionProvider).valueOrNull;
+    final isPersonal = userSession?.isPersonal ?? false;
+    final activeTabs = isPersonal ? _personalTabs : _retailerTabs;
+
+    // Map personal tab index to shell branch index (since personal skips Wallet at branch index 3)
+    int getBranchIndex(int tabIndex) {
+      if (!isPersonal) return tabIndex;
+      // For personal: Tab 0 -> Branch 0 (Home), Tab 1 -> Branch 1 (History), Tab 2 -> Branch 2 (Services), Tab 3 -> Branch 4 (Profile)
+      if (tabIndex < 3) return tabIndex;
+      return 4;
+    }
+
+    int getTabIndex(int branchIndex) {
+      if (!isPersonal) return branchIndex;
+      if (branchIndex < 3) return branchIndex;
+      if (branchIndex == 4) return 3;
+      return 0;
+    }
+
+    final currentTabIndex = getTabIndex(shell.currentIndex);
+
     return Scaffold(
       extendBody: true, // Crucial for floating nav bar
       body: shell,
       bottomNavigationBar: _CustomBottomNav(
-        tabs: _tabs,
-        currentIndex: shell.currentIndex,
-        onTap: (index) {
+        tabs: activeTabs,
+        currentIndex: currentTabIndex,
+        onTap: (tabIndex) {
           HapticFeedback.lightImpact();
+          // Leaving current service flow on bottom nav tab change
+          ref.read(rechargeSessionProvider.notifier).endSession();
+          final targetBranch = getBranchIndex(tabIndex);
           shell.goBranch(
-            index,
-            initialLocation: index == shell.currentIndex,
+            targetBranch,
+            initialLocation: targetBranch == shell.currentIndex,
           );
         },
       ),

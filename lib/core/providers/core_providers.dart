@@ -123,13 +123,19 @@ class SessionUser {
   final String name;
   final String? email;
   final String retailerId;
+  final String accountType;
   final String kycStatus;
   final String? dob;
   final String? gender;
   final String? avatarUrl;
   final bool hasMpin;
+  final bool hasSecurityPin;
+  final bool hasWalletMpin;
   final bool isVerified;
   final bool isOnboarded;
+
+  bool get isPersonal => accountType.toUpperCase() == 'PERSONAL';
+  bool get isRetailer => !isPersonal;
   
   // Shop details
   final String? shopName;
@@ -152,11 +158,14 @@ class SessionUser {
     required this.name,
     this.email,
     required this.retailerId,
+    this.accountType = 'RETAILER',
     required this.kycStatus,
     this.dob,
     this.gender,
     this.avatarUrl,
     required this.hasMpin,
+    this.hasSecurityPin = false,
+    this.hasWalletMpin = false,
     required this.isVerified,
     required this.isOnboarded,
     this.shopName,
@@ -186,10 +195,14 @@ class SessionUser {
     final String extractedName = (json['name'] ?? json['fullName'] ?? json['retailerName'] ?? json['username'] ?? '').toString();
     final String? extractedEmail = json['email']?.toString() ?? json['emailId']?.toString();
     final String extractedRetailerId = (json['retailerId'] ?? json['retailer_id'] ?? json['merchantId'] ?? json['merchant_id'] ?? '').toString();
+    final String extractedAccountType = (json['accountType'] ?? json['account_type'] ?? 'RETAILER').toString().toUpperCase();
     final String extractedKycStatus = (json['kycStatus'] ?? json['kyc_status'] ?? (json['kyc'] is Map ? json['kyc']['status'] : null) ?? 'notStarted').toString();
     final String? extractedAvatar = json['avatarUrl']?.toString() ?? json['profilePhoto']?.toString() ?? json['photoUrl']?.toString() ?? json['avatar']?.toString();
     final String? extractedShopName = json['shopName']?.toString() ?? json['shop_name']?.toString() ?? json['businessName']?.toString();
     final String? extractedCreatedAt = json['createdAt']?.toString() ?? json['joinedDate']?.toString() ?? json['created_at']?.toString();
+
+    final bool mpinFlag = json['hasWalletMpin'] == true || json['walletMpinConfigured'] == true || json['hasMpin'] == true || json['has_mpin'] == true;
+    final bool secPinFlag = json['hasSecurityPin'] == true || json['securityPinConfigured'] == true;
 
     final user = SessionUser(
       id: extractedId,
@@ -197,11 +210,14 @@ class SessionUser {
       name: extractedName,
       email: extractedEmail,
       retailerId: extractedRetailerId,
+      accountType: extractedAccountType,
       kycStatus: extractedKycStatus,
       dob: json['dob']?.toString(),
       gender: json['gender']?.toString(),
       avatarUrl: extractedAvatar,
-      hasMpin: json['hasMpin'] == true || json['has_mpin'] == true,
+      hasMpin: mpinFlag,
+      hasSecurityPin: secPinFlag,
+      hasWalletMpin: mpinFlag,
       isVerified: json['isVerified'] == true || json['is_verified'] == true,
       isOnboarded: json['isOnboarded'] == true || json['is_onboarded'] == true,
       shopName: extractedShopName,
@@ -218,7 +234,7 @@ class SessionUser {
     // Task 8 Debug Logs
     print('\n========== USER MODEL ==========');
     print('API Response Raw: $rawJson');
-    print('Mapped User Model: id=${user.id}, name="${user.name}", phone="${user.phone}", retailerId="${user.retailerId}", kyc="${user.kycStatus}"');
+    print('Mapped User Model: id=${user.id}, name="${user.name}", phone="${user.phone}", retailerId="${user.retailerId}", accountType="${user.accountType}"');
     print('================================\n');
 
     return user;
@@ -230,6 +246,7 @@ class SessionUser {
     'name': name,
     'email': email,
     'retailerId': retailerId,
+    'accountType': accountType,
     'kycStatus': kycStatus,
     'dob': dob,
     'gender': gender,

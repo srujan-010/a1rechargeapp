@@ -1,24 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/logger.dart';
 import '../domain/models/recharge_result.dart';
 
-class RechargeFailedScreen extends StatelessWidget {
+class RechargeFailedScreen extends ConsumerWidget {
   final RechargeReceipt receipt;
 
   const RechargeFailedScreen({super.key, required this.receipt});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppLogger.info(
       '[Failed Screen Opened] Operator shown on Failed screen: ${receipt.operatorName} (Reason: ${receipt.failureReason})',
       tag: 'RechargeFailed',
     );
+
+    void goHome() {
+      ref.read(rechargeSessionProvider.notifier).endSession();
+      context.go(RouteNames.dashboard);
+    }
 
     final formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(receipt.timestamp);
     final failureReason = receipt.failureReason ?? 'Transaction declined by operator.';
@@ -26,7 +33,7 @@ class RechargeFailedScreen extends StatelessWidget {
 
     String explanationText = 'If any amount was debited from your wallet, it has been automatically released back to your available wallet balance.';
     String primaryButtonLabel = 'Back to Home';
-    VoidCallback onPrimaryPressed = () => context.go(RouteNames.dashboard);
+    VoidCallback onPrimaryPressed = goHome;
     bool showSecondaryButton = false;
 
     if (reasonLower.contains('mpin')) {
@@ -53,11 +60,19 @@ class RechargeFailedScreen extends StatelessWidget {
 
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          goHome();
+        }
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text('Recharge Failed', style: TextStyle(fontWeight: FontWeight.bold)),
-          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: goHome,
+          ),
           elevation: 0,
           backgroundColor: Colors.white,
         ),
@@ -198,7 +213,7 @@ class RechargeFailedScreen extends StatelessWidget {
                   SizedBox(
                     height: 52,
                     child: OutlinedButton(
-                      onPressed: () => context.go(RouteNames.dashboard),
+                      onPressed: goHome,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF1E293B),
                         side: const BorderSide(color: Color(0xFFCBD5E1)),

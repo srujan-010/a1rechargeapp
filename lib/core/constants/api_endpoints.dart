@@ -7,9 +7,23 @@ abstract final class ApiEndpoints {
   // ─── Authentication ───────────────────────────────────────────────
   static const String sendOtp = '/auth/send-otp';
   static const String verifyOtp = '/auth/verify-otp';
-  static const String setupMpin = '/auth/setup-mpin';
-  static const String verifyMpin = '/auth/verify-mpin';
-  static const String changeMpin = '/auth/change-mpin';
+  // ─── Security PIN (App Access) ────────────────────────────────────
+  static const String securityPinCreate = '/security-pin/create';
+  static const String securityPinVerify = '/security-pin/verify';
+  static const String securityPinChange = '/security-pin/change';
+  static const String securityPinForgotSendOtp = '/security-pin/forgot/send-otp';
+  static const String securityPinForgotVerifyOtp = '/security-pin/forgot/verify-otp';
+  static const String securityPinReset = '/security-pin/reset';
+  static const String securityPinStatus = '/security-pin/status';
+
+  // ─── Wallet MPIN (Payment Authorization Only) ─────────────────────
+  static const String walletMpinCreate = '/wallet-mpin/create';
+  static const String walletMpinVerify = '/wallet-mpin/verify';
+  static const String walletMpinChange = '/wallet-mpin/change';
+  static const String walletMpinForgotSendOtp = '/wallet-mpin/forgot/send-otp';
+  static const String walletMpinForgotVerifyOtp = '/wallet-mpin/forgot/verify-otp';
+  static const String walletMpinReset = '/wallet-mpin/reset';
+  static const String walletMpinStatus = '/wallet-mpin/status';
   static const String logout = '/auth/logout';
   static const String sessionCheck = '/auth/me';
 

@@ -52,23 +52,24 @@ const executeDthRecharge = async (req, res, next) => {
       });
     }
 
-    // 3. Validate MPIN
+    // 3. Validate Wallet MPIN
     if (paymentMode === 'wallet') {
-      if (!mpin) {
-        console.log(`[DTH] Validation Failed: Missing MPIN`);
+      const inputMpin = req.body.walletMpin || mpin;
+      if (!inputMpin) {
+        console.log(`[DTH] Validation Failed: Missing Wallet MPIN`);
         return res.status(400).json({
           success: false,
           step: "MPIN Validation",
-          error: "MPIN is required for wallet payments"
+          error: "Wallet MPIN is required for wallet payments"
         });
       }
-      const isMpinValid = await req.user.matchMpin(mpin);
+      const isMpinValid = await req.user.matchWalletMpin(inputMpin);
       if (!isMpinValid) {
-        console.log(`[DTH] Validation Failed: Invalid MPIN`);
+        console.log(`[DTH] Validation Failed: Invalid Wallet MPIN`);
         return res.status(400).json({
           success: false,
           step: "MPIN Validation",
-          error: "Invalid MPIN entered"
+          error: "Invalid Wallet MPIN entered"
         });
       }
     }

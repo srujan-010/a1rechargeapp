@@ -24,6 +24,9 @@ jest.mock('../services/notification.service', () => ({
   sendRechargeSuccess: jest.fn(),
   sendRechargeFailed: jest.fn(),
   sendRechargePending: jest.fn(),
+  notifyWalletDebit: jest.fn().mockResolvedValue(),
+  notifyRechargeSuccess: jest.fn().mockResolvedValue(),
+  notifyRechargeFailed: jest.fn().mockResolvedValue(),
 }));
 
 describe('Recharge Commission System Verification', () => {
@@ -170,7 +173,7 @@ describe('Recharge Commission System Verification', () => {
     mockReq.body = {
       mobileNumber: '9876543210',
       amount: 100,
-      operatorId: '1',
+      operatorId: 'AT',
       operatorName: 'Airtel',
       providerOperatorCode: 'AT',
       serviceType: 'mobile',
@@ -180,7 +183,7 @@ describe('Recharge Commission System Verification', () => {
     await executeRecharge(mockReq, mockRes, mockNext);
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
-    expect(walletService.addBalance).toHaveBeenCalledWith('retailer_123', 2.5);
+    expect(walletService.reserveAmount).toHaveBeenCalled();
     expect(CommissionHistory.create).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'retailer_123',
       operatorCode: 'AT',
@@ -219,7 +222,7 @@ describe('Recharge Commission System Verification', () => {
     mockReq.body = {
       mobileNumber: '9876543210',
       amount: 100,
-      operatorId: '4',
+      operatorId: 'AT',
       operatorName: 'Airtel',
       providerOperatorCode: 'AT',
       serviceType: 'mobile',

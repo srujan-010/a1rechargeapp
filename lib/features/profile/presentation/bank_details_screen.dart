@@ -9,6 +9,8 @@ import '../../../core/widgets/pin_entry_widget.dart';
 import '../domain/models/bank_details.dart';
 import 'bank_details_provider.dart';
 
+import '../../../core/utils/app_navigation.dart';
+
 class BankDetailsScreen extends ConsumerWidget {
   const BankDetailsScreen({super.key});
 
@@ -20,6 +22,10 @@ class BankDetailsScreen extends ConsumerWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Bank Details'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.profileView),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,

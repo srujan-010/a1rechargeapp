@@ -12,6 +12,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../commission/presentation/commission_providers.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import '../../recharge/domain/models/recharge_result.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import 'providers/dth_providers.dart';
 
 class DthReceiptScreen extends ConsumerStatefulWidget {
@@ -107,7 +108,7 @@ class _DthReceiptScreenState extends ConsumerState<DthReceiptScreen> {
           IconButton(
             icon: const Icon(Icons.close),
             onPressed: () {
-              ref.read(dthFlowProvider.notifier).reset();
+              ref.read(rechargeSessionProvider.notifier).endSession();
               context.go(RouteNames.dashboard);
             },
           ),
@@ -199,7 +200,7 @@ class _DthReceiptScreenState extends ConsumerState<DthReceiptScreen> {
               AppButton(
                 label: 'Done',
                 onPressed: () {
-                  ref.read(dthFlowProvider.notifier).reset();
+                  ref.read(rechargeSessionProvider.notifier).endSession();
                   context.go(RouteNames.dashboard);
                 },
               ),

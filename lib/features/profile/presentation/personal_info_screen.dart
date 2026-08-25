@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/logger.dart';
@@ -159,13 +161,14 @@ class _PersonalInfoScreenState extends ConsumerState<PersonalInfoScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
           onPressed: () {
             if (_hasChanges) {
               _showDiscardDialog();
             } else {
-              context.pop();
+              AppNavigation.pop(context, fallbackRoute: RouteNames.profileView);
             }
           },
         ),

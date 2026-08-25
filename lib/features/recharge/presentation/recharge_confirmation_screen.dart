@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -11,9 +12,9 @@ import '../../commission/presentation/commission_providers.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
 import '../domain/models/operator.dart';
 import 'recharge_providers.dart';
-import '../../../core/utils/upi_handler.dart';
+import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/razorpay_web_helper.dart';
 import '../../../core/utils/logger.dart';
-
 
 enum PaymentMethod { wallet, upi }
 
@@ -65,47 +66,136 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
     );
   }
 
-  Future<void> _processUpiPayment(double amount) async {
+  Future<void> _processUpiPayment() async {
     setState(() {
       _errorText = null;
       _isLoading = true;
     });
 
     try {
-      final isSuccess = await UpiHandler.startUpiPayment(
-        amount: amount,
-        upiId: '9100329521@ptyes',
-        name: 'A1 Recharge',
-        transactionNote: 'Mobile Recharge',
+      final state = ref.read(rechargeFlowProvider);
+      final isDth = state.operator?.type == OperatorType.dth;
+
+      if (state.phoneNumber == null || state.operator == null || (!isDth && state.circle == null) || state.customAmountPaise == null) {
+        setState(() {
+          _errorText = 'Incomplete recharge details.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final repo = ref.read(rechargeRepositoryProvider);
+      final serviceType = switch (state.operator!.type) {
+        OperatorType.prepaid => 'mobile',
+        OperatorType.dth => 'dth',
+        OperatorType.postpaid => 'bbps',
+      };
+
+      // Step 1: Create Razorpay Order server-side for payable amount
+      final orderRes = await repo.createRazorpayRechargeOrder(
+        phoneNumber: state.phoneNumber!,
+        operatorId: state.operator!.id,
+        operatorName: state.operator!.name,
+        circleId: state.circle?.id ?? '',
+        serviceType: serviceType,
+        amountPaise: state.customAmountPaise!,
+        planId: state.selectedPlan?.id,
+        planName: state.selectedPlan?.desc,
+        planType: state.selectedPlanType,
+        selectedCategory: state.selectedPlanCategory,
+        providerOperatorCode: state.providerOperatorCode,
       );
 
-      if (!isSuccess) {
+      final orderData = orderRes.valueOrNull;
+      if (orderData == null) {
+        final err = orderRes.errorOrNull?.message ?? 'Failed to initialize payment order.';
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment Failed or Cancelled.'), backgroundColor: AppColors.error),
+          SnackBar(content: Text(err), backgroundColor: AppColors.error),
         );
         setState(() => _isLoading = false);
         return;
       }
 
-      final state = ref.read(rechargeFlowProvider);
-      if (!mounted) return;
+      final internalTxId = orderData['internalTransactionId'] as String;
+      final razorpayOrderId = orderData['razorpayOrderId'] as String;
+      final razorpayKeyId = orderData['razorpayKeyId'] as String;
+      final payablePaise = (orderData['payableAmountPaise'] as num).toInt();
 
       AppLogger.info(
-        '[Payment Screen] Operator passed to request (UPI): ${state.operator!.name} (ID: ${state.operator!.id}, Code: ${state.operator!.shortCode}), Number: ${state.phoneNumber}, Amount: ${state.customAmountPaise}',
+        '[Razorpay Recharge Order] Created order $razorpayOrderId for internalTx $internalTxId with payable amount $payablePaise paise',
         tag: 'RechargeConfirmation',
       );
 
-      context.push(
-        RouteNames.rechargeProcessing,
-        extra: {
-          'paymentMode': 'upi',
-          'phoneNumber': state.phoneNumber,
-          'operatorId': state.operator!.id,
-          'operatorCode': state.operator!.shortCode,
-          'operatorName': state.operator!.name,
-          'amountPaise': state.customAmountPaise,
-          'circle': state.circle?.state,
+      // Step 2: Open real Razorpay Checkout modal
+      openRazorpayWebCheckout(
+        key: razorpayKeyId,
+        amount: payablePaise,
+        orderId: razorpayOrderId,
+        contact: state.phoneNumber!,
+        email: 'retailer@a1recharge.com',
+        onSuccess: (paymentId, rzpOrderId, signature) async {
+          AppLogger.info(
+            '[Razorpay Recharge Success] Payment ID: $paymentId, Order ID: $rzpOrderId',
+            tag: 'RechargeConfirmation',
+          );
+          try {
+            // Step 3: Verify Payment Signature & Execute Recharge Server-Side
+            final verifyResult = await repo.verifyRazorpayRechargePayment(
+              internalTransactionId: internalTxId,
+              razorpayOrderId: rzpOrderId,
+              razorpayPaymentId: paymentId,
+              razorpaySignature: signature,
+            );
+
+            if (!mounted) return;
+            ref.invalidate(walletBalanceProvider);
+            ref.invalidate(recentTransactionsProvider);
+            ref.invalidate(earningsSummaryProvider);
+
+            final receipt = verifyResult.valueOrNull;
+            if (receipt != null) {
+              context.push(
+                RouteNames.rechargeProcessing,
+                extra: {
+                  'orderId': internalTxId,
+                  'receipt': receipt,
+                  'paymentMode': 'upi',
+                  'phoneNumber': state.phoneNumber,
+                  'operatorId': state.operator!.id,
+                  'operatorCode': state.operator!.shortCode,
+                  'operatorName': state.operator!.name,
+                  'amountPaise': state.customAmountPaise,
+                  'circle': state.circle?.state,
+                },
+              );
+            } else {
+              final errMsg = verifyResult.errorOrNull?.message ?? 'Payment verification or recharge execution failed.';
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(errMsg), backgroundColor: AppColors.error),
+              );
+            }
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Verification error: ${e.toString()}'), backgroundColor: AppColors.error),
+            );
+          } finally {
+            if (mounted) setState(() => _isLoading = false);
+          }
+        },
+        onError: (err) {
+          AppLogger.error('[Razorpay Recharge Error] $err', tag: 'RechargeConfirmation');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Payment Cancelled or Failed.'), backgroundColor: AppColors.error),
+          );
+          setState(() => _isLoading = false);
+        },
+        onDismiss: () {
+          AppLogger.info('[Razorpay Recharge Modal Dismissed]', tag: 'RechargeConfirmation');
+          if (!mounted) return;
+          setState(() => _isLoading = false);
         },
       );
     } catch (e) {
@@ -149,35 +239,71 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         ? state.operator!.name 
         : (state.circle != null ? '${state.operator!.name} • ${state.circle!.state}' : state.operator!.name);
 
-    final slabsAsync = ref.watch(activeCommissionSlabsProvider);
-    double commissionEarnedPaise = 0;
-    String commissionDisplay = '0.00%';
+    final serviceType = switch (state.operator?.type ?? OperatorType.prepaid) {
+      OperatorType.prepaid => 'mobile',
+      OperatorType.dth => 'dth',
+      OperatorType.postpaid => 'bbps',
+    };
 
-    slabsAsync.whenData((slabs) {
-      final slab = slabs.where((s) => s.operatorName.toLowerCase() == state.operator!.name.toLowerCase()).firstOrNull;
-      if (slab != null) {
-        if (slab.commissionType == 'percentage') {
-          commissionEarnedPaise = (state.customAmountPaise! * slab.commissionValue / 100);
-          commissionDisplay = '${slab.commissionValue.toStringAsFixed(2)}%';
-        } else {
-          commissionEarnedPaise = slab.commissionValue * 100;
-          commissionDisplay = '₹${slab.commissionValue.toStringAsFixed(2)} Flat';
-        }
+    final payableAsync = ref.watch(rechargePayableProvider((
+      phoneNumber: state.phoneNumber ?? '',
+      operatorId: state.operator?.id ?? '',
+      operatorName: state.operator?.name ?? '',
+      circleId: state.circle?.id ?? '',
+      serviceType: serviceType,
+      amountPaise: state.customAmountPaise ?? 0,
+      planType: state.selectedPlanType,
+    )));
+
+    int rechargeAmountPaise = state.customAmountPaise ?? 0;
+    int commissionAmountPaise = 0;
+    int payableAmountPaise = rechargeAmountPaise;
+
+    payableAsync.whenData((data) {
+      if (data.isNotEmpty) {
+        rechargeAmountPaise = (data['rechargeAmountPaise'] as num?)?.toInt() ?? rechargeAmountPaise;
+        commissionAmountPaise = (data['commissionAmountPaise'] as num?)?.toInt() ?? 0;
+        payableAmountPaise = (data['payableAmountPaise'] as num?)?.toInt() ?? (rechargeAmountPaise - commissionAmountPaise);
       }
     });
 
-    final walletDeductionPaise = state.customAmountPaise! - commissionEarnedPaise.toInt();
-    
+    final slabsAsync = ref.watch(activeCommissionSlabsProvider);
+    if (commissionAmountPaise == 0) {
+      slabsAsync.whenData((slabs) {
+        final searchWord = state.operator!.name.toLowerCase().split(' ')[0];
+        final slab = slabs.where((s) {
+          final opName = s.operatorName.toLowerCase();
+          return opName == state.operator!.name.toLowerCase() ||
+                 opName == searchWord ||
+                 opName.contains(searchWord) ||
+                 searchWord.contains(opName);
+        }).firstOrNull;
+        if (slab != null) {
+          if (slab.commissionType == 'percentage') {
+            commissionAmountPaise = (rechargeAmountPaise * slab.commissionValue / 100).round();
+          } else {
+            commissionAmountPaise = (slab.commissionValue * 100).round();
+          }
+          payableAmountPaise = rechargeAmountPaise - commissionAmountPaise;
+        }
+      });
+    }
+
     int availableWalletPaise = 0;
     walletBalanceAsync.whenData((balance) {
       availableWalletPaise = balance.availablePaise;
     });
 
-    final bool isWalletInsufficient = availableWalletPaise < walletDeductionPaise;
-    final int shortfallPaise = walletDeductionPaise - availableWalletPaise;
+    final bool isWalletInsufficient = availableWalletPaise < payableAmountPaise;
+    final int shortfallPaise = payableAmountPaise - availableWalletPaise;
 
-    // Auto-select payment method if not explicitly chosen
-    final PaymentMethod activeMethod = _selectedPaymentMethod ?? (isWalletInsufficient ? PaymentMethod.upi : PaymentMethod.wallet);
+    final userSession = ref.watch(sessionProvider).valueOrNull;
+    final isPersonal = userSession?.isPersonal ?? false;
+
+    // For personal accounts, payment is ALWAYS via UPI/Razorpay direct gateway (wallet is not used)
+    final PaymentMethod activeMethod = isPersonal 
+      ? PaymentMethod.upi 
+      : (_selectedPaymentMethod ?? (isWalletInsufficient ? PaymentMethod.upi : PaymentMethod.wallet));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -185,6 +311,10 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         title: const Text('Payment Options', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         elevation: 0,
         backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.mobileRecharge),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -238,61 +368,65 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
               const Text('Select Payment Method', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
               const SizedBox(height: AppSpacing.md),
 
-              // ── WALLET OPTION ──
-              GestureDetector(
-                onTap: () => setState(() => _selectedPaymentMethod = PaymentMethod.wallet),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: activeMethod == PaymentMethod.wallet ? AppColors.primaryBlueLight.withValues(alpha: 0.05) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: activeMethod == PaymentMethod.wallet ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.5),
-                      width: activeMethod == PaymentMethod.wallet ? 2 : 1,
+              // ── RETAILER ONLY: WALLET OPTION ──
+              if (!isPersonal) ...[
+                GestureDetector(
+                  onTap: () => setState(() => _selectedPaymentMethod = PaymentMethod.wallet),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: activeMethod == PaymentMethod.wallet ? AppColors.primaryBlueLight.withValues(alpha: 0.05) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: activeMethod == PaymentMethod.wallet ? AppColors.primaryBlue : AppColors.border.withValues(alpha: 0.5),
+                        width: activeMethod == PaymentMethod.wallet ? 2 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Radio<PaymentMethod>(
+                              value: PaymentMethod.wallet,
+                              groupValue: activeMethod,
+                              activeColor: AppColors.primaryBlue,
+                              onChanged: (val) {
+                                if (val != null) setState(() => _selectedPaymentMethod = val);
+                              },
+                            ),
+                            const Icon(Icons.account_balance_wallet_outlined, color: AppColors.primaryBlue, size: 24),
+                            const SizedBox(width: 8),
+                            const Text('Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                            const Spacer(),
+                            walletBalanceAsync.when(
+                              data: (b) => Text('Bal: ${CurrencyFormatter.fromPaiseNoDecimal(b.availablePaise)}', style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
+                              loading: () => const SizedBox(width: 40, height: 10, child: LinearProgressIndicator(minHeight: 2)),
+                              error: (_, __) => const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                        if (activeMethod == PaymentMethod.wallet) ...[
+                          const Divider(),
+                          const SizedBox(height: 8),
+                          _PaymentBreakdownRow(label: 'Recharge Amount', amount: rechargeAmountPaise),
+                          const SizedBox(height: 6),
+                          _PaymentBreakdownRow(label: 'Commission', amount: commissionAmountPaise, isDeduction: true),
+                          const SizedBox(height: 6),
+                          _PaymentBreakdownRow(label: 'You Pay', amount: payableAmountPaise, isHighlight: true),
+                          const SizedBox(height: 12),
+                          const Text('Commission is adjusted instantly.', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
+                        ]
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Radio<PaymentMethod>(
-                            value: PaymentMethod.wallet,
-                            groupValue: activeMethod,
-                            activeColor: AppColors.primaryBlue,
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedPaymentMethod = val);
-                            },
-                          ),
-                          const Icon(Icons.account_balance_wallet_outlined, color: AppColors.primaryBlue, size: 24),
-                          const SizedBox(width: 8),
-                          const Text('Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                          const Spacer(),
-                          walletBalanceAsync.when(
-                            data: (b) => Text('Bal: ${CurrencyFormatter.fromPaiseNoDecimal(b.availablePaise)}', style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
-                            loading: () => const SizedBox(width: 40, height: 10, child: LinearProgressIndicator(minHeight: 2)),
-                            error: (_, __) => const SizedBox.shrink(),
-                          ),
-                        ],
-                      ),
-                      if (activeMethod == PaymentMethod.wallet) ...[
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        _PaymentBreakdownRow(label: 'You Pay', amount: walletDeductionPaise),
-                        const SizedBox(height: 6),
-                        _PaymentBreakdownRow(label: 'You Earn ($commissionDisplay)', amount: commissionEarnedPaise.toInt(), isCredit: true),
-                        const SizedBox(height: 12),
-                        const Text('Commission is adjusted instantly.', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
-                      ]
-                    ],
-                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.md),
+              ],
 
               // ── UPI OPTION ──
               GestureDetector(
-                onTap: () => setState(() => _selectedPaymentMethod = PaymentMethod.upi),
+                onTap: isPersonal ? null : () => setState(() => _selectedPaymentMethod = PaymentMethod.upi),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.all(AppSpacing.md),
@@ -308,17 +442,18 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                     children: [
                       Row(
                         children: [
-                          Radio<PaymentMethod>(
-                            value: PaymentMethod.upi,
-                            groupValue: activeMethod,
-                            activeColor: AppColors.primaryBlue,
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedPaymentMethod = val);
-                            },
-                          ),
+                          if (!isPersonal)
+                            Radio<PaymentMethod>(
+                              value: PaymentMethod.upi,
+                              groupValue: activeMethod,
+                              activeColor: AppColors.primaryBlue,
+                              onChanged: (val) {
+                                if (val != null) setState(() => _selectedPaymentMethod = val);
+                              },
+                            ),
                           const Icon(Icons.qr_code_scanner, color: AppColors.primaryBlue, size: 24),
                           const SizedBox(width: 8),
-                          const Text('UPI Apps', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                          const Text('UPI / Cards / NetBanking', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                         ],
                       ),
                       if (activeMethod == PaymentMethod.upi) ...[
@@ -326,7 +461,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
+                          children: const [
                             _UpiAppIcon(name: 'Google Pay', color: Colors.blue),
                             _UpiAppIcon(name: 'PhonePe', color: Colors.purple),
                             _UpiAppIcon(name: 'Paytm', color: Colors.lightBlue),
@@ -334,11 +469,18 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                           ],
                         ),
                         const SizedBox(height: 16),
-                        _PaymentBreakdownRow(label: 'You Pay', amount: state.customAmountPaise!),
+                        _PaymentBreakdownRow(label: 'Recharge Amount', amount: rechargeAmountPaise),
                         const SizedBox(height: 6),
-                        _PaymentBreakdownRow(label: 'You Earn ($commissionDisplay)', amount: commissionEarnedPaise.toInt(), isCredit: true),
+                        if (!isPersonal && commissionAmountPaise > 0) ...[
+                          _PaymentBreakdownRow(label: 'Commission', amount: commissionAmountPaise, isDeduction: true),
+                          const SizedBox(height: 6),
+                        ],
+                        _PaymentBreakdownRow(label: 'Amount Payable', amount: payableAmountPaise, isHighlight: true),
                         const SizedBox(height: 12),
-                        const Text('Commission will be credited to your wallet immediately after a successful recharge.', style: TextStyle(color: AppColors.textHint, fontSize: 12, height: 1.3)),
+                        Text(
+                          'Secure payment powered by Razorpay. Payment of ${CurrencyFormatter.fromPaise(payableAmountPaise)} will be requested.',
+                          style: const TextStyle(color: AppColors.textHint, fontSize: 12, height: 1.3),
+                        ),
                       ]
                     ],
                   ),
@@ -378,7 +520,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Required', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
-                          Text(CurrencyFormatter.fromPaise(walletDeductionPaise), style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(CurrencyFormatter.fromPaise(payableAmountPaise), style: const TextStyle(fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const Padding(
@@ -446,14 +588,19 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                   SizedBox(
                     height: 54,
                     child: ElevatedButton(
-                      onPressed: () => _processUpiPayment(state.customAmountPaise! / 100.0),
+                      onPressed: _processUpiPayment,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryBlue,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         elevation: 4,
                       ),
-                      child: const Text('Continue to UPI', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        isPersonal 
+                          ? 'Pay ${CurrencyFormatter.fromPaise(payableAmountPaise)} with Razorpay / UPI'
+                          : 'Continue to UPI',
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
               ],
@@ -470,21 +617,45 @@ class _PaymentBreakdownRow extends StatelessWidget {
   final String label;
   final int amount;
   final bool isCredit;
+  final bool isDeduction;
+  final bool isHighlight;
 
-  const _PaymentBreakdownRow({required this.label, required this.amount, this.isCredit = false});
+  const _PaymentBreakdownRow({
+    required this.label,
+    required this.amount,
+    this.isCredit = false,
+    this.isDeduction = false,
+    this.isHighlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    String prefix = '';
+    if (isCredit) prefix = '+';
+    if (isDeduction && amount > 0) prefix = '-';
+
+    Color textColor = AppColors.textPrimary;
+    if (isCredit) textColor = AppColors.success;
+    if (isDeduction) textColor = AppColors.success;
+    if (isHighlight) textColor = AppColors.primaryBlue;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
         Text(
-          '${isCredit ? "+" : ""}${CurrencyFormatter.fromPaise(amount)}',
+          label,
           style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: 16,
-            color: isCredit ? AppColors.success : AppColors.textPrimary,
+            color: isHighlight ? AppColors.textPrimary : AppColors.textSecondary,
+            fontSize: isHighlight ? 15 : 14,
+            fontWeight: isHighlight ? FontWeight.bold : FontWeight.w600,
+          ),
+        ),
+        Text(
+          '$prefix${CurrencyFormatter.fromPaise(amount)}',
+          style: TextStyle(
+            fontWeight: isHighlight ? FontWeight.w900 : FontWeight.w800,
+            fontSize: isHighlight ? 17 : 15,
+            color: textColor,
           ),
         ),
       ],

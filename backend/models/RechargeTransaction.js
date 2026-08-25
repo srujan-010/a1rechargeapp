@@ -43,8 +43,32 @@ const rechargeTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['INITIATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
+      enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
       default: 'INITIATED',
+    },
+    paymentMethod: {
+      type: String,
+      default: 'WALLET',
+    },
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
+    commissionAmount: {
+      type: Number,
+      default: 0,
+    },
+    payableAmount: {
+      type: Number,
+      default: 0,
     },
     operatorId: {
       type: String,
@@ -63,6 +87,10 @@ const rechargeTransactionSchema = new mongoose.Schema(
       default: 0,
     },
     commissionCalculated: {
+      type: Boolean,
+      default: false,
+    },
+    providerRequestSent: {
       type: Boolean,
       default: false,
     },

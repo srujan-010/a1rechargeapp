@@ -7,13 +7,30 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import 'insurance_providers.dart';
 
-class InsuranceScreen extends ConsumerWidget {
+class InsuranceScreen extends ConsumerStatefulWidget {
   const InsuranceScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InsuranceScreen> createState() => _InsuranceScreenState();
+}
+
+class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'INSURANCE') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('INSURANCE');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final providersAsync = ref.watch(insuranceProvidersListProvider);
 
     return Scaffold(

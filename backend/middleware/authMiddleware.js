@@ -43,4 +43,15 @@ const admin = (req, res, next) => {
   }
 };
 
-module.exports = { protect, admin };
+const requireRetailer = (req, res, next) => {
+  const accountType = (req.user && req.user.accountType) ? String(req.user.accountType).toUpperCase() : 'RETAILER';
+  if (accountType === 'PERSONAL') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access Forbidden: Retailer feature not accessible for Personal Accounts',
+    });
+  }
+  next();
+};
+
+module.exports = { protect, admin, requireRetailer };

@@ -94,7 +94,7 @@ class _CreateMpinScreenState extends State<CreateMpinScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Wallet MPIN'),
+        title: const Text('Set Your Wallet MPIN'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -112,7 +112,7 @@ class _CreateMpinScreenState extends State<CreateMpinScreen> {
               ),
               const SizedBox(height: 24),
               const Text(
-                'Set Your Secure MPIN',
+                'Set Your Wallet MPIN',
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -122,7 +122,7 @@ class _CreateMpinScreenState extends State<CreateMpinScreen> {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Create a 6-digit MPIN to secure your wallet transactions.',
+                'Create a 6-digit MPIN to securely authorize wallet payments.',
                 style: TextStyle(
                   fontSize: 16,
                   color: AppColors.textSecondary,

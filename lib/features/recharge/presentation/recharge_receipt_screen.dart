@@ -13,7 +13,9 @@ import '../../../core/widgets/app_button.dart';
 import '../domain/models/recharge_result.dart';
 import '../../history/presentation/history_providers.dart';
 import '../../dashboard/presentation/dashboard_providers.dart';
+import '../../personal/presentation/personal_providers.dart';
 import 'recharge_providers.dart';
+import '../../../core/services/recharge_session_manager.dart';
 
 class RechargeReceiptScreen extends ConsumerStatefulWidget {
   const RechargeReceiptScreen({super.key, required this.receipt});
@@ -448,8 +450,8 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
   }
 
   void _exitReceipt() {
-    // Completely clear recharge state
-    ref.read(rechargeFlowProvider.notifier).reset();
+    // End session and completely clear recharge state
+    ref.read(rechargeSessionProvider.notifier).endSession();
 
     // Invalidate history, dashboard, wallet, and recent contacts to force fresh data
     ref.invalidate(historyTransactionsProvider);
@@ -458,6 +460,8 @@ class _RechargeReceiptScreenState extends ConsumerState<RechargeReceiptScreen> w
     ref.invalidate(dashboardAnalyticsProvider('today'));
     ref.invalidate(earningsSummaryProvider);
     ref.invalidate(recentContactsProvider);
+    ref.invalidate(lastRechargeProvider);
+    ref.invalidate(lastSuccessfulRechargeProvider);
 
     context.go(RouteNames.dashboard);
   }

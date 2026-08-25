@@ -156,13 +156,15 @@ class CurrentBillPaymentService {
     const walletService = require('./wallet/wallet.service');
     const ledgerService = require('./ledger/ledger.service');
     const RechargeTransaction = require('../models/RechargeTransaction');
+    const notificationService = require('./notification.service');
 
-    const { user, mpin, consumerIdentifier, amount, operatorCode, serviceType, orderIdPrefix = 'CB' } = options;
+    const { user, mpin, walletMpin, consumerIdentifier, amount, operatorCode, serviceType, orderIdPrefix = 'CB' } = options;
 
-    if (!mpin) throw new Error('Missing MPIN');
+    const inputMpin = walletMpin || mpin;
+    if (!inputMpin) throw new Error('Missing Wallet MPIN');
 
-    const isMatch = await user.matchMpin(mpin);
-    if (!isMatch) throw new Error('Invalid MPIN');
+    const isMatch = await user.matchWalletMpin(inputMpin);
+    if (!isMatch) throw new Error('Invalid Wallet MPIN');
 
     const orderId = `${orderIdPrefix}${Date.now()}`;
 
@@ -194,6 +196,17 @@ class CurrentBillPaymentService {
       // A1 Topup call itself threw an exception — release wallet and return error immediately
       console.error(`[PAYMENT EXECUTOR] ✖ A1 Topup API threw exception. Releasing wallet. Error: ${apiErr.message}`);
       await walletService.releaseReservation(user._id, amount);
+
+      notificationService.notifyRechargeFailed({
+        userId: user._id,
+        orderId,
+        transactionId: orderId,
+        amount,
+        operator: serviceType,
+        mobileNumber: consumerIdentifier,
+        reason: apiErr.message || 'Bill payment execution failed'
+      });
+
       throw apiErr;
     }
 
@@ -201,6 +214,17 @@ class CurrentBillPaymentService {
     if (!paymentResponse.success && paymentResponse.status === 'FAILED') {
       console.error(`[PAYMENT EXECUTOR] ✖ A1 Topup returned FAILED. Releasing wallet. Reason: ${paymentResponse.message}`);
       await walletService.releaseReservation(user._id, amount);
+
+      notificationService.notifyRechargeFailed({
+        userId: user._id,
+        orderId,
+        transactionId: orderId,
+        amount,
+        operator: serviceType,
+        mobileNumber: consumerIdentifier,
+        reason: paymentResponse.message || 'Bill payment failed at provider'
+      });
+
       // Return the failure immediately WITHOUT creating any MongoDB record
       return paymentResponse;
     }
@@ -228,6 +252,14 @@ class CurrentBillPaymentService {
 
     console.log(`[LOG 8 COMPLETE] ✔ Transaction saved in MongoDB. _id: ${transaction._id}, orderId: ${transaction.orderId}, status: ${transaction.status}`);
 
+    notificationService.notifyWalletDebit({
+      userId: user._id,
+      amount,
+      payableAmount: amount,
+      reason: `${serviceType} Bill Payment - ${consumerIdentifier}`,
+      referenceId: orderId
+    });
+
     // Step 5: If already SUCCESS, commit wallet and ledger immediately
     if (paymentResponse.success) {
       await walletService.commitReservation(user._id, amount);
@@ -241,8 +273,28 @@ class CurrentBillPaymentService {
         transaction._id
       );
       console.log(`[PAYMENT EXECUTOR] ✔ Wallet committed and ledger entry created (immediate SUCCESS).`);
+
+      notificationService.notifyRechargeSuccess({
+        userId: user._id,
+        orderId,
+        transactionId: paymentResponse.providerTransactionId || orderId,
+        providerTransactionId: paymentResponse.providerTransactionId || '',
+        amount,
+        operator: serviceType,
+        mobileNumber: consumerIdentifier
+      });
     } else {
       console.log(`[PAYMENT EXECUTOR] Transaction is PENDING. Polling will begin. orderId for status check: ${orderId}`);
+
+      notificationService.notifyRechargePending({
+        userId: user._id,
+        orderId,
+        transactionId: paymentResponse.providerTransactionId || orderId,
+        providerTransactionId: paymentResponse.providerTransactionId || '',
+        amount,
+        operator: serviceType,
+        mobileNumber: consumerIdentifier
+      });
     }
 
     return {

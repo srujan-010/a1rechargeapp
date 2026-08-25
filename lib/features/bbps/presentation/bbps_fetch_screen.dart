@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/models/app_exception.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -39,6 +40,7 @@ class _BbpsFetchScreenState extends ConsumerState<BbpsFetchScreen> {
   }
 
   Future<void> _fetchBill() async {
+    final requestSessionId = ref.read(rechargeSessionProvider).sessionId;
     if (_formKey.currentState?.validate() ?? false) {
       setState(() {
         _isLoading = true;
@@ -61,6 +63,11 @@ class _BbpsFetchScreenState extends ConsumerState<BbpsFetchScreen> {
       try {
         await ref.read(bbpsFlowProvider.notifier).fetchBill();
         if (!mounted) return;
+        
+        // Guard against stale async responses
+        if (!ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+          return;
+        }
         
         // Before pushing, let's log the details as requested
         final flowState = ref.read(bbpsFlowProvider);

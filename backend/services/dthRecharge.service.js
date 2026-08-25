@@ -4,6 +4,7 @@ const a1TopupProvider = require('./providers/a1topup/provider.service');
 const dthMappingService = require('./dthMapping.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
+const notificationService = require('./notification.service');
 
 /**
  * Independent Service for DTH Recharge Execution
@@ -134,17 +135,55 @@ class DthRechargeService {
 
     console.log(`[DTH] Mongo update after provider response: Order ${orderId} updated to status '${providerStatus}'`);
 
-    // 6. Handle Wallet State Transition
+    // 6. Handle Wallet State Transition & Notifications
     if (isSuccess) {
       // Commit held balance & credit commission
       await walletService.commitReservation(userId, amount, commissionEarnedPaise);
       console.log(`[DTH] Wallet Settlement: Order ${orderId} committed (SUCCESS)`);
+
+      notificationService.notifyRechargeSuccess({
+        userId,
+        orderId,
+        transactionId: providerResponse.providerTransactionId || orderId,
+        providerTransactionId: providerResponse.providerTransactionId || '',
+        amount,
+        operator: operator ? operator.name : 'DTH',
+        mobileNumber: subscriberId,
+        commissionAmount: commissionEarnedPaise / 100
+      });
+
+      if (commissionEarnedPaise > 0) {
+        notificationService.notifyCommissionEarned({
+          userId,
+          commissionAmount: commissionEarnedPaise / 100
+        });
+      }
     } else if (isFailed) {
       // Release held balance back to available balance
       await walletService.releaseReservation(userId, amount);
       console.log(`[DTH] Wallet Settlement: Order ${orderId} released hold (FAILED)`);
+
+      notificationService.notifyRechargeFailed({
+        userId,
+        orderId,
+        transactionId: providerResponse.providerTransactionId || orderId,
+        amount,
+        operator: operator ? operator.name : 'DTH',
+        mobileNumber: subscriberId,
+        reason: providerResponse.message || 'DTH recharge failed at operator'
+      });
     } else {
       console.log(`[DTH] Wallet Settlement: Order ${orderId} remains PENDING`);
+
+      notificationService.notifyRechargePending({
+        userId,
+        orderId,
+        transactionId: providerResponse.providerTransactionId || orderId,
+        providerTransactionId: providerResponse.providerTransactionId || '',
+        amount,
+        operator: operator ? operator.name : 'DTH',
+        mobileNumber: subscriberId
+      });
     }
 
     return {

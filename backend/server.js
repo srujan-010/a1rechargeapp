@@ -88,11 +88,13 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/user', require('./routes/userRoutes'));
+app.use('/api/personal', require('./routes/personalRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/wallet', require('./routes/walletRoutes'));
 app.use('/api/wallet', require('./routes/razorpayRoutes'));
 app.post('/api/webhooks/razorpay', require('./controllers/razorpayWalletController').handleWebhook);
 app.use('/api/wallet-mpin', require('./routes/walletMpinRoutes'));
+app.use('/api/security-pin', require('./routes/securityPinRoutes'));
 app.use('/api/services', require('./routes/serviceRoutes'));
 app.use('/api/provider/a1topup', require('./routes/recharge.routes'));
 app.use('/api/bank', require('./routes/bankRoutes'));

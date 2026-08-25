@@ -10,6 +10,8 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/widgets/premium_logout_sheet.dart';
 import '../../../features/auth/provider/auth_provider.dart';
 
+import '../../../core/utils/app_navigation.dart';
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -21,6 +23,10 @@ class SettingsScreen extends ConsumerWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Settings'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(

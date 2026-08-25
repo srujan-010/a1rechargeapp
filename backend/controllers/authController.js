@@ -7,10 +7,11 @@ const Bank = require('../models/Bank');
 const Kyc = require('../models/Kyc');
 const Otp = require('../models/Otp');
 const Notification = require('../models/Notification');
+const notificationService = require('../services/notification.service');
 const generateRetailerId = require('../utils/generateRetailerId');
 const fast2smsService = require('../services/fast2sms.service');
+const admin = require('firebase-admin');
 const { getApp } = require('../config/firebase');
-const { getAuth } = require('firebase-admin/auth');
 
 // Configuration Constants
 const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10);
@@ -247,12 +248,10 @@ const verifyOtp = async (req, res, next) => {
       user.lastLogin = new Date();
       await user.save();
 
-      await Notification.create({
+      notificationService.notifyLoginAlert({
         userId: user._id,
-        title: 'New Login Detected',
-        message: 'You logged in successfully via Fast2SMS WhatsApp OTP.',
-        category: 'SYSTEM',
-        priority: 'LOW',
+        ip: req.ip || req.connection.remoteAddress,
+        device: req.headers['user-agent']
       });
 
       const response = await buildAuthResponse(user);
@@ -337,6 +336,11 @@ const resendOtp = async (req, res, next) => {
  * @route   POST /api/auth/register
  * @access  Public (Protected by tempSessionToken)
  */
+/**
+ * @desc    Complete retailer/personal onboarding / registration
+ * @route   POST /api/auth/register
+ * @access  Public (Protected by tempSessionToken)
+ */
 const registerRetailer = async (req, res, next) => {
   try {
     let token;
@@ -362,77 +366,156 @@ const registerRetailer = async (req, res, next) => {
 
     const cleanedPhone = cleanMobile(phone);
 
-    // Verify mobile is still unused
-    const existing = await User.findOne({
+    const {
+      accountType,
+      name,
+      shopName,
+      hasPhysicalShop,
+      businessType,
+      email,
+      address,
+      state,
+      district,
+      pincode,
+      referralCode,
+      termsAccepted,
+    } = req.body;
+
+    const normalizedAccountType = (accountType || 'RETAILER').toString().trim().toUpperCase() === 'PERSONAL'
+      ? 'PERSONAL'
+      : 'RETAILER';
+
+    if (!name || String(name).trim().length === 0) {
+      return res.status(422).json({ success: false, message: 'Full Name is required for onboarding' });
+    }
+
+    const parsedHasPhysicalShop = normalizedAccountType === 'PERSONAL'
+      ? false
+      : (hasPhysicalShop !== false && hasPhysicalShop !== 'false');
+
+    const parsedBusinessType = normalizedAccountType === 'RETAILER'
+      ? (businessType && String(businessType).trim().length > 0 ? String(businessType).trim() : 'Mobile Recharge Shop')
+      : null;
+
+    if (normalizedAccountType === 'RETAILER') {
+      if (!shopName || String(shopName).trim().length === 0) {
+        return res.status(422).json({ success: false, message: 'Business / Shop Name is required for Retailer account' });
+      }
+      if (parsedHasPhysicalShop && (!address || String(address).trim().length === 0)) {
+        return res.status(422).json({ success: false, message: 'Physical shop address is required when Physical Shop is YES' });
+      }
+    }
+
+    // Verify mobile is unused or onboarding incomplete
+    let user = await User.findOne({
       $or: [
         { phone: cleanedPhone },
         { phone: `+91${cleanedPhone}` }
       ]
     });
 
-    if (existing) {
+    if (user && user.isOnboarded) {
       return res.status(400).json({ success: false, message: 'User already exists with this mobile number' });
     }
 
-    const {
-      name,
-      shopName,
-      email,
-      address,
-      state,
-      district,
-      pincode,
-      referralCode
-    } = req.body;
+    const formattedName = String(name).trim();
+    const formattedEmail = email ? String(email).trim().toLowerCase() : null;
+    const formattedShopName = normalizedAccountType === 'RETAILER' ? String(shopName).trim() : null;
+    const formattedAddress = address ? String(address).trim() : null;
+    const formattedBusinessType = parsedBusinessType;
 
-    if (!name || !shopName || !address) {
-      return res.status(422).json({ success: false, message: 'Missing required registration fields' });
+    if (!user) {
+      const retailerId = await generateRetailerId();
+      user = await User.create({
+        retailerId,
+        phone: cleanedPhone,
+        accountType: normalizedAccountType,
+        name: formattedName,
+        email: formattedEmail,
+        shopName: formattedShopName,
+        hasPhysicalShop: parsedHasPhysicalShop,
+        businessType: formattedBusinessType,
+        shopAddress: formattedAddress,
+        city: district?.trim() ?? null,
+        state: state?.trim() ?? null,
+        pincode: pincode?.trim() ?? null,
+        referredBy: referralCode?.trim() ?? null,
+        kycStatus: 'notStarted',
+        isOnboarded: true,
+        isVerified: true,
+        role: 'retailer',
+        status: 'active',
+        termsAccepted: termsAccepted !== false,
+        termsAcceptedAt: new Date(),
+      });
+    } else {
+      user.accountType = normalizedAccountType;
+      user.name = formattedName;
+      user.email = formattedEmail;
+      user.shopName = formattedShopName;
+      user.hasPhysicalShop = parsedHasPhysicalShop;
+      user.businessType = formattedBusinessType;
+      if (formattedAddress) user.shopAddress = formattedAddress;
+      if (district) user.city = district.trim();
+      if (state) user.state = state.trim();
+      if (pincode) user.pincode = pincode.trim();
+      user.isOnboarded = true;
+      user.termsAccepted = termsAccepted !== false;
+      user.termsAcceptedAt = new Date();
+      await user.save();
     }
 
-    const retailerId = await generateRetailerId();
+    let wallet = await Wallet.findOne({ userId: user._id });
+    if (!wallet) {
+      wallet = await Wallet.create({
+        userId: user._id,
+        balancePaise: 0,
+      });
 
-    const user = await User.create({
-      retailerId,
-      phone: cleanedPhone,
-      name: name.trim(),
-      email: email ? email.trim().toLowerCase() : null,
-      shopName: shopName.trim(),
-      shopAddress: address.trim(),
-      city: district?.trim() ?? null,
-      state: state?.trim() ?? null,
-      pincode: pincode?.trim() ?? null,
-      referredBy: referralCode?.trim() ?? null,
-      kycStatus: 'notStarted',
-      isOnboarded: false,
-      isVerified: true,
-      role: 'retailer',
-      status: 'active'
-    });
+      const WalletLedger = require('../models/WalletLedger');
+      await WalletLedger.create({
+        userId: user._id,
+        transactionType: 'CREDIT',
+        amount: 0,
+        balanceAfter: 0,
+        referenceType: 'MANUAL',
+        referenceId: user._id,
+        description: 'Account Created',
+      });
+    }
 
-    const wallet = await Wallet.create({
-      userId: user._id,
-      balancePaise: 0,
-    });
+    notificationService.notifyOnboardingSuccess({ userId: user._id });
 
-    const WalletLedger = require('../models/WalletLedger');
-    await WalletLedger.create({
-      userId: user._id,
-      transactionType: 'CREDIT',
-      amount: 0,
-      balanceAfter: 0,
-      referenceType: 'MANUAL',
-      referenceId: user._id,
-      description: 'Account Created',
-    });
+    // ONE-TIME Welcome WhatsApp Message for New User Onboarding
+    (async () => {
+      try {
+        console.log('\n[WELCOME_WHATSAPP] New user detected: true');
+        console.log(`[WELCOME_WHATSAPP] Onboarding completed for user: ${user._id}`);
 
-    await Notification.create({
-      userId: user._id,
-      title: 'Welcome to A1 Recharge!',
-      message: 'Your retailer account has been created. Please complete your KYC to unlock all features.',
-      category: 'INFO',
-      priority: 'NORMAL',
-      action: 'ROUTE_KYC'
-    });
+        if (user.welcomeWhatsAppSent) {
+          console.log(`[WELCOME_WHATSAPP] Welcome message already sent for user ${user._id}. Skipping.`);
+          return;
+        }
+
+        const result = await fast2smsService.sendWelcomeTemplate({
+          name: user.name,
+          mobile: user.phone,
+        });
+
+        if (result.success) {
+          user.welcomeWhatsAppSent = true;
+          user.welcomeWhatsAppSentAt = new Date();
+          user.welcomeWhatsAppMessageId = '30063';
+          user.welcomeWhatsAppStatus = 'SENT';
+          await user.save().catch(e => console.error('[WELCOME_WHATSAPP SAVE ERROR]:', e.message));
+        } else {
+          user.welcomeWhatsAppStatus = 'FAILED';
+          await user.save().catch(e => console.error('[WELCOME_WHATSAPP SAVE ERROR]:', e.message));
+        }
+      } catch (wErr) {
+        console.error('[WELCOME_WHATSAPP ASYNC ERROR]:', wErr.message);
+      }
+    })();
 
     const jwtToken = generateToken(user._id);
 
@@ -491,7 +574,7 @@ const firebaseLogin = async (req, res, next) => {
     let decodedToken;
     try {
       const app = getApp();
-      decodedToken = await getAuth(app).verifyIdToken(idToken);
+      decodedToken = await admin.auth(app).verifyIdToken(idToken);
     } catch (error) {
       res.status(401);
       throw new Error('Invalid Firebase ID token: ' + error.message);

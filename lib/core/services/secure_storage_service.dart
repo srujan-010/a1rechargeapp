@@ -8,6 +8,8 @@ abstract final class _Keys {
   static const String refreshToken = 'refresh_token';
   static const String tokenExpiry = 'token_expiry';
   static const String mpinHash = 'mpin_hash';
+  static const String securityPinHash = 'security_pin_hash';
+  static const String walletMpinHash = 'wallet_mpin_hash';
   static const String biometricEnabled = 'biometric_enabled';
   static const String retailerId = 'retailer_id';
   static const String fcmToken = 'fcm_token';
@@ -108,31 +110,54 @@ class SecureStorageService {
     return DateTime.now().isBefore(expiry);
   }
 
-  /// Returns true if a refresh token exists in secure storage.
-  /// Use this to decide whether a silent token refresh is worth attempting —
-  /// even if the access token has expired, a valid refresh token means the
-  /// session can be silently renewed without bouncing the user to OTP login.
   Future<bool> hasRefreshToken() async {
     final token = await getRefreshToken();
     return token != null && token.isNotEmpty;
   }
 
-  // ─── MPIN Storage ─────────────────────────────────────────────────
-  // SECURITY: Store only the hash, never the plaintext PIN.
-  // The actual hashing is done on the backend during setup.
-  // Locally we store a derived verification token from the backend.
-  Future<void> saveMpinHash(String mpinHash) async {
+  // ─── Security PIN Storage (App Access) ────────────────────────────
+  Future<void> saveSecurityPinHash(String pinHash) async {
+    await _write(_Keys.securityPinHash, pinHash);
+    AppLogger.info('Security PIN hash saved to secure storage');
+  }
+
+  Future<String?> getSecurityPinHash() async {
+    return _read(_Keys.securityPinHash);
+  }
+
+  Future<bool> hasSecurityPin() async {
+    final hash = await getSecurityPinHash();
+    return hash != null && hash.isNotEmpty;
+  }
+
+  // ─── Wallet MPIN Storage (Payment Authorization) ─────────────────
+  Future<void> saveWalletMpinHash(String mpinHash) async {
+    await _write(_Keys.walletMpinHash, mpinHash);
     await _write(_Keys.mpinHash, mpinHash);
-    AppLogger.info('MPIN hash saved to secure storage');
+    AppLogger.info('Wallet MPIN hash saved to secure storage');
+  }
+
+  Future<String?> getWalletMpinHash() async {
+    final wHash = await _read(_Keys.walletMpinHash);
+    return wHash ?? _read(_Keys.mpinHash);
+  }
+
+  Future<bool> hasWalletMpin() async {
+    final hash = await getWalletMpinHash();
+    return hash != null && hash.isNotEmpty;
+  }
+
+  // Legacy MPIN methods
+  Future<void> saveMpinHash(String mpinHash) async {
+    await saveWalletMpinHash(mpinHash);
   }
 
   Future<String?> getMpinHash() async {
-    return _read(_Keys.mpinHash);
+    return getWalletMpinHash();
   }
 
   Future<bool> hasMpin() async {
-    final hash = await getMpinHash();
-    return hash != null && hash.isNotEmpty;
+    return hasWalletMpin();
   }
 
   // ─── Biometric ────────────────────────────────────────────────────

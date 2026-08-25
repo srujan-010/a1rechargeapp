@@ -307,4 +307,122 @@ class RechargeRepositoryImpl implements RechargeRepository {
       return Failure(UnknownException.from(e));
     }
   }
+
+  @override
+  Future<Result<Map<String, dynamic>, AppException>> calculatePayableAmount({
+    required String phoneNumber,
+    required String operatorId,
+    required String operatorName,
+    required String circleId,
+    required String serviceType,
+    required int amountPaise,
+    String? planType,
+  }) async {
+    try {
+      final response = await apiClient.post<Map<String, dynamic>>(
+        '/services/recharge/calculate-payable',
+        data: {
+          'mobileNumber': phoneNumber,
+          'operatorId': operatorId,
+          'operatorName': operatorName,
+          'circleId': circleId,
+          'serviceType': serviceType,
+          'amountPaise': amountPaise,
+          if (planType != null) 'planType': planType,
+        },
+        fromJson: (json) => json is Map<String, dynamic> ? json : {},
+      );
+      if (!response.success || response.data == null) {
+        return Failure(ServerException(message: response.message));
+      }
+      final rawObj = response.data!;
+      final Map<String, dynamic> data = (rawObj['data'] is Map<String, dynamic>)
+          ? rawObj['data'] as Map<String, dynamic>
+          : rawObj;
+      return Success(data);
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e, st) {
+      AppLogger.error('calculatePayableAmount failed', tag: 'RechargeRepo', error: e, stackTrace: st);
+      return Failure(UnknownException.from(e));
+    }
+  }
+
+  @override
+  Future<Result<Map<String, dynamic>, AppException>> createRazorpayRechargeOrder({
+    required String phoneNumber,
+    required String operatorId,
+    required String operatorName,
+    required String circleId,
+    required String serviceType,
+    required int amountPaise,
+    String? planId,
+    String? planName,
+    String? planType,
+    String? selectedCategory,
+    String? providerOperatorCode,
+  }) async {
+    try {
+      final response = await apiClient.post<Map<String, dynamic>>(
+        '/services/recharge/create-razorpay-order',
+        data: {
+          'mobileNumber': phoneNumber,
+          'operatorId': operatorId,
+          'operatorName': operatorName,
+          'circleId': circleId,
+          'serviceType': serviceType,
+          'amountPaise': amountPaise,
+          if (planId != null) 'planId': planId,
+          if (planName != null) 'planName': planName,
+          if (planType != null) 'planType': planType,
+          if (selectedCategory != null) 'selectedCategory': selectedCategory,
+          if (providerOperatorCode != null) 'providerOperatorCode': providerOperatorCode,
+        },
+        fromJson: (json) => json is Map<String, dynamic> ? json : {},
+      );
+      if (!response.success || response.data == null) {
+        return Failure(ServerException(message: response.message));
+      }
+      final rawObj = response.data!;
+      final Map<String, dynamic> data = (rawObj['data'] is Map<String, dynamic>)
+          ? rawObj['data'] as Map<String, dynamic>
+          : rawObj;
+      return Success(data);
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e, st) {
+      AppLogger.error('createRazorpayRechargeOrder failed', tag: 'RechargeRepo', error: e, stackTrace: st);
+      return Failure(UnknownException.from(e));
+    }
+  }
+
+  @override
+  Future<Result<RechargeReceipt, AppException>> verifyRazorpayRechargePayment({
+    required String internalTransactionId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    try {
+      final response = await apiClient.post<RechargeReceipt>(
+        '/services/recharge/verify-razorpay-payment',
+        data: {
+          'internalTransactionId': internalTransactionId,
+          'razorpayOrderId': razorpayOrderId,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+        },
+        fromJson: (json) => RechargeReceipt.fromJson(json is Map ? Map<String, dynamic>.from(json) : {}),
+      );
+      if (!response.success || response.data == null) {
+        return Failure(ServerException(message: response.message));
+      }
+      return Success(response.data!);
+    } on AppException catch (e) {
+      return Failure(e);
+    } catch (e, st) {
+      AppLogger.error('verifyRazorpayRechargePayment failed', tag: 'RechargeRepo', error: e, stackTrace: st);
+      return Failure(UnknownException.from(e));
+    }
+  }
 }

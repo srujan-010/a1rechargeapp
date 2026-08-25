@@ -5,7 +5,9 @@ const {
   fetchMobilePlans,
   detectDthOperator,
   fetchDthCustomerInfo,
-  fetchDthPlans
+  fetchDthPlans,
+  checkLastRecharge,
+  checkRechargeExpiry,
 } = require('../controllers/planapi.controller');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -17,5 +19,7 @@ router.get('/mobile/packs', fetchMobilePlans);
 router.get('/dth/operator', detectDthOperator);
 router.get('/dth/info', fetchDthCustomerInfo);
 router.get('/dth/packs', fetchDthPlans);
+router.get('/last-recharge-check', checkLastRecharge);
+router.get('/recharge-expiry', checkRechargeExpiry);
 
 module.exports = router;

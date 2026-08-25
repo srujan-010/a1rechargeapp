@@ -1,11 +1,10 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/route_names.dart';
-import '../../../core/widgets/pin_entry_widget.dart';
-import '../../../core/config/app_config.dart';
 import '../provider/auth_provider.dart';
 import '../models/auth_state.dart';
 
@@ -24,79 +23,89 @@ class RegistrationScreen extends ConsumerStatefulWidget {
 }
 
 class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
+  // Wizard Step Index: 0 = Account Type, 1 = Form Details, 2 = Review Details, 3 = Terms & Complete
   int _currentStep = 0;
   final _formKey = GlobalKey<FormState>();
 
-  // Step 1: Personal
+  // Selected Account Type: 'PERSONAL' or 'RETAILER'
+  String _accountType = 'PERSONAL';
+
+  // Common Fields
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
 
-  // Step 2: Shop
+  // Retailer Specific Fields
   final _shopNameController = TextEditingController();
-  
-  // Hidden values for Smart Address extraction
+  bool _hasPhysicalShop = true;
+  String _selectedBusinessType = 'Mobile Recharge Shop';
+
+  final List<String> _businessTypes = [
+    'Mobile Recharge Shop',
+    'General Store',
+    'Electronics Shop',
+    'CSC / Digital Service Center',
+    'Travel Agency',
+    'Other',
+  ];
+
+  // Address fields
+  final _addressController = TextEditingController();
   String _selectedAddress = '';
   String _extractedCity = '';
   String _extractedState = '';
   String _extractedPincode = '';
-  String? _addressError;
 
-  // Step 3: Security
-  final _mpinController = TextEditingController();
-  final _confirmMpinController = TextEditingController();
-  String? _mpinError;
+  // Terms Acceptance
+  bool _termsAccepted = false;
+  String? _termsError;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _shopNameController.dispose();
-    _mpinController.dispose();
-    _confirmMpinController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
   void _nextStep() {
-    if (!_formKey.currentState!.validate()) return;
-    
-    if (_currentStep == 1) {
-      if (_selectedAddress.isEmpty) {
-        setState(() => _addressError = 'Please search and select a business address');
-        return;
-      } else {
-        setState(() => _addressError = null);
-      }
-    }
-    
-    if (_currentStep == 2) {
-      final mpin = _mpinController.text;
-      final confirm = _confirmMpinController.text;
-
-      if (mpin.length != AppConfig.pinLength) {
-        setState(() => _mpinError = 'Enter a ${AppConfig.pinLength}-digit MPIN');
-        return;
-      }
-      if (RegExp(r'^(\d)\1+$').hasMatch(mpin)) {
-        setState(() => _mpinError = 'MPIN cannot contain repeating digits');
-        return;
-      }
-      const sequentialAsc = '0123456789';
-      const sequentialDesc = '9876543210';
-      if (sequentialAsc.contains(mpin) || sequentialDesc.contains(mpin)) {
-        setState(() => _mpinError = 'MPIN cannot be sequential');
-        return;
-      }
-      if (mpin != confirm) {
-        setState(() => _mpinError = 'MPINs do not match');
-        return;
-      }
-      setState(() => _mpinError = null);
-      _submit();
+    if (_currentStep == 0) {
+      HapticFeedback.lightImpact();
+      setState(() => _currentStep = 1);
       return;
     }
 
-    HapticFeedback.lightImpact();
-    setState(() => _currentStep++);
+    if (_currentStep == 1) {
+      if (!_formKey.currentState!.validate()) return;
+      if (_accountType == 'RETAILER' && _hasPhysicalShop) {
+        final addrStr = _addressController.text.trim().isNotEmpty 
+          ? _addressController.text.trim() 
+          : _selectedAddress;
+        if (addrStr.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please provide your shop address for physical shop.')),
+          );
+          return;
+        }
+      }
+      HapticFeedback.lightImpact();
+      setState(() => _currentStep = 2);
+      return;
+    }
+
+    if (_currentStep == 2) {
+      HapticFeedback.lightImpact();
+      setState(() => _currentStep = 3);
+      return;
+    }
+
+    if (_currentStep == 3) {
+      if (!_termsAccepted) {
+        setState(() => _termsError = 'You must accept the Terms & Conditions to complete onboarding.');
+        return;
+      }
+      _submit();
+    }
   }
 
   void _prevStep() {
@@ -110,15 +119,23 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
 
   void _submit() {
     HapticFeedback.mediumImpact();
+    final addr = _addressController.text.trim().isNotEmpty 
+      ? _addressController.text.trim() 
+      : _selectedAddress;
+
     ref.read(authNotifierProvider.notifier).submitRegistration(
       tempSessionToken: widget.tempSessionToken,
+      accountType: _accountType,
       name: _nameController.text.trim(),
-      shopName: _shopNameController.text.trim(),
-      address: _selectedAddress.isNotEmpty ? _selectedAddress : 'Registered Shop Address',
-      email: _emailController.text.trim(),
-      state: _extractedState,
-      district: _extractedCity,
-      pincode: _extractedPincode,
+      shopName: _accountType == 'RETAILER' ? _shopNameController.text.trim() : null,
+      hasPhysicalShop: _accountType == 'RETAILER' ? _hasPhysicalShop : false,
+      businessType: _accountType == 'RETAILER' ? _selectedBusinessType : null,
+      address: addr.isNotEmpty ? addr : null,
+      email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
+      state: _extractedState.isNotEmpty ? _extractedState : null,
+      district: _extractedCity.isNotEmpty ? _extractedCity : null,
+      pincode: _extractedPincode.isNotEmpty ? _extractedPincode : null,
+      termsAccepted: _termsAccepted,
     );
   }
 
@@ -137,7 +154,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
       }
     });
 
-    final progressPercent = ((_currentStep + 1) / 3 * 100).toInt();
+    final progressPercent = ((_currentStep + 1) / 4 * 100).toInt();
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -151,9 +168,9 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
         ),
         title: Column(
           children: [
-            const Text('Complete Setup', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            const Text('A1 Recharge Onboarding', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
             const SizedBox(height: 2),
-            Text('Step ${_currentStep + 1} of 3', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+            Text('Step ${_currentStep + 1} of 4', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
           ],
         ),
         centerTitle: true,
@@ -169,7 +186,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
-                    value: (_currentStep + 1) / 3,
+                    value: (_currentStep + 1) / 4,
                     backgroundColor: const Color(0xFFF1F5F9),
                     valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
                     minHeight: 4,
@@ -190,23 +207,23 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 color: const Color(0xFFF8FAFC),
                 child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 16, color: Color(0xFF64748B)),
-                    const SizedBox(width: 8),
+                  children: const [
+                    Icon(Icons.shield_outlined, size: 16, color: Color(0xFF2563EB)),
+                    SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'You can update these details later from Profile Settings.',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w500),
+                        'Fast, secure registration. Account details can be managed in profile later.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w500),
                       ),
                     ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
                 child: Row(
                   children: [
                     if (_currentStep > 0)
@@ -218,14 +235,14 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text('Previous', style: TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.w600)),
+                          child: const Text('Back', style: TextStyle(color: Color(0xFF0F172A), fontSize: 16, fontWeight: FontWeight.w600)),
                         ),
                       ),
                     if (_currentStep > 0) const SizedBox(width: 16),
                     Expanded(
                       flex: 2,
                       child: FilledButton(
-                        onPressed: isLoading ? null : _nextStep,
+                        onPressed: (isLoading || (_currentStep == 3 && !_termsAccepted)) ? null : _nextStep,
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF2563EB),
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -234,7 +251,7 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
                         child: isLoading
                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                             : Text(
-                                _currentStep == 2 ? 'Finish Setup' : 'Continue',
+                                _currentStep == 3 ? 'Complete Onboarding' : 'Continue',
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                               ),
                       ),
@@ -253,19 +270,13 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
             hasScrollBody: false,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 16),
-                  Form(
-                    key: _formKey,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-                      child: _buildStepContent(_currentStep),
-                    ),
-                  ),
-                ],
+              child: Form(
+                key: _formKey,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+                  child: _buildStepContent(_currentStep),
+                ),
               ),
             ),
           ),
@@ -277,178 +288,573 @@ class _RegistrationScreenState extends ConsumerState<RegistrationScreen> {
   Widget _buildStepContent(int step) {
     switch (step) {
       case 0:
-        return _PersonalStep(
-          key: const ValueKey(0),
-          phone: widget.mobile,
-          nameController: _nameController,
-          emailController: _emailController,
-        );
+        return _buildAccountTypeStep();
       case 1:
-        return _ShopStep(
-          key: const ValueKey(1),
-          shopNameController: _shopNameController,
-          addressError: _addressError,
-          onAddressSelected: (addr, city, state, pin) {
-            _selectedAddress = addr;
-            _extractedCity = city;
-            _extractedState = state;
-            _extractedPincode = pin;
-            if (_addressError != null) setState(() => _addressError = null);
-          },
-        );
+        return _accountType == 'PERSONAL' ? _buildPersonalFormStep() : _buildRetailerFormStep();
       case 2:
-        return _SecurityStep(
-          key: const ValueKey(2),
-          mpinController: _mpinController,
-          confirmMpinController: _confirmMpinController,
-          mpinError: _mpinError,
-        );
+        return _buildReviewStep();
+      case 3:
+        return _buildTermsStep();
       default:
         return const SizedBox.shrink();
     }
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Steps
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _PersonalStep extends StatelessWidget {
-  final String phone;
-  final TextEditingController nameController;
-  final TextEditingController emailController;
-
-  const _PersonalStep({
-    super.key,
-    required this.phone,
-    required this.nameController,
-    required this.emailController,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  // ───────────────────────────────────────────────────────────────────────────
+  // STEP 0: Account Type Selection
+  // ───────────────────────────────────────────────────────────────────────────
+  Widget _buildAccountTypeStep() {
     return Column(
+      key: const ValueKey(0),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('About You', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
+        const SizedBox(height: 16),
+        const Text(
+          'How do you want to use A1 Recharge?',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+        ),
         const SizedBox(height: 8),
-        const Text('We\'ll use these details to create your retailer account.', style: TextStyle(fontSize: 14, color: Color(0xFF475569))),
-        const SizedBox(height: 4),
-        const Text('Estimated time: Less than 1 minute.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF94A3B8))),
-        const SizedBox(height: 32),
-        
+        const Text(
+          'Choose the account type that best matches your needs.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 24),
+
+        // Personal Card
+        _AccountTypeCard(
+          title: '👤 Personal Account',
+          subtitle: 'Recharge for yourself & your family.',
+          features: const ['Mobile Recharge', 'DTH Recharge', 'Electricity Payments'],
+          isSelected: _accountType == 'PERSONAL',
+          onTap: () => setState(() => _accountType = 'PERSONAL'),
+        ),
+        const SizedBox(height: 16),
+
+        // Retailer Card
+        _AccountTypeCard(
+          title: '🏪 Retailer Account',
+          subtitle: 'Recharge for customers and earn commissions.',
+          features: const ['Business Wallet', 'Customer Recharges', 'Commission', 'Transaction Reports'],
+          isSelected: _accountType == 'RETAILER',
+          onTap: () => setState(() => _accountType = 'RETAILER'),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // STEP 1A: Personal Form
+  // ───────────────────────────────────────────────────────────────────────────
+  Widget _buildPersonalFormStep() {
+    return Column(
+      key: const ValueKey('PERSONAL_FORM'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Personal Details',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Enter your basic details to create your Personal Account.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 24),
+
         _FilledTextField(
-          controller: nameController,
-          label: 'Full Name',
-          validator: (v) => v!.isEmpty ? 'Name is required' : null,
+          controller: _nameController,
+          label: 'Full Name *',
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Full Name is required' : null,
           autoFocus: true,
         ),
         const SizedBox(height: 16),
-        
-        _VerifiedPhoneField(phone: phone),
+
+        _VerifiedPhoneField(phone: widget.mobile),
         const SizedBox(height: 16),
-        
+
         _FilledTextField(
-          controller: emailController,
+          controller: _emailController,
           label: 'Email Address (Optional)',
           keyboardType: TextInputType.emailAddress,
         ),
+        const SizedBox(height: 24),
       ],
     );
   }
-}
 
-class _ShopStep extends StatelessWidget {
-  final TextEditingController shopNameController;
-  final String? addressError;
-  final Function(String address, String city, String state, String pin) onAddressSelected;
-
-  const _ShopStep({
-    super.key,
-    required this.shopNameController,
-    this.addressError,
-    required this.onAddressSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  // ───────────────────────────────────────────────────────────────────────────
+  // STEP 1B: Retailer Form
+  // ───────────────────────────────────────────────────────────────────────────
+  Widget _buildRetailerFormStep() {
     return Column(
+      key: const ValueKey('RETAILER_FORM'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Your Business', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
+        const SizedBox(height: 16),
+        const Text(
+          'Business Details',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+        ),
         const SizedBox(height: 8),
-        const Text('Tell us about your shop.', style: TextStyle(fontSize: 14, color: Color(0xFF475569))),
-        const SizedBox(height: 4),
-        const Text('Estimated time: Less than 1 minute.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF94A3B8))),
-        const SizedBox(height: 32),
-        
+        const Text(
+          'Tell us about your business to setup your Retailer Account.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 24),
+
         _FilledTextField(
-          controller: shopNameController,
-          label: 'Shop Name',
-          validator: (v) => v!.isEmpty ? 'Shop name is required' : null,
+          controller: _nameController,
+          label: 'Owner / Full Name *',
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Owner Name is required' : null,
           autoFocus: true,
         ),
         const SizedBox(height: 16),
-        
-        _MockGooglePlacesAutocomplete(
-          errorText: addressError,
-          onSelected: onAddressSelected,
+
+        _FilledTextField(
+          controller: _shopNameController,
+          label: 'Business / Shop Name *',
+          validator: (v) => (v == null || v.trim().isEmpty) ? 'Business Name is required' : null,
         ),
+        const SizedBox(height: 16),
+
+        // Physical Shop Toggle
+        const Text('Physical Shop? *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => setState(() => _hasPhysicalShop = true),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _hasPhysicalShop ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0), width: 1.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.storefront, size: 18, color: _hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFF64748B)),
+                      const SizedBox(width: 8),
+                      Text('YES (Physical Shop)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFF64748B))),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: InkWell(
+                onTap: () => setState(() => _hasPhysicalShop = false),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: !_hasPhysicalShop ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: !_hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0), width: 1.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.language, size: 18, color: !_hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFF64748B)),
+                      const SizedBox(width: 8),
+                      Text('NO (Online / Direct)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: !_hasPhysicalShop ? const Color(0xFF2563EB) : const Color(0xFF64748B))),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Business Type Dropdown
+        DropdownButtonFormField<String>(
+          value: _selectedBusinessType,
+          decoration: InputDecoration(
+            labelText: 'Business Type *',
+            labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
+            filled: true,
+            fillColor: const Color(0xFFF1F5F9),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+          items: _businessTypes.map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(fontSize: 14)))).toList(),
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedBusinessType = val);
+          },
+        ),
+        const SizedBox(height: 16),
+
+        if (_hasPhysicalShop) ...[
+          _FilledTextField(
+            controller: _addressController,
+            label: 'Shop Address *',
+            validator: (v) => (_hasPhysicalShop && (v == null || v.trim().isEmpty)) ? 'Address is required for Physical Shop' : null,
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        _VerifiedPhoneField(phone: widget.mobile),
+        const SizedBox(height: 16),
+
+        _FilledTextField(
+          controller: _emailController,
+          label: 'Email Address (Optional)',
+          keyboardType: TextInputType.emailAddress,
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // STEP 2: Review Details
+  // ───────────────────────────────────────────────────────────────────────────
+  Widget _buildReviewStep() {
+    final isRetailer = _accountType == 'RETAILER';
+    final addrStr = _addressController.text.trim().isNotEmpty ? _addressController.text.trim() : _selectedAddress;
+
+    return Column(
+      key: const ValueKey(2),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Review Information',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Please verify your onboarding details before completing registration.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 24),
+
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isRetailer ? '🏪 Retailer Account' : '👤 Personal Account',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => setState(() => _currentStep = 1),
+                    icon: const Icon(Icons.edit, size: 14, color: Color(0xFF2563EB)),
+                    label: const Text('Edit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                  )
+                ],
+              ),
+              const Divider(height: 24),
+              _ReviewRow(label: 'Name', value: _nameController.text.trim()),
+              _ReviewRow(label: 'Mobile', value: widget.mobile),
+              if (_emailController.text.trim().isNotEmpty)
+                _ReviewRow(label: 'Email', value: _emailController.text.trim()),
+
+              if (isRetailer) ...[
+                _ReviewRow(label: 'Business Name', value: _shopNameController.text.trim()),
+                _ReviewRow(label: 'Physical Shop', value: _hasPhysicalShop ? 'Yes' : 'No'),
+                _ReviewRow(label: 'Business Type', value: _selectedBusinessType),
+                if (_hasPhysicalShop && addrStr.isNotEmpty)
+                  _ReviewRow(label: 'Address', value: addrStr),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // STEP 3: Terms & Conditions
+  // ───────────────────────────────────────────────────────────────────────────
+  Widget _buildTermsStep() {
+    final isRetailer = _accountType == 'RETAILER';
+
+    return Column(
+      key: const ValueKey(3),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Text(
+          'Terms & Agreement',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Please review and accept the terms to complete your onboarding.',
+          style: TextStyle(fontSize: 14, color: Color(0xFF475569)),
+        ),
+        const SizedBox(height: 24),
+
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              context.push(RouteNames.termsAndConditions);
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Ink(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isRetailer 
+                            ? 'Retailer Service Agreement & Terms' 
+                            : 'A1 Recharge User Terms & Conditions',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF2563EB)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isRetailer
+                      ? 'By registering as a Retailer, you agree to comply with A1 Recharge commission policies, transaction guidelines, and regulatory requirements.'
+                      : 'By registering a Personal Account, you agree to use A1 Recharge for lawful recharge and payment services.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569), height: 1.5),
+                  ),
+                  const SizedBox(height: 12),
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'View Terms & Conditions',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                      ),
+                      SizedBox(width: 4),
+                      Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF2563EB)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 24,
+              width: 24,
+              child: Checkbox(
+                value: _termsAccepted,
+                onChanged: (val) {
+                  setState(() {
+                    _termsAccepted = val ?? false;
+                    if (_termsAccepted) _termsError = null;
+                  });
+                },
+                activeColor: const Color(0xFF2563EB),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text.rich(
+                  TextSpan(
+                    text: 'I agree to the A1 Recharge ',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF0F172A), height: 1.4),
+                    children: [
+                      TextSpan(
+                        text: 'Terms & Conditions',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2563EB),
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () {
+                            HapticFeedback.lightImpact();
+                            context.push(RouteNames.termsAndConditions);
+                          },
+                      ),
+                      const TextSpan(text: ' and '),
+                      TextSpan(
+                        text: 'Privacy Policy',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2563EB),
+                          decoration: TextDecoration.underline,
+                        ),
+                        recognizer: TapGestureRecognizer()
+                          ..onTap = () {
+                            HapticFeedback.lightImpact();
+                            context.push(RouteNames.privacyPolicy);
+                          },
+                      ),
+                      const TextSpan(text: '.'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        if (_termsError != null) ...[
+          const SizedBox(height: 6),
+          Text(_termsError!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+
+        const SizedBox(height: 24),
       ],
     );
   }
 }
 
-class _SecurityStep extends StatelessWidget {
-  final TextEditingController mpinController;
-  final TextEditingController confirmMpinController;
-  final String? mpinError;
+// ─────────────────────────────────────────────────────────────────────────────
+// Selectable Account Type Card Widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _AccountTypeCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<String> features;
+  final bool isSelected;
+  final VoidCallback onTap;
 
-  const _SecurityStep({
-    super.key,
-    required this.mpinController,
-    required this.confirmMpinController,
-    this.mpinError,
+  const _AccountTypeCard({
+    required this.title,
+    required this.subtitle,
+    required this.features,
+    required this.isSelected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Secure Your Account', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), letterSpacing: -0.5)),
-        const SizedBox(height: 8),
-        const Text('Create a 6-digit MPIN for secure transactions.', style: TextStyle(fontSize: 14, color: Color(0xFF475569))),
-        const SizedBox(height: 4),
-        const Text('Estimated time: Less than 1 minute.', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF94A3B8))),
-        const SizedBox(height: 32),
-        
-        const Text('Create MPIN', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-        const SizedBox(height: 12),
-        PinEntryWidget(
-          controller: mpinController,
-          length: 6,
-          errorText: mpinError,
-          onCompleted: (_) => HapticFeedback.lightImpact(),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+            width: isSelected ? 2.0 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [BoxShadow(color: const Color(0xFF2563EB).withValues(alpha: 0.1), blurRadius: 12, offset: const Offset(0, 4))]
+              : [],
         ),
-        
-        const SizedBox(height: 32),
-        
-        const Text('Confirm MPIN', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-        const SizedBox(height: 12),
-        PinEntryWidget(
-          controller: confirmMpinController,
-          length: 6,
-          onCompleted: (_) => HapticFeedback.lightImpact(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+                Radio<bool>(
+                  value: true,
+                  groupValue: isSelected,
+                  onChanged: (_) => onTap(),
+                  activeColor: const Color(0xFF2563EB),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: features.map((f) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFFDBEAFE) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    f,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected ? const Color(0xFF1E40AF) : const Color(0xFF475569),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared Fields
-// ─────────────────────────────────────────────────────────────────────────────
+class _ReviewRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ReviewRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _FilledTextField extends StatelessWidget {
   final TextEditingController controller;
@@ -476,8 +882,8 @@ class _FilledTextField extends StatelessWidget {
       validator: validator,
       autofocus: autoFocus,
       style: TextStyle(
-        fontSize: 15, 
-        fontWeight: FontWeight.w500, 
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
         color: readOnly ? const Color(0xFF64748B) : const Color(0xFF0F172A),
       ),
       decoration: InputDecoration(
@@ -535,136 +941,15 @@ class _VerifiedPhoneField extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
-              children: [
-                const Icon(Icons.check_circle, size: 14, color: Color(0xFF16A34A)),
-                const SizedBox(width: 4),
-                const Text('Verified', style: TextStyle(color: Color(0xFF16A34A), fontSize: 12, fontWeight: FontWeight.bold)),
+              children: const [
+                Icon(Icons.check_circle, size: 14, color: Color(0xFF16A34A)),
+                SizedBox(width: 4),
+                Text('Verified', style: TextStyle(color: Color(0xFF16A34A), fontSize: 12, fontWeight: FontWeight.bold)),
               ],
             ),
           )
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock Google Places Autocomplete
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _MockAddress {
-  final String fullAddress;
-  final String city;
-  final String state;
-  final String pincode;
-
-  _MockAddress(this.fullAddress, this.city, this.state, this.pincode);
-}
-
-class _MockGooglePlacesAutocomplete extends StatefulWidget {
-  final String? errorText;
-  final Function(String, String, String, String) onSelected;
-
-  const _MockGooglePlacesAutocomplete({this.errorText, required this.onSelected});
-
-  @override
-  State<_MockGooglePlacesAutocomplete> createState() => _MockGooglePlacesAutocompleteState();
-}
-
-class _MockGooglePlacesAutocompleteState extends State<_MockGooglePlacesAutocomplete> {
-  final List<_MockAddress> _mockDatabase = [
-    _MockAddress('12/A MG Road, Indiranagar, Bengaluru', 'Bengaluru', 'Karnataka', '560038'),
-    _MockAddress('Shop 4, Linking Road, Bandra West, Mumbai', 'Mumbai', 'Maharashtra', '400050'),
-    _MockAddress('45 Connaught Place, Block C, New Delhi', 'New Delhi', 'Delhi', '110001'),
-    _MockAddress('Sector 17 Market, Near Fountain, Chandigarh', 'Chandigarh', 'Chandigarh', '160017'),
-    _MockAddress('T Nagar, Near Silk House, Chennai', 'Chennai', 'Tamil Nadu', '600017'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Autocomplete<_MockAddress>(
-      optionsBuilder: (TextEditingValue textEditingValue) {
-        if (textEditingValue.text.isEmpty) {
-          return const Iterable<_MockAddress>.empty();
-        }
-        return _mockDatabase.where((addr) => 
-          addr.fullAddress.toLowerCase().contains(textEditingValue.text.toLowerCase())
-        );
-      },
-      onSelected: (_MockAddress selection) {
-        HapticFeedback.lightImpact();
-        widget.onSelected(selection.fullAddress, selection.city, selection.state, selection.pincode);
-      },
-      displayStringForOption: (option) => option.fullAddress,
-      fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
-        return TextFormField(
-          controller: controller,
-          focusNode: focusNode,
-          onEditingComplete: onEditingComplete,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Color(0xFF0F172A)),
-          decoration: InputDecoration(
-            labelText: 'Business Address',
-            labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
-            floatingLabelStyle: const TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.w600),
-            hintText: 'Search address',
-            hintStyle: const TextStyle(color: Color(0xFFCBD5E1)),
-            errorText: widget.errorText,
-            filled: true,
-            fillColor: const Color(0xFFF1F5F9),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
-            ),
-          ),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 8,
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.white,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: 200, 
-                maxWidth: MediaQuery.of(context).size.width - 48,
-              ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (BuildContext context, int index) {
-                  final option = options.elementAt(index);
-                  return InkWell(
-                    onTap: () => onSelected(option),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(option.fullAddress, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF0F172A))),
-                          const SizedBox(height: 4),
-                          Text('${option.city}, ${option.state} ${option.pincode}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

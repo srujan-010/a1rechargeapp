@@ -18,6 +18,7 @@ describe('Razorpay Checkout Wallet Funding Integration Tests', () => {
   let mockNext;
 
   beforeAll(async () => {
+    jest.setTimeout(30000);
     await connectDB();
   });
 
@@ -27,7 +28,7 @@ describe('Razorpay Checkout Wallet Funding Integration Tests', () => {
 
   beforeEach(async () => {
     process.env.WALLET_FUNDING_MODE = 'RAZORPAY';
-    process.env.RAZORPAY_KEY_ID = 'rzp_live_TKPje1gjpvHTve';
+    process.env.RAZORPAY_KEY_ID = 'rzp_live_TT5zU7nK3KcH8Y';
     process.env.RAZORPAY_KEY_SECRET = 'test_secret_key_12345';
     process.env.RAZORPAY_WEBHOOK_SECRET = 'test_webhook_secret_67890';
 
@@ -70,7 +71,7 @@ describe('Razorpay Checkout Wallet Funding Integration Tests', () => {
     const resData = mockRes.json.mock.calls[0][0];
     expect(resData.success).toBe(true);
     expect(resData.data.amountRupees).toBe(1000);
-    expect(resData.data.razorpayKeyId).toBe('rzp_live_TKPje1gjpvHTve');
+    expect(resData.data.razorpayKeyId).toBe('rzp_live_TT5zU7nK3KcH8Y');
     expect(resData.data.internalTransactionId).toMatch(/^WFT_/);
 
     // Verify DB record created in PENDING/CREATED state

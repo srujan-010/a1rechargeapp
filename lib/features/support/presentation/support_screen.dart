@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -222,6 +223,10 @@ class _SupportScreenState extends State<SupportScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Help Center'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
+        ),
         backgroundColor: const Color(0xFF1565FF),
         foregroundColor: Colors.white,
         elevation: 0,

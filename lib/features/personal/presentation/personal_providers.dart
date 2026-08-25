@@ -1,0 +1,263 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/core_providers.dart';
+import '../../../core/models/api_response.dart';
+import '../../../core/utils/operator_formatter.dart';
+
+class PersonalSavings {
+  final double lifetimeSavings;
+  final double monthlySavings;
+  final double previousMonthSavings;
+  final int totalCompletedCount;
+
+  PersonalSavings({
+    required this.lifetimeSavings,
+    required this.monthlySavings,
+    required this.previousMonthSavings,
+    required this.totalCompletedCount,
+  });
+
+  factory PersonalSavings.fromJson(Map<String, dynamic> json) {
+    return PersonalSavings(
+      lifetimeSavings: (json['lifetimeSavings'] as num?)?.toDouble() ?? 0.0,
+      monthlySavings: (json['monthlySavings'] as num?)?.toDouble() ?? 0.0,
+      previousMonthSavings: (json['previousMonthSavings'] as num?)?.toDouble() ?? 0.0,
+      totalCompletedCount: (json['totalCompletedCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class PersonalBenefitSlab {
+  final String operatorCode;
+  final String operatorName;
+  final String serviceType;
+  final String commissionType;
+  final double commissionValue;
+
+  PersonalBenefitSlab({
+    required this.operatorCode,
+    required this.operatorName,
+    required this.serviceType,
+    required this.commissionType,
+    required this.commissionValue,
+  });
+
+  factory PersonalBenefitSlab.fromJson(Map<String, dynamic> json) {
+    return PersonalBenefitSlab(
+      operatorCode: json['operatorCode'] as String? ?? '',
+      operatorName: json['operatorName'] as String? ?? '',
+      serviceType: json['serviceType'] as String? ?? 'mobile',
+      commissionType: json['commissionType'] as String? ?? 'percentage',
+      commissionValue: (json['commissionValue'] as num?)?.toDouble() ?? 0.8,
+    );
+  }
+}
+
+class LastRecharge {
+  final String cardType; // 'PENDING' | 'FAILED' | 'SUCCESS' | 'PLAN_STATUS' | 'NO_PLAN'
+  final String title;
+  final String id;
+  final String orderId;
+  final String mobileNumber;
+  final String operatorName;
+  final String operatorCode;
+  final String? circleCode;
+  final double amount;
+  final double payableAmount;
+  final double savingsAmount;
+  final String status;
+  final String? failureReason;
+  final String? colorState; // 'GREEN' | 'AMBER' | 'RED' | 'EXPIRED'
+  final int? daysRemaining;
+  final String? expiryDate;
+  final String? validity;
+  final String? statusText;
+  final String createdAt;
+
+  LastRecharge({
+    required this.cardType,
+    required this.title,
+    required this.id,
+    required this.orderId,
+    required this.mobileNumber,
+    required this.operatorName,
+    required this.operatorCode,
+    this.circleCode,
+    required this.amount,
+    required this.payableAmount,
+    required this.savingsAmount,
+    required this.status,
+    this.failureReason,
+    this.colorState,
+    this.daysRemaining,
+    this.expiryDate,
+    this.validity,
+    this.statusText,
+    required this.createdAt,
+  });
+
+  factory LastRecharge.fromJson(Map<String, dynamic> json) {
+    final dataObj = (json['data'] is Map<String, dynamic>) ? (json['data'] as Map<String, dynamic>) : json;
+    final lastRec = (json['lastRecharge'] is Map<String, dynamic>) ? (json['lastRecharge'] as Map<String, dynamic>) : null;
+
+    final String cardType = dataObj['cardType'] as String? ?? (json['hasActivePlan'] == true ? 'PLAN_STATUS' : (json['hasLastRecharge'] == true ? 'SUCCESS' : 'NO_PLAN'));
+    final String title = dataObj['title'] as String? ?? (cardType == 'PLAN_STATUS' ? 'Your Plan' : (cardType == 'SUCCESS' ? 'Your Last Recharge' : 'Your Plan'));
+
+    final rawOpName = dataObj['operatorName'] as String? ?? (json['operator'] as String? ?? (lastRec != null ? lastRec['operator'] as String? ?? '' : ''));
+    final rawOpCode = dataObj['operatorCode'] as String? ?? (json['operatorCode'] as String? ?? (lastRec != null ? lastRec['operatorCode'] as String? ?? '' : ''));
+    final displayOpName = OperatorFormatter.getDisplayOperatorName(rawOpName.isNotEmpty ? rawOpName : rawOpCode);
+
+    return LastRecharge(
+      cardType: cardType,
+      title: title,
+      id: dataObj['id'] as String? ?? (lastRec != null ? lastRec['id'] as String? ?? '' : ''),
+      orderId: dataObj['orderId'] as String? ?? (lastRec != null ? lastRec['orderId'] as String? ?? '' : ''),
+      mobileNumber: dataObj['mobileNumber'] as String? ?? (json['mobileNumber'] as String? ?? (lastRec != null ? lastRec['mobileNumber'] as String? ?? '' : '')),
+      operatorName: displayOpName,
+      operatorCode: rawOpCode,
+      circleCode: dataObj['circleCode'] as String?,
+      amount: (dataObj['amount'] as num?)?.toDouble() ?? (json['amount'] as num?)?.toDouble() ?? (lastRec != null ? (lastRec['amount'] as num?)?.toDouble() ?? 0.0 : 0.0),
+      payableAmount: (dataObj['payableAmount'] as num?)?.toDouble() ?? (lastRec != null ? (lastRec['payableAmount'] as num?)?.toDouble() ?? 0.0 : 0.0),
+      savingsAmount: (dataObj['savingsAmount'] as num?)?.toDouble() ?? (lastRec != null ? (lastRec['savingsAmount'] as num?)?.toDouble() ?? 0.0 : 0.0),
+      status: dataObj['status'] as String? ?? 'SUCCESS',
+      failureReason: dataObj['failureReason'] as String?,
+      colorState: dataObj['colorState'] as String?,
+      daysRemaining: (dataObj['daysRemaining'] as num?)?.toInt(),
+      expiryDate: dataObj['expiryDate'] as String? ?? json['expiryDate'] as String?,
+      validity: dataObj['validity'] as String? ?? json['validity'] as String?,
+      statusText: dataObj['statusText'] as String? ?? (json['hasLastRecharge'] == false && json['hasActivePlan'] == false ? 'No active plan yet' : null),
+      createdAt: dataObj['createdAt'] as String? ?? (lastRec != null ? lastRec['date'] as String? ?? '' : ''),
+    );
+  }
+}
+
+class FrequentNumber {
+  final String mobileNumber;
+  final String operatorName;
+  final String operatorCode;
+  final double lastRechargeAmount;
+  final int count;
+
+  FrequentNumber({
+    required this.mobileNumber,
+    required this.operatorName,
+    required this.operatorCode,
+    required this.lastRechargeAmount,
+    required this.count,
+  });
+
+  factory FrequentNumber.fromJson(Map<String, dynamic> json) {
+    final rawOpName = json['operatorName'] as String? ?? '';
+    final rawOpCode = json['operatorCode'] as String? ?? '';
+    return FrequentNumber(
+      mobileNumber: json['mobileNumber'] as String? ?? '',
+      operatorName: OperatorFormatter.getDisplayOperatorName(rawOpName.isNotEmpty ? rawOpName : rawOpCode),
+      operatorCode: rawOpCode,
+      lastRechargeAmount: (json['lastRechargeAmount'] as num?)?.toDouble() ?? 0.0,
+      count: (json['count'] as num?)?.toInt() ?? 1,
+    );
+  }
+}
+
+final personalSavingsProvider = FutureProvider.autoDispose<PersonalSavings>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>>(
+    '/personal/savings',
+    fromJson: (json) => json as Map<String, dynamic>,
+  );
+  if (response.success && response.data != null) {
+    return PersonalSavings.fromJson(response.data!);
+  }
+  return PersonalSavings(lifetimeSavings: 0.0, monthlySavings: 0.0, previousMonthSavings: 0.0, totalCompletedCount: 0);
+});
+
+final personalBenefitsProvider = FutureProvider.autoDispose<List<PersonalBenefitSlab>>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>>(
+    '/personal/benefits',
+    fromJson: (json) => json as Map<String, dynamic>,
+  );
+  if (response.success && response.data != null) {
+    final list = response.data!['slabs'] as List? ?? [];
+    return list.map((item) => PersonalBenefitSlab.fromJson(item as Map<String, dynamic>)).toList();
+  }
+  return [];
+});
+
+final lastRechargeProvider = FutureProvider.autoDispose<LastRecharge?>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>?>(
+    '/personal/last-recharge',
+    fromJson: (json) => json as Map<String, dynamic>?,
+  );
+  if (response.success && response.data != null) {
+    return LastRecharge.fromJson(response.data!);
+  }
+  return null;
+});
+
+final frequentNumbersProvider = FutureProvider.autoDispose<List<FrequentNumber>>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<List<dynamic>>(
+    '/personal/frequent-numbers',
+    fromJson: (json) => json as List<dynamic>,
+  );
+  if (response.success && response.data != null) {
+    return response.data!.map((item) => FrequentNumber.fromJson(item as Map<String, dynamic>)).toList();
+  }
+  return [];
+});
+
+class LastSuccessfulRecharge {
+  final String id;
+  final String orderId;
+  final double amount;
+  final String mobileNumber;
+  final String operatorName;
+  final String operatorCode;
+  final String status;
+  final String rechargeDate;
+
+  LastSuccessfulRecharge({
+    required this.id,
+    required this.orderId,
+    required this.amount,
+    required this.mobileNumber,
+    required this.operatorName,
+    required this.operatorCode,
+    required this.status,
+    required this.rechargeDate,
+  });
+
+  factory LastSuccessfulRecharge.fromJson(Map<String, dynamic> json) {
+    final rawOpName = json['operator'] as String? ?? json['operatorName'] as String? ?? '';
+    final rawOpCode = json['operatorCode'] as String? ?? '';
+    final displayOpName = OperatorFormatter.getDisplayOperatorName(rawOpName.isNotEmpty ? rawOpName : rawOpCode);
+
+    return LastSuccessfulRecharge(
+      id: json['id'] as String? ?? '',
+      orderId: json['orderId'] as String? ?? '',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
+      mobileNumber: json['mobileNumber'] as String? ?? '',
+      operatorName: displayOpName,
+      operatorCode: rawOpCode,
+      status: json['status'] as String? ?? 'SUCCESS',
+      rechargeDate: json['rechargeDate'] as String? ?? json['createdAt'] as String? ?? '',
+    );
+  }
+}
+
+final lastSuccessfulRechargeProvider = FutureProvider.autoDispose<LastSuccessfulRecharge?>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>?>(
+    '/personal/last-successful',
+    fromJson: (json) => json as Map<String, dynamic>?,
+  );
+  if (response.success && response.data != null) {
+    final hasLast = response.data!['hasLastSuccessful'] == true;
+    final dataObj = response.data!['data'];
+    if (hasLast && dataObj is Map<String, dynamic>) {
+      return LastSuccessfulRecharge.fromJson(dataObj);
+    }
+  }
+  return null;
+});

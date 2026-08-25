@@ -1,5 +1,4 @@
 import '../models/operator_circle_response.dart';
-import '../models/mobile_plan.dart';
 import '../models/plan_category.dart';
 import '../services/plan_api_service.dart';
 import '../../../core/models/app_exception.dart';

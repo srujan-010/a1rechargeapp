@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../domain/models/app_notification.dart';
 import 'notifications_providers.dart';
@@ -65,9 +66,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         elevation: 0,
         scrolledUnderElevation: 0.5,
         surfaceTintColor: Colors.white,
+
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0F172A)),
-          onPressed: () => context.pop(),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.dashboard),
         ),
         title: const Text(
           'Notifications',

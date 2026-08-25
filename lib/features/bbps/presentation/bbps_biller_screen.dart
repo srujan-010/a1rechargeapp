@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -22,6 +23,18 @@ class BbpsBillerScreen extends ConsumerStatefulWidget {
 class _BbpsBillerScreenState extends ConsumerState<BbpsBillerScreen> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = ref.read(rechargeSessionProvider);
+      final cat = widget.category.toUpperCase();
+      if (session.sessionId == null || session.serviceType != cat) {
+        ref.read(rechargeSessionProvider.notifier).startNewSession(cat);
+      }
+    });
+  }
 
   @override
   void dispose() {

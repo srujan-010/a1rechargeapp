@@ -33,6 +33,12 @@ const operatorCommissionSchema = new mongoose.Schema(
       default: 0,
       // e.g., 2 means 2%
     },
+    personalCommission: {
+      type: Number,
+      required: false,
+      default: null,
+      // e.g., 0.8 means 0.8% benefit for Personal customer (if null, system uses retailerCommission - PERSONAL_COMMISSION_ADJUSTMENT)
+    },
     companyCommission: {
       type: Number,
       required: true,

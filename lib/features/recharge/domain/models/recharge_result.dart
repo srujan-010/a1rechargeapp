@@ -1,6 +1,8 @@
 // lib/features/recharge/domain/models/recharge_result.dart
 import 'package:equatable/equatable.dart';
 
+import '../../../../core/utils/operator_formatter.dart';
+
 enum RechargeStatus { pending, success, failed, processing }
 
 class RechargeRequest extends Equatable {
@@ -73,17 +75,20 @@ class RechargeReceipt extends Equatable {
   final String? circle;
   final int? walletBalancePaise;
 
+  String get displayOperatorName => OperatorFormatter.getDisplayOperatorName(operatorName);
+
   bool get isSuccess => status == RechargeStatus.success;
   bool get isFailed => status == RechargeStatus.failed;
   bool get isPending => status == RechargeStatus.pending || status == RechargeStatus.processing;
 
 
-  factory RechargeReceipt.fromJson(Map<String, dynamic> json) =>
-      RechargeReceipt(
-        transactionId: json['transactionId'] as String? ?? '',
-        referenceId: json['referenceId'] as String? ?? '',
-        mobileNumber: json['mobileNumber'] as String? ?? '',
-        operatorName: json['operatorName'] as String? ?? '',
+  factory RechargeReceipt.fromJson(Map<String, dynamic> json) {
+    final rawOp = json['operatorName'] as String? ?? json['operator'] as String? ?? json['operatorCode'] as String? ?? '';
+    return RechargeReceipt(
+      transactionId: json['transactionId'] as String? ?? '',
+      referenceId: json['referenceId'] as String? ?? '',
+      mobileNumber: json['mobileNumber'] as String? ?? '',
+      operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
         amountPaise: (json['amountPaise'] as num?)?.toInt() ?? (json['amount'] as num?)?.toInt() ?? 0,
         status: _parseStatus(json['status'] as String?),
         timestamp: json['timestamp'] != null
@@ -99,6 +104,7 @@ class RechargeReceipt extends Equatable {
         circle: json['circle'] as String?,
         walletBalancePaise: (json['walletBalanceAfterPaise'] as num?)?.toInt() ?? (json['walletBalancePaise'] as num?)?.toInt(),
       );
+    }
 
   static RechargeStatus _parseStatus(String? raw) => switch (raw) {
         'success' => RechargeStatus.success,

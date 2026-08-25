@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -49,8 +51,13 @@ class TransactionDetailsScreen extends ConsumerWidget {
       debugPrint('[TRANSACTION DETAILS] Error: Transaction not found for ID: $txnId');
       return Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
+
         appBar: AppBar(
           title: const Text('Transaction Details'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.transactionHistory),
+          ),
           centerTitle: true,
           backgroundColor: Colors.white,
           elevation: 0,
@@ -88,7 +95,7 @@ class TransactionDetailsScreen extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.xl),
                 AppButton(
                   label: 'Back to History',
-                  onPressed: () => context.pop(),
+                  onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.transactionHistory),
                 ),
               ],
             ),
@@ -119,6 +126,10 @@ serviceType: ${txn.serviceType}
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('Transaction Details'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.transactionHistory),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,

@@ -11,12 +11,18 @@ const { calculateCommission } = require('../utils/commissionEngine');
 // @access  Private
 const processDmtTransfer = async (req, res, next) => {
   try {
-    const { beneficiaryId, amountPaise, mode, mpin } = req.body;
+    const { beneficiaryId, amountPaise, mode, mpin, walletMpin } = req.body;
 
-    const isMatch = await req.user.matchMpin(mpin);
+    const inputMpin = walletMpin || mpin;
+    if (!inputMpin) {
+      res.status(400);
+      throw new Error('Wallet MPIN is required');
+    }
+
+    const isMatch = await req.user.matchWalletMpin(inputMpin);
     if (!isMatch) {
       res.status(401);
-      throw new Error('Invalid MPIN');
+      throw new Error('Invalid Wallet MPIN');
     }
 
     // Quick mock for DMT (Not updating fully for now to stay focused on Recharge)

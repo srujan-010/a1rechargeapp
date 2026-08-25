@@ -112,10 +112,15 @@ class UserProfile {
     this.aadhaarNumber,
     this.panNumber,
     this.gstNumber,
+    this.accountType = 'RETAILER',
+    this.hasPhysicalShop = true,
+    this.businessType,
     this.kycStatus = 'notStarted',
     this.isOnboarded = false,
     this.isVerified = false,
     this.hasMpin = false,
+    this.hasSecurityPin = false,
+    this.hasWalletMpin = false,
     this.createdAt,
     this.bank,
     this.wallet,
@@ -132,6 +137,9 @@ class UserProfile {
   final String? city;
   final String? state;
   final String? pincode;
+  final String accountType;
+  final bool hasPhysicalShop;
+  final String? businessType;
   final String? aadhaarNumber;
   final String? panNumber;
   final String? gstNumber;
@@ -139,12 +147,17 @@ class UserProfile {
   final bool isOnboarded;
   final bool isVerified;
   final bool hasMpin;
+  final bool hasSecurityPin;
+  final bool hasWalletMpin;
   final DateTime? createdAt;
   final BankDetails? bank;
   final WalletInfo? wallet;
   final KycInfo? kyc;
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
+    final bool mpinFlag = (json['hasWalletMpin'] as bool?) ?? (json['walletMpinConfigured'] as bool?) ?? (json['hasMpin'] as bool? ?? false);
+    final bool secPinFlag = (json['hasSecurityPin'] as bool?) ?? (json['securityPinConfigured'] as bool? ?? false);
+
     return UserProfile(
       id: (json['id'] ?? json['_id'] as String?) ?? '',
       retailerId: (json['retailerId'] as String?) ?? '',
@@ -156,13 +169,18 @@ class UserProfile {
       city: json['city'] as String?,
       state: json['state'] as String?,
       pincode: json['pincode'] as String?,
+      accountType: (json['accountType'] as String?) ?? 'RETAILER',
+      hasPhysicalShop: json['hasPhysicalShop'] as bool? ?? true,
+      businessType: json['businessType'] as String?,
       aadhaarNumber: json['aadhaarNumber'] as String?,
       panNumber: json['panNumber'] as String?,
       gstNumber: json['gstNumber'] as String?,
       kycStatus: (json['kycStatus'] as String?) ?? 'notStarted',
       isOnboarded: json['isOnboarded'] as bool? ?? false,
       isVerified: json['isVerified'] as bool? ?? false,
-      hasMpin: json['hasMpin'] as bool? ?? false,
+      hasMpin: mpinFlag,
+      hasSecurityPin: secPinFlag,
+      hasWalletMpin: mpinFlag,
       createdAt:
           json['createdAt'] != null ? DateTime.tryParse(json['createdAt'] as String) : null,
       bank: BankDetails.fromJson(json['bank'] as Map<String, dynamic>?),

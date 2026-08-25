@@ -10,6 +10,9 @@ import '../../../core/widgets/loading_skeleton.dart';
 import '../../../models/mobile_plan.dart';
 import 'recharge_providers.dart';
 
+import '../../../core/constants/route_names.dart';
+import '../../../core/utils/app_navigation.dart';
+
 class PlanSelectionScreen extends ConsumerStatefulWidget {
   const PlanSelectionScreen({super.key});
 
@@ -33,7 +36,13 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
     
     if (state.operator == null || state.circle == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Select Plan')),
+        appBar: AppBar(
+          title: const Text('Select Plan'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.mobileRecharge),
+          ),
+        ),
         body: const Center(child: Text('Operator and Circle not selected.')),
       );
     }
@@ -45,6 +54,10 @@ class _PlanSelectionScreenState extends ConsumerState<PlanSelectionScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Select Plan'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => AppNavigation.pop(context, fallbackRoute: RouteNames.mobileRecharge),
+        ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(100),
           child: Container(

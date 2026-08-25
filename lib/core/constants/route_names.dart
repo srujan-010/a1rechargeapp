@@ -18,12 +18,24 @@ abstract final class RouteNames {
   static const String dashboard = '/shell/dashboard';
   static const String myActivity = 'my-activity';
   static const String allTransactions = 'all-transactions';
+  static const String personalBenefits = 'personal-benefits';
   
   // Wallet MPIN Routes
+  static const String walletMpin = '/profile/wallet-mpin';
   static const String createMpin = '/mpin/create';
   static const String confirmMpin = '/mpin/confirm';
+  static const String changeMpin = '/profile/change-mpin';
   static const String forgotMpin = '/mpin/forgot';
   static const String resetMpin = '/mpin/reset';
+
+  // Security PIN Routes (App Access & Security)
+  static const String securityPin = '/profile/security-pin';
+  static const String createSecurityPin = '/security-pin/create';
+  static const String confirmSecurityPin = '/security-pin/confirm';
+  static const String changeSecurityPin = '/profile/change-security-pin';
+  static const String forgotSecurityPin = '/security-pin/forgot';
+  static const String resetSecurityPin = '/security-pin/reset';
+  static const String appLock = '/security-pin/lock';
   static const String wallet = '/shell/wallet';
   static const String profile = '/shell/profile';
   static const String deviceInfo = '/device-info';
@@ -96,7 +108,6 @@ abstract final class RouteNames {
   static const String kyc = '/profile/kyc';
   static const String bankDetails = '/profile/bank';
   static const String commissionSlab = '/profile/commission-slab';
-  static const String changeMpin = '/profile/change-mpin';
   static const String biometricSettings = '/profile/biometric';
 
   // ─── Settings ────────────────────────────────────────────────────

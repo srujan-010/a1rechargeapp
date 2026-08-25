@@ -8,6 +8,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import 'dmt_providers.dart';
 
 class DmtScreen extends ConsumerStatefulWidget {
@@ -26,6 +27,20 @@ class _DmtScreenState extends ConsumerState<DmtScreen> {
   bool _isRegistering = false;
   bool _showRegistration = false;
   String? _errorMsg;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'DMT') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('DMT');
+        _mobileController.clear();
+        _nameController.clear();
+        _otpController.clear();
+      }
+    });
+  }
 
   @override
   void dispose() {

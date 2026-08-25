@@ -1,28 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../domain/models/recharge_result.dart';
 
-class RechargePendingScreen extends StatelessWidget {
+class RechargePendingScreen extends ConsumerWidget {
   final RechargeReceipt receipt;
 
   const RechargePendingScreen({super.key, required this.receipt});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(receipt.timestamp);
 
     return PopScope(
       canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          ref.read(rechargeSessionProvider.notifier).endSession();
+          context.go(RouteNames.dashboard);
+        }
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text('Recharge Submitted', style: TextStyle(fontWeight: FontWeight.bold)),
-          automaticallyImplyLeading: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              ref.read(rechargeSessionProvider.notifier).endSession();
+              context.go(RouteNames.dashboard);
+            },
+          ),
           elevation: 0,
           backgroundColor: Colors.white,
         ),
@@ -150,7 +164,10 @@ class RechargePendingScreen extends StatelessWidget {
                 SizedBox(
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: () => context.go(RouteNames.dashboard),
+                    onPressed: () {
+                      ref.read(rechargeSessionProvider.notifier).endSession();
+                      context.go(RouteNames.dashboard);
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryBlue,
                       foregroundColor: Colors.white,
@@ -166,6 +183,7 @@ class RechargePendingScreen extends StatelessWidget {
                   height: 52,
                   child: OutlinedButton(
                     onPressed: () {
+                      ref.read(rechargeSessionProvider.notifier).endSession();
                       context.go(RouteNames.dashboard);
                       context.push(RouteNames.transactionHistory);
                     },

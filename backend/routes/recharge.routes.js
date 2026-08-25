@@ -5,6 +5,9 @@ const {
   checkProviderBalance,
   getOperators,
   getPlans,
+  calculateRechargePayable,
+  createRazorpayRechargeOrder,
+  verifyRazorpayRechargePayment,
   executeRecharge,
   checkStatus,
   providerCallback
@@ -22,6 +25,9 @@ router.get('/operators', protect, admin, getOperators);
 router.get('/plans', protect, admin, getPlans);
 
 // Recharge API - Retailer
+router.post('/calculate-payable', protect, calculateRechargePayable);
+router.post('/create-razorpay-order', protect, createRazorpayRechargeOrder);
+router.post('/verify-razorpay-payment', protect, verifyRazorpayRechargePayment);
 router.post('/mobile', protect, (req, res, next) => {
   console.log(`[${new Date().toISOString()}] [1] ROUTE ENTERED: ${req.method} ${req.originalUrl}`);
   next();

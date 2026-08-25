@@ -2,18 +2,17 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const Notification = require('../models/Notification');
+const notificationService = require('../services/notification.service');
 const Otp = require('../models/Otp');
 const fast2smsService = require('../services/fast2sms.service');
-const axios = require('axios');
 
-// Helper to validate 6-digit MPIN rules
+// Helper to validate 6-digit Wallet MPIN rules
 const validateMpinRules = (mpin) => {
   if (!mpin || mpin.length !== 6 || !/^\d+$/.test(mpin)) {
-    return 'MPIN must be exactly 6 digits.';
+    return 'Wallet MPIN must be exactly 6 digits.';
   }
   if (/^(\d)\1{5}$/.test(mpin)) {
-    return 'MPIN cannot contain all repeated digits (e.g., 111111).';
+    return 'Wallet MPIN cannot contain all repeated digits (e.g., 111111).';
   }
   // Check sequential (e.g., 123456, 654321)
   const isSequential = (str) => {
@@ -25,7 +24,7 @@ const validateMpinRules = (mpin) => {
     return asc || desc;
   };
   if (isSequential(mpin)) {
-    return 'MPIN cannot be sequential (e.g., 123456 or 654321).';
+    return 'Wallet MPIN cannot be sequential (e.g., 123456 or 654321).';
   }
   return null;
 };
@@ -35,29 +34,32 @@ const validateMpinRules = (mpin) => {
 // @access  Private
 const createMpin = async (req, res, next) => {
   try {
-    const { mpin } = req.body;
+    const { mpin, walletMpin } = req.body;
+    const inputMpin = walletMpin || mpin;
     const user = req.user;
 
-    if (user.mpinHash) {
+    if (user.walletMpinHash || user.mpinHash) {
       res.status(400);
-      throw new Error('MPIN is already configured. Use change MPIN flow.');
+      throw new Error('Wallet MPIN is already configured. Use change Wallet MPIN flow.');
     }
 
-    const validationError = validateMpinRules(mpin);
+    const validationError = validateMpinRules(inputMpin);
     if (validationError) {
       res.status(400);
       throw new Error(validationError);
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedMpin = await bcrypt.hash(mpin, salt);
+    const hashedMpin = await bcrypt.hash(inputMpin, salt);
 
-    user.mpinHash = hashedMpin;
-    user.mpinCreatedAt = new Date();
-    user.mpinUpdatedAt = new Date();
-    user.failedMpinAttempts = 0;
-    user.lockUntil = undefined;
+    user.walletMpinHash = hashedMpin;
+    user.walletMpinCreatedAt = new Date();
+    user.walletMpinUpdatedAt = new Date();
+    user.failedWalletMpinAttempts = 0;
+    user.walletMpinLockUntil = undefined;
     await user.save();
+
+    notificationService.notifyWalletMpinSetSuccess({ userId: user._id });
 
     res.status(200).json({
       success: true,
@@ -74,28 +76,30 @@ const createMpin = async (req, res, next) => {
 // @access  Private
 const verifyMpin = async (req, res, next) => {
   try {
-    const { mpin } = req.body;
+    const { mpin, walletMpin } = req.body;
+    const inputMpin = walletMpin || mpin;
     const user = req.user;
 
-    if (!mpin) {
+    if (!inputMpin) {
       res.status(400);
-      throw new Error('MPIN is required');
+      throw new Error('Wallet MPIN is required');
     }
 
-    // The user schema matchMpin method handles the 5-attempt lockout logic
-    const isMatch = await user.matchMpin(mpin);
+    const isMatch = await user.matchWalletMpin(inputMpin);
 
     if (!isMatch) {
       res.status(401);
-      const attemptsLeft = 5 - user.failedMpinAttempts;
-      throw new Error(attemptsLeft > 0 
-        ? `Incorrect MPIN. ${attemptsLeft} attempts remaining.` 
-        : 'Incorrect MPIN. Account locked for 15 minutes.');
+      const attemptsLeft = 5 - (user.failedWalletMpinAttempts || user.failedMpinAttempts || 0);
+      throw new Error(
+        attemptsLeft > 0
+          ? `Incorrect Wallet MPIN. ${attemptsLeft} attempts remaining.`
+          : 'Incorrect Wallet MPIN. Wallet payment locked for 15 minutes.'
+      );
     }
 
     res.status(200).json({
       success: true,
-      message: 'MPIN verified successfully',
+      message: 'Wallet MPIN verified successfully',
     });
   } catch (error) {
     next(error);
@@ -107,42 +111,38 @@ const verifyMpin = async (req, res, next) => {
 // @access  Private
 const changeMpin = async (req, res, next) => {
   try {
-    const { currentMpin, newMpin } = req.body;
+    const { currentMpin, newMpin, currentWalletMpin, newWalletMpin } = req.body;
+    const currentInput = currentWalletMpin || currentMpin;
+    const newInput = newWalletMpin || newMpin;
     const user = req.user;
 
-    if (!currentMpin || !newMpin) {
+    if (!currentInput || !newInput) {
       res.status(400);
-      throw new Error('Both current and new MPINs are required.');
+      throw new Error('Both current and new Wallet MPINs are required.');
     }
 
-    const validationError = validateMpinRules(newMpin);
+    const validationError = validateMpinRules(newInput);
     if (validationError) {
       res.status(400);
       throw new Error(validationError);
     }
 
-    const isMatch = await user.matchMpin(currentMpin);
+    const isMatch = await user.matchWalletMpin(currentInput);
     if (!isMatch) {
       res.status(401);
-      throw new Error('Incorrect current MPIN.');
+      throw new Error('Incorrect current Wallet MPIN.');
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedMpin = await bcrypt.hash(newMpin, salt);
+    const hashedMpin = await bcrypt.hash(newInput, salt);
 
-    user.mpinHash = hashedMpin;
-    user.mpinUpdatedAt = new Date();
-    user.failedMpinAttempts = 0;
-    user.lockUntil = undefined;
+    user.walletMpinHash = hashedMpin;
+    user.walletMpinUpdatedAt = new Date();
+    user.failedWalletMpinAttempts = 0;
+    user.walletMpinLockUntil = undefined;
     await user.save();
 
-    await Notification.create({
-      userId: user._id,
-      title: 'Wallet MPIN Changed',
-      message: 'Your Wallet MPIN was changed successfully.',
-      category: 'SECURITY',
-      priority: 'HIGH'
-    });
+    notificationService.notifyWalletMpinChangedSuccess({ userId: user._id });
 
     res.status(200).json({
       success: true,
@@ -153,7 +153,7 @@ const changeMpin = async (req, res, next) => {
   }
 };
 
-// @desc    Send OTP for Forgot MPIN flow
+// @desc    Send OTP for Forgot Wallet MPIN flow
 // @route   POST /api/wallet-mpin/forgot/send-otp
 // @access  Private
 const sendForgotOtp = async (req, res, next) => {
@@ -169,11 +169,10 @@ const sendForgotOtp = async (req, res, next) => {
       throw new Error('Valid registered mobile number not found on user profile.');
     }
 
-    // Generate 6-digit OTP
     const otp = crypto.randomInt(100000, 1000000).toString();
     const salt = await bcrypt.genSalt(10);
     const otpHash = await bcrypt.hash(otp, salt);
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await Otp.deleteMany({ mobile });
     await Otp.create({
@@ -189,7 +188,7 @@ const sendForgotOtp = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: 'OTP sent to your registered mobile number on WhatsApp.',
+      message: 'OTP sent to your registered mobile number for Wallet MPIN reset.',
       data: { phone: user.phone },
     });
   } catch (error) {
@@ -197,7 +196,7 @@ const sendForgotOtp = async (req, res, next) => {
   }
 };
 
-// @desc    Verify OTP for Forgot MPIN flow
+// @desc    Verify OTP for Forgot Wallet MPIN flow
 // @route   POST /api/wallet-mpin/forgot/verify-otp
 // @access  Private
 const verifyForgotOtp = async (req, res, next) => {
@@ -246,10 +245,11 @@ const verifyForgotOtp = async (req, res, next) => {
 
     await Otp.deleteOne({ _id: otpRecord._id });
 
-    // Generate short-lived reset token for MPIN reset
-    const resetToken = jwt.sign({ id: user._id, purpose: 'mpin_reset' }, process.env.JWT_SECRET, {
-      expiresIn: '15m',
-    });
+    const resetToken = jwt.sign(
+      { id: user._id, purpose: 'wallet_mpin_reset' },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
 
     res.status(200).json({
       success: true,
@@ -261,23 +261,23 @@ const verifyForgotOtp = async (req, res, next) => {
   }
 };
 
-// @desc    Reset MPIN after OTP verification
+// @desc    Reset Wallet MPIN after OTP verification
 // @route   POST /api/wallet-mpin/reset
 // @access  Private
 const resetMpin = async (req, res, next) => {
   try {
-    const { resetToken, newMpin } = req.body;
+    const { resetToken, newMpin, newWalletMpin } = req.body;
+    const newInput = newWalletMpin || newMpin;
     const user = req.user;
 
-    if (!resetToken || !newMpin) {
+    if (!resetToken || !newInput) {
       res.status(400);
-      throw new Error('resetToken and newMpin are required.');
+      throw new Error('resetToken and newWalletMpin are required.');
     }
 
-    // Verify reset token
     try {
       const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
-      if (decoded.id !== user._id.toString() || decoded.purpose !== 'mpin_reset') {
+      if (decoded.id !== user._id.toString() || (decoded.purpose !== 'wallet_mpin_reset' && decoded.purpose !== 'mpin_reset')) {
         throw new Error('Invalid reset token.');
       }
     } catch (err) {
@@ -285,28 +285,22 @@ const resetMpin = async (req, res, next) => {
       throw new Error('Invalid or expired reset token. Please verify OTP again.');
     }
 
-    const validationError = validateMpinRules(newMpin);
+    const validationError = validateMpinRules(newInput);
     if (validationError) {
       res.status(400);
       throw new Error(validationError);
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedMpin = await bcrypt.hash(newMpin, salt);
+    const hashedMpin = await bcrypt.hash(newInput, salt);
 
-    user.mpinHash = hashedMpin;
-    user.mpinUpdatedAt = new Date();
-    user.failedMpinAttempts = 0;
-    user.lockUntil = undefined;
+    user.walletMpinHash = hashedMpin;
+    user.walletMpinUpdatedAt = new Date();
+    user.failedWalletMpinAttempts = 0;
+    user.walletMpinLockUntil = undefined;
     await user.save();
 
-    await Notification.create({
-      userId: user._id,
-      title: 'Wallet MPIN Reset',
-      message: 'Your Wallet MPIN was reset successfully.',
-      category: 'SECURITY',
-      priority: 'HIGH'
-    });
+    notificationService.notifyWalletMpinResetSuccess({ userId: user._id });
 
     res.status(200).json({
       success: true,
@@ -317,20 +311,23 @@ const resetMpin = async (req, res, next) => {
   }
 };
 
-// @desc    Get MPIN Status
+// @desc    Get Wallet MPIN Status
 // @route   GET /api/wallet-mpin/status
 // @access  Private
 const getStatus = async (req, res, next) => {
   try {
     const user = req.user;
-    
+    const isConfigured = !!(user.walletMpinHash || user.mpinHash);
+    const activeLock = user.walletMpinLockUntil || user.lockUntil;
+    const isLocked = activeLock && activeLock > Date.now();
+
     res.status(200).json({
       success: true,
       data: {
-        walletMpinConfigured: !!user.mpinHash,
-        isLocked: user.lockUntil && user.lockUntil > Date.now(),
-        lockUntil: user.lockUntil,
-        failedAttempts: user.failedMpinAttempts,
+        walletMpinConfigured: isConfigured,
+        isLocked,
+        lockUntil: activeLock,
+        failedAttempts: user.failedWalletMpinAttempts || user.failedMpinAttempts || 0,
       },
     });
   } catch (error) {

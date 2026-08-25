@@ -15,6 +15,8 @@ const detectMobileOperator = async (req, res, next) => {
   }
 };
 
+const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
+
 // @desc    Fetch Mobile Plans
 // @route   GET /api/plans/mobile/packs
 // @access  Private
@@ -22,7 +24,8 @@ const fetchMobilePlans = async (req, res, next) => {
   try {
     const { operatorcode, circle } = req.query;
     if (!operatorcode || !circle) return res.status(400).json({ success: false, message: 'operatorcode and circle are required' });
-    const result = await planApiService.fetchMobilePlans(operatorcode, circle);
+    const plansApiOpCode = resolvePlansApiOperatorCode(operatorcode);
+    const result = await planApiService.fetchMobilePlans(plansApiOpCode, circle);
     res.status(200).json(result);
   } catch (error) {
     console.error('[PlanAPI Proxy Error]', error.message);
@@ -75,10 +78,48 @@ const fetchDthPlans = async (req, res, next) => {
   }
 };
 
+// @desc    Check PlanAPI Last Recharge (Airtel & VI only)
+// @route   GET /api/plans/last-recharge-check
+// @access  Private
+const checkLastRecharge = async (req, res) => {
+  try {
+    const { mobileNumber, operatorCode } = req.query;
+    if (!mobileNumber || !operatorCode) {
+      return res.status(400).json({ success: false, message: 'mobileNumber and operatorCode are required' });
+    }
+
+    const result = await planApiService.checkLastRecharge(mobileNumber, operatorCode);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('[PlanAPI Controller checkLastRecharge Error]:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Check PlanAPI Recharge Expiry (Airtel & VI only)
+// @route   GET /api/plans/recharge-expiry
+// @access  Private
+const checkRechargeExpiry = async (req, res) => {
+  try {
+    const { mobileNumber, operatorCode } = req.query;
+    if (!mobileNumber || !operatorCode) {
+      return res.status(400).json({ success: false, message: 'mobileNumber and operatorCode are required' });
+    }
+
+    const result = await planApiService.checkRechargeExpiry(mobileNumber, operatorCode);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('[PlanAPI Controller checkRechargeExpiry Error]:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   detectMobileOperator,
   fetchMobilePlans,
   detectDthOperator,
   fetchDthCustomerInfo,
-  fetchDthPlans
+  fetchDthPlans,
+  checkLastRecharge,
+  checkRechargeExpiry,
 };

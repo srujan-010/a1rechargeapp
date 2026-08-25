@@ -116,26 +116,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> submitRegistration({
     required String tempSessionToken,
     required String name,
-    required String shopName,
-    required String address,
+    String accountType = 'RETAILER',
+    String? shopName,
+    bool? hasPhysicalShop,
+    String? businessType,
+    String? address,
     String? email,
     String? state,
     String? district,
     String? pincode,
     String? referralCode,
+    bool termsAccepted = true,
   }) async {
     this.state = const AuthState.loading();
     try {
       await authRepository.registerRetailer(
         tempSessionToken: tempSessionToken,
         name: name,
+        accountType: accountType,
         shopName: shopName,
+        hasPhysicalShop: hasPhysicalShop,
+        businessType: businessType,
         address: address,
         email: email,
         state: state,
         district: district,
         pincode: pincode,
         referralCode: referralCode,
+        termsAccepted: termsAccepted,
       );
       ref.invalidate(sessionProvider);
       await _registerFcmToken();

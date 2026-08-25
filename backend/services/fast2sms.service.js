@@ -19,6 +19,7 @@ class Fast2SMSService {
       authMessageId: AUTH_MESSAGE_ID,
       phoneNumberId: PHONE_NUMBER_ID,
       rechargeTemplateId: process.env.FAST2SMS_RECHARGE_TEMPLATE_ID || '26992',
+      rechargeSuccessWhatsAppEnabled: process.env.FAST2SMS_RECHARGE_SUCCESS_ENABLED === 'true',
       brandName: process.env.FAST2SMS_BRAND_NAME || 'A1recharge',
       supportPhone: process.env.FAST2SMS_SUPPORT_PHONE || '8275366399',
     };
@@ -148,8 +149,19 @@ class Fast2SMSService {
    * Send WhatsApp Recharge Success Utility Template (Message ID: 26992) via Fast2SMS WhatsApp API
    */
   async sendRechargeSuccessTemplate({ customerName, mobileNumber, amount, operator, transactionId }) {
-    const startTime = Date.now();
     const config = this._getConfig();
+
+    if (!config.rechargeSuccessWhatsAppEnabled) {
+      console.log('[WHATSAPP] Recharge success message disabled');
+      console.log(`[WHATSAPP] Template recharge_success / ${config.rechargeTemplateId} was NOT sent`);
+      return {
+        success: true,
+        skipped: true,
+        message: 'Recharge success WhatsApp message disabled',
+      };
+    }
+
+    const startTime = Date.now();
     const cleanedMobile = this._cleanMobile(mobileNumber);
 
     if (!cleanedMobile || cleanedMobile.length !== 10) {
@@ -201,6 +213,88 @@ class Fast2SMSService {
       return {
         success: false,
         error: errorMsg,
+      };
+    }
+  }
+
+  /**
+   * Send WhatsApp Welcome Message Template (a1_recharge_welcome_message)
+   * WhatsApp Template ID: 2334539643620046
+   * Fast2SMS Message ID: 30063
+   * Variable 1: Customer/User Name
+   *
+   * @param {Object} params
+   * @param {String} params.name - Onboarding User Name (e.g. Srujan)
+   * @param {String} params.mobile - Recipient mobile number
+   */
+  async sendWelcomeTemplate({ name, mobile }) {
+    const startTime = Date.now();
+    const config = this._getConfig();
+    const cleanedMobile = this._cleanMobile(mobile);
+
+    const welcomeMessageId = process.env.FAST2SMS_WELCOME_MESSAGE_ID || '30063';
+    const phoneNumberId = config.phoneNumberId || '1294250930429862';
+
+    if (!cleanedMobile || cleanedMobile.length !== 10) {
+      console.warn(`[WELCOME_WHATSAPP WARN] Invalid recipient mobile number: ${mobile}`);
+      return { success: false, reason: 'Invalid mobile number' };
+    }
+
+    if (!config.apiKey) {
+      console.warn('[WELCOME_WHATSAPP WARN] FAST2SMS_API_KEY missing in environment variables');
+      return { success: false, reason: 'Missing Fast2SMS API key' };
+    }
+
+    const cleanName = String(name || 'Valued User').trim().replace(/\|/g, '');
+    const encodedVariables = encodeURIComponent(cleanName);
+
+    const fullUrl = `${this.whatsappApiUrl}?message_id=${welcomeMessageId}&phone_number_id=${phoneNumberId}&numbers=${cleanedMobile}&variables_values=${encodedVariables}`;
+
+    const maskedMobile = cleanedMobile.length === 10 ? `******${cleanedMobile.slice(-4)}` : cleanedMobile;
+
+    console.log('════════════════════════════════════════════════════════════════');
+    console.log('[WELCOME_WHATSAPP]');
+    console.log('Template: a1_recharge_welcome_message');
+    console.log('WhatsApp Template ID: 2334539643620046');
+    console.log(`Message ID: ${welcomeMessageId}`);
+    console.log(`Recipient: ${maskedMobile}`);
+    console.log(`Variable 1: ${cleanName}`);
+    console.log('Sending welcome message...');
+
+    try {
+      const response = await axios.get(fullUrl, {
+        headers: {
+          'Authorization': config.apiKey,
+          'accept': 'application/json',
+        },
+        timeout: 10000,
+      });
+
+      const duration = Date.now() - startTime;
+      console.log(`[WELCOME_WHATSAPP] HTTP Status: ${response.status} (${duration}ms)`);
+      console.log(`[WELCOME_WHATSAPP] Complete Response Body:`, JSON.stringify(response.data, null, 2));
+
+      const isSuccess = response.data ? response.data.return !== false : true;
+      if (isSuccess) {
+        console.log('[WELCOME_WHATSAPP] Welcome message sent successfully');
+      } else {
+        console.warn('[WELCOME_WHATSAPP] Welcome message failed from provider response');
+      }
+      console.log('════════════════════════════════════════════════════════════════');
+
+      return {
+        success: isSuccess,
+        data: response.data,
+      };
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      const errorMsg = error.response?.data?.message || error.response?.data || error.message;
+      console.error(`[WELCOME_WHATSAPP] Welcome message failed (${duration}ms):`, typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg);
+      console.log('════════════════════════════════════════════════════════════════');
+
+      return {
+        success: false,
+        error: typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg,
       };
     }
   }

@@ -481,3 +481,26 @@ final recentContactsProvider = AsyncNotifierProvider<RecentContactsNotifier, Lis
 final rechargeFlowProvider = NotifierProvider<RechargeFlowNotifier, RechargeState>(
   RechargeFlowNotifier.new,
 );
+
+final rechargePayableProvider = FutureProvider.family<Map<String, dynamic>, ({
+  String phoneNumber,
+  String operatorId,
+  String operatorName,
+  String circleId,
+  String serviceType,
+  int amountPaise,
+  String? planType,
+})>((ref, params) async {
+  final repo = ref.watch(rechargeRepositoryProvider);
+  final res = await repo.calculatePayableAmount(
+    phoneNumber: params.phoneNumber,
+    operatorId: params.operatorId,
+    operatorName: params.operatorName,
+    circleId: params.circleId,
+    serviceType: params.serviceType,
+    amountPaise: params.amountPaise,
+    planType: params.planType,
+  );
+  return res.valueOrNull ?? {};
+});
+

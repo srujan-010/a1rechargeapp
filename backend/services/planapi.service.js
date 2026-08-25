@@ -182,6 +182,106 @@ class PlanApiService {
       throw error;
     }
   }
+
+  /**
+   * Helper to verify if operator is supported for CheckLastRecharge and RechargeExpiryDate APIs.
+   * PlanAPI documentation indicates support for Airtel (OpCode 2) & VI (OpCode 23) operators only.
+   */
+  isOperatorSupportedForLastRechargeAndExpiry(operatorCode) {
+    if (!operatorCode) return false;
+    const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
+    const plansApiOpCode = resolvePlansApiOperatorCode(operatorCode);
+    // Supported PlansAPI codes: 2 (Airtel) and 23 (VI/Vodafone)
+    return plansApiOpCode === '2' || plansApiOpCode === '23';
+  }
+
+  /**
+   * Check Last Recharge via PlanAPI (/Mobile/CheckLastRecharge)
+   * Strictly uses PlansAPI numeric operator codes (2 for Airtel, 23 for VI).
+   */
+  async checkLastRecharge(mobileNumber, operatorCode) {
+    const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
+    const plansApiOpCode = resolvePlansApiOperatorCode(operatorCode);
+
+    if (!this.isOperatorSupportedForLastRechargeAndExpiry(operatorCode)) {
+      return { supported: false, message: 'Last recharge information is not available for this operator.' };
+    }
+
+    const cleanMobile = String(mobileNumber).replace('+91', '').trim();
+    const maskedMobile = cleanMobile.length >= 10 ? `${cleanMobile.slice(0, 3)}****${cleanMobile.slice(-3)}` : cleanMobile;
+    const url = `${PLANAPI_BASE_URL}/Mobile/CheckLastRecharge?Apimember_Id=${PLANAPI_MEMBER_ID}&Api_Password=${PLANAPI_PASSWORD}&Operator_Code=${plansApiOpCode}&Mobile_No=${cleanMobile}`;
+
+    console.log('\n[PLANAPI DEBUG] Action: CheckLastRecharge');
+    console.log(`[PLANAPI DEBUG] Mobile: ${maskedMobile}`);
+    console.log(`[PLANAPI DEBUG] Incoming Operator Code: ${operatorCode}`);
+    console.log(`[PLANAPI DEBUG] Resolved PlansAPI OpCode: ${plansApiOpCode}`);
+    console.log(`[PLANAPI DEBUG] Request URL: ${url.replace(PLANAPI_PASSWORD, '***').replace(PLANAPI_MEMBER_ID, '***')}`);
+
+    try {
+      const data = await this._makeRequest(url);
+      console.log('[PLANAPI DEBUG] Response:', JSON.stringify(data));
+
+      const isError = (data.ERROR !== '0' && data.ERROR !== undefined) || data.STATUS === '0' || data.status === '0';
+      return {
+        supported: true,
+        success: !isError,
+        data: {
+          mobileNo: data.MOBILENO || cleanMobile,
+          amount: data.Amount || data.amount || null,
+          rechargeDate: data.RechargeDate || data.rechargeDate || null,
+          message: data.MESSAGE || data.message || 'Last recharge retrieved',
+          raw: data,
+        },
+      };
+    } catch (error) {
+      console.log('[PLANAPI DEBUG] Error:', error.message);
+      return { supported: true, success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Check Recharge Expiry via PlanAPI (/Mobile/RechargeExpiryDate)
+   * Strictly uses PlansAPI numeric operator codes (2 for Airtel, 23 for VI).
+   */
+  async checkRechargeExpiry(mobileNumber, operatorCode) {
+    const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
+    const plansApiOpCode = resolvePlansApiOperatorCode(operatorCode);
+
+    if (!this.isOperatorSupportedForLastRechargeAndExpiry(operatorCode)) {
+      return { supported: false, message: 'Recharge expiry information is not available for this operator.' };
+    }
+
+    const cleanMobile = String(mobileNumber).replace('+91', '').trim();
+    const maskedMobile = cleanMobile.length >= 10 ? `${cleanMobile.slice(0, 3)}****${cleanMobile.slice(-3)}` : cleanMobile;
+    const url = `${PLANAPI_BASE_URL}/Mobile/RechargeExpiryDate?Apimember_Id=${PLANAPI_MEMBER_ID}&Api_Password=${PLANAPI_PASSWORD}&Operator_Code=${plansApiOpCode}&Mobile_No=${cleanMobile}`;
+
+    console.log('\n[PLANAPI DEBUG] Action: RechargeExpiryDate');
+    console.log(`[PLANAPI DEBUG] Mobile: ${maskedMobile}`);
+    console.log(`[PLANAPI DEBUG] Incoming Operator Code: ${operatorCode}`);
+    console.log(`[PLANAPI DEBUG] Resolved PlansAPI OpCode: ${plansApiOpCode}`);
+    console.log(`[PLANAPI DEBUG] Request URL: ${url.replace(PLANAPI_PASSWORD, '***').replace(PLANAPI_MEMBER_ID, '***')}`);
+
+    try {
+      const data = await this._makeRequest(url);
+      console.log('[PLANAPI DEBUG] Response:', JSON.stringify(data));
+
+      const isError = (data.ERROR !== '0' && data.ERROR !== undefined) || data.STATUS === '0' || data.status === '0';
+      return {
+        supported: true,
+        success: !isError,
+        data: {
+          mobileNo: data.MOBILENO || cleanMobile,
+          outgoing: data.OUTGOING || data.outgoing || null,
+          incoming: data.INCOMING || data.incoming || null,
+          message: data.MESSAGE || data.message || 'Recharge expiry retrieved',
+          raw: data,
+        },
+      };
+    } catch (error) {
+      console.log('[PLANAPI DEBUG] Error:', error.message);
+      return { supported: true, success: false, message: error.message };
+    }
+  }
 }
 
 module.exports = new PlanApiService();

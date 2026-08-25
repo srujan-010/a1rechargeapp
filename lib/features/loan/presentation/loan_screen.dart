@@ -7,13 +7,30 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
+import '../../../core/services/recharge_session_manager.dart';
 import 'loan_providers.dart';
 
-class LoanScreen extends ConsumerWidget {
+class LoanScreen extends ConsumerStatefulWidget {
   const LoanScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LoanScreen> createState() => _LoanScreenState();
+}
+
+class _LoanScreenState extends ConsumerState<LoanScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final session = ref.read(rechargeSessionProvider);
+      if (session.sessionId == null || session.serviceType != 'LOAN') {
+        ref.read(rechargeSessionProvider.notifier).startNewSession('LOAN');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final providersAsync = ref.watch(loanProvidersListProvider);
 
     return Scaffold(

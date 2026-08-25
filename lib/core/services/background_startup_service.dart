@@ -43,13 +43,17 @@ class BackgroundStartupService {
         await ref.read(sessionProvider.future).timeout(apiTimeout);
       }).then((ms) => profileMs = ms),
 
-      // 2. Wallet API (Balance + Recent Txns + Summary)
+      // 2. Wallet API (Balance + Recent Txns + Summary) - RETAILER ONLY
       _measureTask('Wallet', () async {
-        await Future.wait([
-          ref.read(walletBalanceProvider.future).timeout(apiTimeout),
-          ref.read(recentTransactionsProvider.future).timeout(apiTimeout),
-          ref.read(earningsSummaryProvider.future).timeout(apiTimeout),
-        ]);
+        final userSession = ref.read(sessionProvider).valueOrNull;
+        final isPersonal = userSession?.isPersonal ?? false;
+        if (!isPersonal) {
+          await Future.wait([
+            ref.read(walletBalanceProvider.future).timeout(apiTimeout),
+            ref.read(recentTransactionsProvider.future).timeout(apiTimeout),
+            ref.read(earningsSummaryProvider.future).timeout(apiTimeout),
+          ]);
+        }
       }).then((ms) => walletMs = ms),
 
       // 3. Statement / History API

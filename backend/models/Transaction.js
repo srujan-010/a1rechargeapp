@@ -68,6 +68,18 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     default: 'wallet',
   },
+  payableAmountPaise: {
+    type: Number,
+    default: null,
+  },
+  razorpayOrderId: {
+    type: String,
+    default: null,
+  },
+  razorpayPaymentId: {
+    type: String,
+    default: null,
+  },
   completedAt: {
     type: Date,
     default: null,
