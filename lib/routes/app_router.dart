@@ -85,6 +85,8 @@ import '../features/security_pin/presentation/create_security_pin_screen.dart';
 import '../features/security_pin/presentation/change_security_pin_screen.dart';
 import '../features/security_pin/presentation/forgot_security_pin_screen.dart';
 import '../features/security_pin/presentation/reset_security_pin_screen.dart';
+import '../features/security_pin/presentation/security_pin_unlock_screen.dart';
+import '../features/security_pin/providers/security_pin_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/settings/presentation/device_info_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
@@ -117,28 +119,43 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authNotifierProvider);
       final hasJwt = ref.read(hasValidJwtProvider).valueOrNull ?? false;
       final sessionUser = ref.read(sessionProvider).valueOrNull;
-      
-      // User is authenticated ONLY if they hold a valid JWT token OR are in AuthStateAuthenticated state.
-      // Stale cached profile alone MUST NOT grant authenticated status.
+
+      final secPinState = ref.read(securityPinProvider);
+      final isSecPinConfigured = secPinState.securityPinConfigured ?? (sessionUser?.hasSecurityPin ?? false);
+      final isUnlocked = secPinState.isAppUnlocked;
+
       final isAuthenticated = (authState is AuthStateAuthenticated) || (hasJwt && sessionUser != null);
       final isAuthRoute = state.matchedLocation.startsWith('/auth');
       final isSplash = state.matchedLocation == RouteNames.splash;
+      final isAppLockRoute = state.matchedLocation == RouteNames.appLock;
+      final isForgotResetPinRoute = state.matchedLocation.startsWith('/security-pin/forgot') || state.matchedLocation.startsWith('/security-pin/reset');
 
-      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, hasUser=${sessionUser != null}, isAuthenticated=$isAuthenticated', tag: 'Router');
+      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, isAuthenticated=$isAuthenticated, isSecPinConfigured=$isSecPinConfigured, isUnlocked=$isUnlocked', tag: 'Router');
 
-      // Allow splash to always render (it handles its own redirect logic)
+      // Allow splash to always render
       if (isSplash) return null;
 
-      // Unauthenticated → redirect to OTP login
+      // 1. Unauthenticated → redirect to OTP login
       if (!isAuthenticated && !isAuthRoute) {
         AppLogger.info('Router Decision: Redirecting Unauthenticated user to ${RouteNames.otpLogin}', tag: 'Router');
         return RouteNames.otpLogin;
       }
 
-      // Authenticated → redirect away from auth screens
-      if (isAuthenticated && isAuthRoute) {
-        AppLogger.info('Router Decision: Redirecting Authenticated user to ${RouteNames.dashboard}', tag: 'Router');
-        return RouteNames.dashboard;
+      // 2. Authenticated
+      if (isAuthenticated) {
+        // Security PIN configured & app locked -> Gate access to App Lock screen
+        if (isSecPinConfigured && !isUnlocked) {
+          if (isAppLockRoute || isForgotResetPinRoute) return null;
+
+          AppLogger.info('Router Decision: Security PIN required. Redirecting to ${RouteNames.appLock}', tag: 'Router');
+          return RouteNames.appLock;
+        }
+
+        // Authenticated & Unlocked (or PIN not configured) -> Redirect away from Auth / AppLock routes
+        if (isAuthRoute || isAppLockRoute) {
+          AppLogger.info('Router Decision: Redirecting Authenticated & Unlocked user to ${RouteNames.dashboard}', tag: 'Router');
+          return RouteNames.dashboard;
+        }
       }
 
       return null; // No redirect needed
@@ -187,6 +204,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // ─── Security PIN Flows ──────────────────────────────────────────
+      GoRoute(
+        path: RouteNames.appLock,
+        name: RouteNames.appLock,
+        builder: (context, state) => const SecurityPinUnlockScreen(),
+      ),
       GoRoute(
         path: RouteNames.createSecurityPin,
         name: RouteNames.createSecurityPin,
@@ -894,6 +916,7 @@ class _SessionListenable extends ChangeNotifier {
     ref.listen(sessionProvider, (_, __) => notifyListeners());
     ref.listen(authNotifierProvider, (_, __) => notifyListeners());
     ref.listen(hasValidJwtProvider, (_, __) => notifyListeners());
+    ref.listen(securityPinProvider, (_, __) => notifyListeners());
   }
 }
 

@@ -82,7 +82,8 @@ const buildAuthResponse = async (user) => {
 };
 
 /**
- * @desc    Send OTP via Fast2SMS WhatsApp Template API (Message ID 27018)
+/**
+ * @desc    Send OTP via Fast2SMS WhatsApp Template API (Login OTP)
  * @route   POST /api/auth/send-otp
  * @access  Public
  */
@@ -96,10 +97,11 @@ const sendOtp = async (req, res, next) => {
       throw new Error('Please provide a valid 10-digit mobile number.');
     }
 
-    // Rate Limiting: Max 5 requests per hour per mobile
+    // Rate Limiting: Max 5 requests per hour per mobile for login
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const recentRequestsCount = await Otp.countDocuments({
       mobile,
+      purpose: 'login',
       createdAt: { $gte: oneHourAgo },
     });
 
@@ -117,12 +119,13 @@ const sendOtp = async (req, res, next) => {
 
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    // Delete any existing OTP for this mobile
-    await Otp.deleteMany({ mobile });
+    // Delete any existing login OTP for this mobile
+    await Otp.deleteMany({ mobile, purpose: 'login' });
 
     // Save OTP to MongoDB
     const storedOtpRecord = await Otp.create({
       mobile,
+      purpose: 'login',
       otpHash,
       expiresAt,
       attempts: 0,
@@ -131,15 +134,15 @@ const sendOtp = async (req, res, next) => {
     });
 
     console.log('════════════════════════════════════════════════════════════════');
-    console.log('[SEND OTP LOGS]');
-    console.log(`- Cleaned Mobile Number: ${mobile}`);
-    console.log(`- Generated OTP: ${otp}`);
+    console.log('[SEND LOGIN OTP LOGS]');
+    console.log(`- Cleaned Mobile Number: ${mobile.length === 10 ? '******' + mobile.slice(-4) : mobile}`);
+    console.log(`- Purpose: LOGIN_OTP`);
     console.log(`- Stored OTP Hash: ${otpHash}`);
     console.log(`- MongoDB Save Result ID: ${storedOtpRecord._id}`);
     console.log(`- Expiry Time: ${expiresAt.toISOString()}`);
 
-    // Send OTP via Fast2SMS WhatsApp API
-    const fast2smsResult = await fast2smsService.sendAuthenticationTemplate({ mobile, otp });
+    // Send Login OTP via Fast2SMS WhatsApp API
+    const fast2smsResult = await fast2smsService.sendLoginOtp({ mobile, otp });
     console.log(`- Fast2SMS Send Result:`, JSON.stringify(fast2smsResult, null, 2));
     console.log('════════════════════════════════════════════════════════════════');
 
@@ -153,7 +156,7 @@ const sendOtp = async (req, res, next) => {
 };
 
 /**
- * @desc    Verify OTP sent via Fast2SMS WhatsApp
+ * @desc    Verify OTP sent via Fast2SMS WhatsApp (Login OTP)
  * @route   POST /api/auth/verify-otp
  * @access  Public
  */
@@ -165,10 +168,12 @@ const verifyOtp = async (req, res, next) => {
     const mobile = cleanMobile(rawMobile);
     const enteredOtp = String(otp || '').trim();
 
+    const maskedMobile = mobile.length === 10 ? `******${mobile.slice(-4)}` : mobile;
+
     console.log('════════════════════════════════════════════════════════════════');
-    console.log('[VERIFY OTP LOGS]');
-    console.log(`- Cleaned Mobile Number: ${mobile}`);
-    console.log(`- Entered OTP: ${enteredOtp}`);
+    console.log('[VERIFY LOGIN OTP LOGS]');
+    console.log(`- Cleaned Mobile Number: ${maskedMobile}`);
+    console.log(`- Purpose: LOGIN_OTP`);
 
     if (!mobile || mobile.length !== 10) {
       console.error(`[VERIFY OTP FAILURE REASON]: Invalid Mobile Number (${rawMobile})`);
@@ -177,15 +182,15 @@ const verifyOtp = async (req, res, next) => {
     }
 
     if (!enteredOtp || enteredOtp.length !== 6) {
-      console.error(`[VERIFY OTP FAILURE REASON]: Invalid OTP length (${enteredOtp})`);
+      console.error(`[VERIFY OTP FAILURE REASON]: Invalid OTP length`);
       res.status(400);
       throw new Error('Please enter a valid 6-digit OTP.');
     }
 
-    const otpRecord = await Otp.findOne({ mobile });
+    const otpRecord = await Otp.findOne({ mobile, purpose: 'login' });
 
     if (!otpRecord) {
-      console.error(`[VERIFY OTP FAILURE REASON]: OTP Record Not Found in MongoDB for mobile: ${mobile}`);
+      console.error(`[VERIFY OTP FAILURE REASON]: OTP Record Not Found in MongoDB for mobile: ${maskedMobile} with purpose: login`);
       res.status(400);
       throw new Error('OTP has expired or is invalid. Please request a new OTP.');
     }
@@ -214,7 +219,7 @@ const verifyOtp = async (req, res, next) => {
     console.log(`- bcrypt.compare() Match Result: ${isMatch}`);
 
     if (!isMatch) {
-      console.error(`[VERIFY OTP FAILURE REASON]: Hash Mismatch (Entered: ${enteredOtp} does not match stored hash)`);
+      console.error(`[VERIFY OTP FAILURE REASON]: Hash Mismatch`);
       otpRecord.attempts += 1;
       await otpRecord.save();
 
@@ -229,7 +234,7 @@ const verifyOtp = async (req, res, next) => {
       throw new Error(`Invalid OTP. ${attemptsLeft} attempt(s) remaining.`);
     }
 
-    console.log('[VERIFY OTP SUCCESS]: OTP Verified successfully!');
+    console.log('[VERIFY OTP SUCCESS]: Login OTP Verified successfully!');
     console.log('════════════════════════════════════════════════════════════════');
 
     // OTP Verified -> Delete OTP record
@@ -272,7 +277,7 @@ const verifyOtp = async (req, res, next) => {
 };
 
 /**
- * @desc    Resend OTP via Fast2SMS WhatsApp
+ * @desc    Resend OTP via Fast2SMS WhatsApp (Login OTP)
  * @route   POST /api/auth/resend-otp
  * @access  Public
  */
@@ -286,7 +291,7 @@ const resendOtp = async (req, res, next) => {
       throw new Error('Please provide a valid 10-digit mobile number.');
     }
 
-    const otpRecord = await Otp.findOne({ mobile });
+    const otpRecord = await Otp.findOne({ mobile, purpose: 'login' });
 
     if (!otpRecord) {
       // If no active OTP record found, generate a fresh one via sendOtp logic
@@ -320,7 +325,7 @@ const resendOtp = async (req, res, next) => {
     await otpRecord.save();
 
     // Send new OTP via Fast2SMS WhatsApp API
-    await fast2smsService.sendAuthenticationTemplate({ mobile, otp });
+    await fast2smsService.sendLoginOtp({ mobile, otp });
 
     res.status(200).json({
       success: true,

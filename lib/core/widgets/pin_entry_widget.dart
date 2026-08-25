@@ -18,6 +18,7 @@ class PinEntryWidget extends StatefulWidget {
     this.errorText,
     this.length = AppConfig.pinLength,
     this.autofocus = true,
+    this.enabled = true,
     this.controller,
     this.focusNode,
   });
@@ -27,6 +28,7 @@ class PinEntryWidget extends StatefulWidget {
   final String? errorText;
   final int length;
   final bool autofocus;
+  final bool enabled;
   final TextEditingController? controller;
   final FocusNode? focusNode;
 
@@ -58,33 +60,48 @@ class _PinEntryWidgetState extends State<PinEntryWidget> {
   }
 
   PinTheme get _defaultTheme => PinTheme(
-        width: 52,
-        height: 56,
-        textStyle: AppTextTheme.textTheme.displaySmall?.copyWith(
-          fontSize: 24,
-          color: AppColors.textPrimary,
-          fontWeight: FontWeight.w600,
+        width: 48,
+        height: 52,
+        textStyle: AppTextTheme.textTheme.titleLarge?.copyWith(
+          fontSize: 22,
+          color: AppColors.primaryBlue,
+          fontWeight: FontWeight.bold,
         ),
         decoration: BoxDecoration(
           color: AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border, width: 1.2),
         ),
       );
 
   PinTheme get _focusedTheme => _defaultTheme.copyWith(
         decoration: BoxDecoration(
-          color: AppColors.primaryBlueLight,
-          borderRadius: BorderRadius.circular(12),
+          color: AppColors.primaryBlueLight.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.primaryBlue, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryBlue.withValues(alpha: 0.18),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+      );
+
+  PinTheme get _submittedTheme => _defaultTheme.copyWith(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.5), width: 1.5),
         ),
       );
 
   PinTheme get _errorTheme => _defaultTheme.copyWith(
         decoration: BoxDecoration(
           color: AppColors.errorLight,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.error, width: 2),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.error, width: 1.5),
         ),
       );
 
@@ -99,6 +116,7 @@ class _PinEntryWidgetState extends State<PinEntryWidget> {
             controller: _controller,
             focusNode: _focusNode,
             length: widget.length,
+            enabled: widget.enabled,
             obscureText: true,
             obscuringCharacter: '●',
             autofocus: widget.autofocus,
@@ -106,6 +124,7 @@ class _PinEntryWidgetState extends State<PinEntryWidget> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             defaultPinTheme: _defaultTheme,
             focusedPinTheme: _focusedTheme,
+            submittedPinTheme: _submittedTheme,
             errorPinTheme: _errorTheme,
             forceErrorState: widget.errorText != null,
             onCompleted: widget.onCompleted,
@@ -113,13 +132,14 @@ class _PinEntryWidgetState extends State<PinEntryWidget> {
             errorText: widget.errorText,
             errorTextStyle: AppTextTheme.textTheme.bodySmall?.copyWith(
               color: AppColors.error,
+              fontWeight: FontWeight.w500,
             ),
             cursor: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Container(
-                  margin: const EdgeInsets.only(bottom: 9),
-                  width: 22,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  width: 20,
                   height: 3,
                   decoration: BoxDecoration(
                     color: AppColors.primaryBlue,

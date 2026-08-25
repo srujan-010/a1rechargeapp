@@ -72,7 +72,7 @@ class BiometricService {
       );
       return authenticated
           ? BiometricAuthResult.success
-          : BiometricAuthResult.fallbackRequired;
+          : BiometricAuthResult.cancelled;
     } on PlatformException catch (e) {
       AppLogger.warning(
         'Biometric auth exception: ${e.code}',

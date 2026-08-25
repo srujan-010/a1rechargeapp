@@ -8,8 +8,9 @@ import 'bootstrap.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
 
+import 'core/utils/app_lifecycle_observer.dart';
+
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 
 void main() {
   FlutterError.onError = (details) {
@@ -45,17 +46,17 @@ class A1RechargeApp extends ConsumerWidget {
       // Navigation
       routerConfig: router,
 
-      // Accessibility
+      // Accessibility & App Lock Lifecycle Observer
       builder: (context, child) {
-        // Ensure text scaling is capped at 1.3x to prevent layout overflow
-        // on large-text accessibility settings
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(
-              MediaQuery.of(context).textScaler.scale(1.0).clamp(0.8, 1.3),
+        return AppLifecycleObserver(
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(
+                MediaQuery.of(context).textScaler.scale(1.0).clamp(0.8, 1.3),
+              ),
             ),
+            child: child ?? const SizedBox.shrink(),
           ),
-          child: child ?? const SizedBox.shrink(),
         );
       },
     );

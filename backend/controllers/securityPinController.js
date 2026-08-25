@@ -173,9 +173,10 @@ const sendForgotOtp = async (req, res, next) => {
     const otpHash = await bcrypt.hash(otp, salt);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    await Otp.deleteMany({ mobile });
+    await Otp.deleteMany({ mobile, purpose: 'security_pin_reset' });
     await Otp.create({
       mobile,
+      purpose: 'security_pin_reset',
       otpHash,
       expiresAt,
       attempts: 0,
@@ -183,7 +184,7 @@ const sendForgotOtp = async (req, res, next) => {
       lastSentAt: new Date(),
     });
 
-    await fast2smsService.sendAuthenticationTemplate({ mobile, otp });
+    await fast2smsService.sendSecurityPinResetOtp({ mobile, otp });
 
     res.status(200).json({
       success: true,
@@ -213,7 +214,7 @@ const verifyForgotOtp = async (req, res, next) => {
       throw new Error('Please enter a valid 6-digit OTP.');
     }
 
-    const otpRecord = await Otp.findOne({ mobile });
+    const otpRecord = await Otp.findOne({ mobile, purpose: 'security_pin_reset' });
 
     if (!otpRecord) {
       res.status(400);

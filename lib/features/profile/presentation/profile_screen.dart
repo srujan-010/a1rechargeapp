@@ -6,6 +6,7 @@ import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/providers/core_providers.dart';
+import '../../../core/utils/logger.dart';
 
 import '../../../core/widgets/premium_logout_sheet.dart';
 import '../../../features/auth/provider/auth_provider.dart';
@@ -14,17 +15,65 @@ import 'profile_providers.dart';
 
 import '../../security_pin/providers/security_pin_provider.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppLogger.info('[BIOMETRIC] Profile opened', tag: 'Biometric');
+      AppLogger.info('[BIOMETRIC] No automatic authentication triggered', tag: 'Biometric');
+    });
+  }
 
   void _showComingSoon(BuildContext context, String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature coming soon')),
+      SnackBar(
+        content: Text('$feature coming soon'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        margin: const EdgeInsets.only(bottom: 90, left: 16, right: 16),
+      ),
     );
   }
 
+  Future<void> _handleBiometricToggle(bool val) async {
+    final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(val);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          margin: const EdgeInsets.only(bottom: 90, left: 16, right: 16),
+          backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
+        ),
+      );
+    } else if (val && ref.read(biometricStateProvider)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Biometric login enabled successfully.'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+          margin: EdgeInsets.only(bottom: 90, left: 16, right: 16),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final sessionAsync = ref.watch(sessionProvider);
     final user = sessionAsync.valueOrNull;
 
@@ -120,45 +169,10 @@ class ProfileScreen extends ConsumerWidget {
                           subtitle: 'Use fingerprint or Face ID for faster sign-in',
                           trailing: Switch.adaptive(
                             value: isBiometricEnabled,
-                            activeColor: AppColors.primaryBlue,
-                            onChanged: (val) async {
-                              final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(val);
-                              if (error != null && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(error),
-                                    backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
-                                  ),
-                                );
-                              } else if (val && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Biometric login enabled successfully.'),
-                                    backgroundColor: AppColors.success,
-                                  ),
-                                );
-                              }
-                            },
+                            activeTrackColor: AppColors.primaryBlue,
+                            onChanged: (val) => _handleBiometricToggle(val),
                           ),
-                          onTap: () async {
-                            final newValue = !isBiometricEnabled;
-                            final error = await ref.read(biometricStateProvider.notifier).toggleBiometric(newValue);
-                            if (error != null && context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(error),
-                                  backgroundColor: error.contains('not available') ? Colors.orange.shade800 : AppColors.error,
-                                ),
-                              );
-                            } else if (newValue && context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Biometric login enabled successfully.'),
-                                  backgroundColor: AppColors.success,
-                                ),
-                              );
-                            }
-                          },
+                          onTap: () => _handleBiometricToggle(!isBiometricEnabled),
                         ),
                       ],
                     ),
@@ -373,15 +387,15 @@ class _PremiumProfileHeader extends StatelessWidget {
         : 'Not Added';
     final String kycStatus = user?.kycStatus?.toString() ?? 'notStarted';
 
-    print('\n========== PROFILE WIDGET DATA ==========');
-    print('Profile Name: "$name"');
-    print('Profile Shop Name: "$shopName"');
-    print('Profile Phone: "$phone"');
-    print('Profile Email: "$email"');
-    print('Profile Retailer ID: "$retailerId"');
-    print('Profile KYC Status: "$kycStatus"');
-    print('Profile Joined Date: "$memberSince"');
-    print('==========================================\n');
+    AppLogger.info('========== PROFILE WIDGET DATA ==========', tag: 'Profile');
+    AppLogger.info('Profile Name: "$name"', tag: 'Profile');
+    AppLogger.info('Profile Shop Name: "$shopName"', tag: 'Profile');
+    AppLogger.info('Profile Phone: "$phone"', tag: 'Profile');
+    AppLogger.info('Profile Email: "$email"', tag: 'Profile');
+    AppLogger.info('Profile Retailer ID: "$retailerId"', tag: 'Profile');
+    AppLogger.info('Profile KYC Status: "$kycStatus"', tag: 'Profile');
+    AppLogger.info('Profile Joined Date: "$memberSince"', tag: 'Profile');
+    AppLogger.info('==========================================', tag: 'Profile');
 
     return Container(
       decoration: const BoxDecoration(

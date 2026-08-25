@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'dart:math' as math;
-import 'dart:ui';
 import '../../../firebase_options.dart';
 import '../../../core/constants/asset_paths.dart';
 import '../../../core/constants/route_names.dart';
@@ -12,6 +11,7 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/services/local_cache_service.dart';
 import '../../../core/utils/startup_tracker.dart';
 import '../../../core/utils/logger.dart';
+import '../../security_pin/providers/security_pin_provider.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -105,6 +105,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
 
     StartupTracker.instance.markLocalInitCompleted();
 
+    AppLogger.info('[SECURITY_PIN] App startup', tag: 'SECURITY_PIN');
+
     // 2. Restore & validate JWT locally (non-blocking network)
     bool hasJwt = false;
     try {
@@ -113,7 +115,28 @@ class _SplashScreenState extends ConsumerState<SplashScreen> with TickerProvider
       AppLogger.warning('JWT check error: $e', tag: 'Splash');
     }
 
-    final targetRoute = hasJwt ? RouteNames.dashboard : RouteNames.otpLogin;
+    String targetRoute;
+    if (!hasJwt) {
+      targetRoute = RouteNames.otpLogin;
+    } else {
+      AppLogger.info('[SECURITY_PIN] Authentication session restored', tag: 'SECURITY_PIN');
+
+      final secureStorage = ref.read(secureStorageProvider);
+      final isSecPinEnabled = await secureStorage.isSecurityPinEnabled();
+      final secPinState = ref.read(securityPinProvider);
+      final isConfigured = secPinState.securityPinConfigured ?? isSecPinEnabled;
+      final isUnlocked = secPinState.isAppUnlocked;
+
+      AppLogger.info('[SECURITY_PIN] Security PIN configured: ${isConfigured ? "YES" : "NO"}', tag: 'SECURITY_PIN');
+
+      if (isConfigured && !isUnlocked) {
+        AppLogger.info('[SECURITY_PIN] Unlock screen required', tag: 'SECURITY_PIN');
+        targetRoute = RouteNames.appLock;
+      } else {
+        targetRoute = RouteNames.dashboard;
+      }
+    }
+
     StartupTracker.instance.markNavDecisionCompleted();
 
     // 3. Keep splash visible for ~1.2 seconds for smooth transition

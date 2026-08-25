@@ -18,10 +18,13 @@ class Fast2SMSService {
       apiKey: process.env.FAST2SMS_API_KEY,
       authMessageId: AUTH_MESSAGE_ID,
       phoneNumberId: PHONE_NUMBER_ID,
+      loginOtpTemplateId: process.env.FAST2SMS_LOGIN_OTP_TEMPLATE_ID || process.env.FAST2SMS_AUTH_MESSAGE_ID || process.env.FAST2SMS_AUTH_TEMPLATE_ID || AUTH_MESSAGE_ID,
+      securityPinResetTemplateId: process.env.FAST2SMS_SECURITY_PIN_RESET_TEMPLATE_ID || process.env.FAST2SMS_SECURITY_PIN_RESET_MESSAGE_ID || AUTH_MESSAGE_ID,
+      walletPinResetTemplateId: process.env.FAST2SMS_WALLET_PIN_RESET_TEMPLATE_ID || process.env.FAST2SMS_WALLET_PIN_RESET_MESSAGE_ID || AUTH_MESSAGE_ID,
       rechargeTemplateId: process.env.FAST2SMS_RECHARGE_TEMPLATE_ID || '26992',
       rechargeSuccessWhatsAppEnabled: process.env.FAST2SMS_RECHARGE_SUCCESS_ENABLED === 'true',
       brandName: process.env.FAST2SMS_BRAND_NAME || 'A1recharge',
-      supportPhone: process.env.FAST2SMS_SUPPORT_PHONE || '8275366399',
+      supportPhone: process.env.FAST2SMS_SUPPORT_PHONE || '9975600499',
     };
   }
 
@@ -47,30 +50,21 @@ class Fast2SMSService {
   }
 
   /**
-   * Send WhatsApp Authentication OTP Template matching @api/fast2sms SDK behavior
-   * Endpoint: GET https://www.fast2sms.com/dev/whatsapp
-   *
-   * Working SDK Format:
-   * variables_values: `${otp}%7CA1recharge%7C8275366399`
-   *
-   * @param {Object} params
-   * @param {String} params.mobile - recipient mobile number
-   * @param {String} params.otp - 6-digit generated OTP code
+   * Core helper for sending WhatsApp OTP templates via Fast2SMS API
    */
-  async sendAuthenticationTemplate({ mobile, otp }) {
+  async _sendOtpTemplate({ mobile, otp, messageId, purposeName }) {
     const startTime = Date.now();
     const config = this._getConfig();
 
-    const targetMessageId = AUTH_MESSAGE_ID;
-    const targetPhoneNumberId = PHONE_NUMBER_ID;
+    const targetMessageId = messageId || config.loginOtpTemplateId;
+    const targetPhoneNumberId = config.phoneNumberId;
 
-    // Strict Security & Integrity Guards
     if (!targetMessageId || String(targetMessageId).trim() === '') {
-      throw new Error('[FAST2SMS GUARD ERROR] Authentication message_id is empty or missing.');
+      throw new Error(`[FAST2SMS GUARD ERROR] ${purposeName} message_id is empty or missing.`);
     }
 
     if (!targetPhoneNumberId || String(targetPhoneNumberId).trim() === '') {
-      throw new Error('[FAST2SMS GUARD ERROR] Authentication phone_number_id is empty or missing.');
+      throw new Error(`[FAST2SMS GUARD ERROR] ${purposeName} phone_number_id is empty or missing.`);
     }
 
     const cleanedMobile = this._cleanMobile(mobile);
@@ -87,13 +81,14 @@ class Fast2SMSService {
     const brandName = String(config.brandName).trim();
     const supportPhone = String(config.supportPhone).trim();
 
-    if (!cleanOtp || !brandName || !supportPhone) {
-      throw new Error(`Invalid template variable: OTP=${cleanOtp}, Brand=${brandName}, SupportPhone=${supportPhone}`);
+    if (!cleanOtp) {
+      throw new Error(`Invalid template variable for ${purposeName}`);
     }
 
-    // Exact variable mapping matching Fast2SMS SDK: {{1}} OTP | {{2}} A1recharge | {{3}} 8275366399 (Phone Number)
-    // Encoded with %7C to match SDK request serialization
-    const encodedVariables = `${cleanOtp}%7C${brandName}%7C${supportPhone}`;
+    // Exact variable mapping: {{1}} OTP | (Optional for legacy template 27018: {{2}} Brand | {{3}} Phone)
+    const encodedVariables = (targetMessageId === "27018")
+      ? `${cleanOtp}%7C${brandName}%7C${supportPhone}`
+      : `${cleanOtp}`;
 
     const headers = {
       'Authorization': config.apiKey,
@@ -102,13 +97,13 @@ class Fast2SMSService {
 
     const fullUrl = `${this.whatsappApiUrl}?message_id=${targetMessageId}&phone_number_id=${targetPhoneNumberId}&numbers=${cleanedMobile}&variables_values=${encodedVariables}`;
 
+    const maskedMobile = cleanedMobile.length === 10 ? `******${cleanedMobile.slice(-4)}` : cleanedMobile;
+
     console.log('════════════════════════════════════════════════════════════════');
-    console.log('Message ID:\n' + targetMessageId + '\n');
-    console.log('Phone Number ID:\n' + targetPhoneNumberId + '\n');
-    console.log('Template:\nAuthentication OTP\n');
-    console.log(`[FAST2SMS WHATSAPP TEMPLATE API REQUEST - SDK IDENTICAL]`);
-    console.log(`- HTTP Method: GET`);
-    console.log(`- Full Request URL: ${fullUrl}`);
+    console.log(`[FAST2SMS WHATSAPP OTP REQUEST - ${purposeName}]`);
+    console.log(`- Message ID: ${targetMessageId}`);
+    console.log(`- Recipient: ${maskedMobile}`);
+    console.log(`- Purpose: ${purposeName}`);
     console.log(`- Headers:`, JSON.stringify({ Authorization: this._maskKey(config.apiKey), accept: 'application/json' }, null, 2));
 
     try {
@@ -118,9 +113,7 @@ class Fast2SMSService {
       });
 
       const duration = Date.now() - startTime;
-      console.log(`[FAST2SMS WHATSAPP TEMPLATE API RESPONSE]`);
-      console.log(`- HTTP Status: ${response.status} (${duration}ms)`);
-      console.log(`- Complete Fast2SMS Response Body:`, JSON.stringify(response.data, null, 2));
+      console.log(`[FAST2SMS ${purposeName} RESPONSE] HTTP Status: ${response.status} (${duration}ms)`);
 
       if (response.data && response.data.return === false) {
         console.error(`[FAST2SMS ERROR RESPONSE]:`, JSON.stringify(response.data, null, 2));
@@ -135,14 +128,56 @@ class Fast2SMSService {
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMsg = error.response?.data?.message || error.response?.data || error.message;
-      console.error(`[FAST2SMS WHATSAPP TEMPLATE API FAILURE] Duration: ${duration}ms, Error:`, errorMsg);
-      if (error.response) {
-        console.error(`- HTTP Status: ${error.response.status}`);
-        console.error(`- Complete Response Body:`, JSON.stringify(error.response.data, null, 2));
-      }
+      console.error(`[FAST2SMS ${purposeName} FAILURE] Duration: ${duration}ms, Error:`, typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg);
       console.log('════════════════════════════════════════════════════════════════');
       throw new Error(`Fast2SMS WhatsApp Delivery Failed: ${typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg}`);
     }
+  }
+
+  /**
+   * 1. Send Login OTP Template
+   */
+  async sendLoginOtp({ mobile, otp }) {
+    const config = this._getConfig();
+    return this._sendOtpTemplate({
+      mobile,
+      otp,
+      messageId: config.loginOtpTemplateId,
+      purposeName: 'LOGIN_OTP',
+    });
+  }
+
+  /**
+   * 2. Send Security PIN Reset OTP Template
+   */
+  async sendSecurityPinResetOtp({ mobile, otp }) {
+    const config = this._getConfig();
+    return this._sendOtpTemplate({
+      mobile,
+      otp,
+      messageId: config.securityPinResetTemplateId,
+      purposeName: 'SECURITY_PIN_RESET_OTP',
+    });
+  }
+
+  /**
+   * 3. Send Wallet PIN Reset OTP Template
+   */
+  async sendWalletPinResetOtp({ mobile, otp }) {
+    const config = this._getConfig();
+    return this._sendOtpTemplate({
+      mobile,
+      otp,
+      messageId: config.walletPinResetTemplateId,
+      purposeName: 'WALLET_PIN_RESET_OTP',
+    });
+  }
+
+  /**
+   * Send WhatsApp Authentication OTP Template (Backward compatibility wrapper)
+   */
+  async sendAuthenticationTemplate({ mobile, otp }) {
+    return this.sendLoginOtp({ mobile, otp });
   }
 
   /**

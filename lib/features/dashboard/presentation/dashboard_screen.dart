@@ -8,7 +8,6 @@ import '../../../core/theme/app_text_theme.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/operator_formatter.dart';
-import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/providers/core_providers.dart';
@@ -896,22 +895,6 @@ class _QuickServicesGrid extends StatelessWidget {
       bgColor: Color(0xFFE8F5E9),
       iconColor: Color(0xFF43A047),
       isElectricity: true,
-    ),
-    _ServiceItem(
-      label: 'Gas',
-      subtitle: 'Bill Payment',
-      icon: Icons.local_fire_department,
-      route: RouteNames.gas,
-      bgColor: Color(0xFFFBE9E7),
-      iconColor: Color(0xFFD84315),
-    ),
-    _ServiceItem(
-      label: 'FASTag',
-      subtitle: 'Recharge',
-      icon: Icons.directions_car,
-      route: RouteNames.fastag,
-      bgColor: Color(0xFFE0F7FA),
-      iconColor: Color(0xFF00838F),
     ),
   ];
 

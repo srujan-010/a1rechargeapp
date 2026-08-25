@@ -9,6 +9,7 @@ abstract final class _Keys {
   static const String tokenExpiry = 'token_expiry';
   static const String mpinHash = 'mpin_hash';
   static const String securityPinHash = 'security_pin_hash';
+  static const String securityPinEnabled = 'security_pin_enabled';
   static const String walletMpinHash = 'wallet_mpin_hash';
   static const String biometricEnabled = 'biometric_enabled';
   static const String retailerId = 'retailer_id';
@@ -128,6 +129,16 @@ class SecureStorageService {
   Future<bool> hasSecurityPin() async {
     final hash = await getSecurityPinHash();
     return hash != null && hash.isNotEmpty;
+  }
+
+  Future<void> setSecurityPinEnabled({required bool enabled}) async {
+    await _write(_Keys.securityPinEnabled, enabled.toString());
+  }
+
+  Future<bool> isSecurityPinEnabled() async {
+    final raw = await _read(_Keys.securityPinEnabled);
+    if (raw != null) return raw == 'true';
+    return hasSecurityPin();
   }
 
   // ─── Wallet MPIN Storage (Payment Authorization) ─────────────────

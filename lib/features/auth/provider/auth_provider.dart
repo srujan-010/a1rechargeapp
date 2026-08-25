@@ -8,6 +8,8 @@ import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/services/notification_service.dart';
 
+import '../../security_pin/providers/security_pin_provider.dart';
+
 final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(
     authRepository: ref.watch(authRepositoryProvider),
@@ -160,6 +162,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     
     await authRepository.logout();
     
+    ref.read(securityPinProvider.notifier).lockApp();
+    ref.invalidate(securityPinProvider);
     ref.invalidate(hasValidJwtProvider);
     ref.invalidate(sessionProvider);
     

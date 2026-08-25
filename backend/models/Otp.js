@@ -7,6 +7,13 @@ const otpSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    purpose: {
+      type: String,
+      enum: ['login', 'security_pin_reset', 'wallet_pin_reset'],
+      default: 'login',
+      required: true,
+      index: true,
+    },
     otpHash: {
       type: String,
       required: true,
@@ -34,6 +41,9 @@ const otpSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound index for fast queries by mobile and purpose
+otpSchema.index({ mobile: 1, purpose: 1 });
 
 // TTL index to automatically delete expired OTP documents from MongoDB
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
