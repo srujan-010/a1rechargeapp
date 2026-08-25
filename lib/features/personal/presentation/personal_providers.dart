@@ -1,7 +1,35 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/core_providers.dart';
-import '../../../core/models/api_response.dart';
 import '../../../core/utils/operator_formatter.dart';
+import '../../../core/utils/logger.dart';
+import '../../../core/services/local_cache_service.dart';
+
+/// Defensive Flutter deduplication helper to ensure 1 unique operator entry per service category
+List<PersonalBenefitSlab> deduplicateSlabs(List<PersonalBenefitSlab> slabs) {
+  final Map<String, PersonalBenefitSlab> uniqueMap = {};
+  for (final slab in slabs) {
+    final account = slab.accountType.toUpperCase().trim();
+    final service = slab.serviceType.toLowerCase().trim();
+    final code = slab.operatorCode.toUpperCase().trim();
+    final normName = slab.operatorName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final opKey = code.isNotEmpty ? code : normName;
+    final compositeKey = '${account}_${service}_$opKey';
+
+    if (!uniqueMap.containsKey(compositeKey)) {
+      uniqueMap[compositeKey] = slab;
+    } else {
+      AppLogger.warning(
+        '[Benefits] DUPLICATE OPERATOR RATE DETECTED: operatorId=${slab.id}, operatorCode=${slab.operatorCode}, operatorName=${slab.operatorName}, accountType=${slab.accountType}, category=${slab.serviceType}',
+        tag: 'Benefits',
+      );
+      final existing = uniqueMap[compositeKey]!;
+      if (slab.commissionValue > existing.commissionValue) {
+        uniqueMap[compositeKey] = slab;
+      }
+    }
+  }
+  return uniqueMap.values.toList();
+}
 
 class PersonalSavings {
   final double lifetimeSavings;
@@ -27,6 +55,8 @@ class PersonalSavings {
 }
 
 class PersonalBenefitSlab {
+  final String id;
+  final String accountType;
   final String operatorCode;
   final String operatorName;
   final String serviceType;
@@ -34,6 +64,8 @@ class PersonalBenefitSlab {
   final double commissionValue;
 
   PersonalBenefitSlab({
+    required this.id,
+    required this.accountType,
     required this.operatorCode,
     required this.operatorName,
     required this.serviceType,
@@ -43,13 +75,27 @@ class PersonalBenefitSlab {
 
   factory PersonalBenefitSlab.fromJson(Map<String, dynamic> json) {
     return PersonalBenefitSlab(
+      id: json['id']?.toString() ?? json['_id']?.toString() ?? json['operatorCode'] as String? ?? '',
+      accountType: json['accountType'] as String? ?? 'PERSONAL',
       operatorCode: json['operatorCode'] as String? ?? '',
       operatorName: json['operatorName'] as String? ?? '',
       serviceType: json['serviceType'] as String? ?? 'mobile',
       commissionType: json['commissionType'] as String? ?? 'percentage',
-      commissionValue: (json['commissionValue'] as num?)?.toDouble() ?? 0.8,
+      commissionValue: (json['commissionValue'] as num?)?.toDouble() ??
+          (json['personalCommission'] as num?)?.toDouble() ??
+          0.8,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'accountType': accountType,
+        'operatorCode': operatorCode,
+        'operatorName': operatorName,
+        'serviceType': serviceType,
+        'commissionType': commissionType,
+        'commissionValue': commissionValue,
+      };
 }
 
 class LastRecharge {
@@ -171,16 +217,43 @@ final personalSavingsProvider = FutureProvider.autoDispose<PersonalSavings>((ref
 });
 
 final personalBenefitsProvider = FutureProvider.autoDispose<List<PersonalBenefitSlab>>((ref) async {
-  final apiClient = ref.watch(apiClientProvider);
-  final response = await apiClient.get<Map<String, dynamic>>(
-    '/personal/benefits',
-    fromJson: (json) => json as Map<String, dynamic>,
-  );
-  if (response.success && response.data != null) {
-    final list = response.data!['slabs'] as List? ?? [];
-    return list.map((item) => PersonalBenefitSlab.fromJson(item as Map<String, dynamic>)).toList();
+  final cache = LocalCacheService.instance;
+  final cachedList = cache.get<List<dynamic>>(cache.offersBox, 'cached_personal_benefits');
+  List<PersonalBenefitSlab> cachedSlabs = [];
+
+  if (cachedList != null) {
+    try {
+      final parsed = cachedList
+          .map((item) => PersonalBenefitSlab.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
+      cachedSlabs = deduplicateSlabs(parsed);
+    } catch (_) {}
   }
-  return [];
+
+  final apiClient = ref.watch(apiClientProvider);
+  try {
+    final response = await apiClient.get<Map<String, dynamic>>(
+      '/personal/benefits',
+      fromJson: (json) => json as Map<String, dynamic>,
+    );
+    if (response.success && response.data != null) {
+      final list = response.data!['slabs'] as List? ?? [];
+      final fresh = list.map((item) => PersonalBenefitSlab.fromJson(item as Map<String, dynamic>)).toList();
+      final deduplicated = deduplicateSlabs(fresh);
+      if (deduplicated.isNotEmpty) {
+        cache.put(
+          cache.offersBox,
+          'cached_personal_benefits',
+          deduplicated.map((s) => s.toJson()).toList(),
+        );
+        return deduplicated;
+      }
+    }
+  } catch (e) {
+    if (cachedSlabs.isNotEmpty) return cachedSlabs;
+    rethrow;
+  }
+  return cachedSlabs;
 });
 
 final lastRechargeProvider = FutureProvider.autoDispose<LastRecharge?>((ref) async {

@@ -70,32 +70,145 @@ const getSavings = async (req, res) => {
   }
 };
 
+function inferServiceType(doc) {
+  if (doc.serviceType && doc.serviceType !== 'undefined') return String(doc.serviceType).toLowerCase().trim();
+  const code = String(doc.operatorCode || '').toUpperCase().trim();
+  const name = String(doc.operatorName || '').toLowerCase().trim();
+
+  if (['TP', 'TTV', 'DISH', 'DTV', 'SUN', 'STV', 'AIRDTH', 'ATV', 'VTV', 'DA'].includes(code) || 
+      name.includes('dth') || name.includes('tata sky') || name.includes('tata play') || 
+      name.includes('dish tv') || name.includes('sun direct') || name.includes('videocon')) {
+    return 'dth';
+  }
+  if (['BESCOM', 'TSSPDCL', 'TGSPDCL'].includes(code) || name.includes('electricity')) {
+    return 'electricity';
+  }
+  if (['IGAS'].includes(code) || name.includes('gas')) {
+    return 'gas';
+  }
+  if (['PFAST'].includes(code) || name.includes('fastag')) {
+    return 'fastag';
+  }
+  return 'mobile';
+}
+
+function getCanonicalOperatorCode(rawCode, rawName, serviceType) {
+  const code = String(rawCode || '').toUpperCase().trim();
+  const name = String(rawName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const service = String(serviceType || 'mobile').toLowerCase().trim();
+
+  if (service === 'mobile') {
+    if (['A', 'AT', 'AIRTEL'].includes(code) || name.includes('airtel')) return 'AT';
+    if (['RC', 'JO', 'JIO'].includes(code) || name.includes('jio') || name.includes('reliance')) return 'JO';
+    if (['V', 'VI', 'VODAFONE', 'I', 'IDEA'].includes(code) || name.includes('vi') || name.includes('vodafone') || name.includes('idea')) return 'VI';
+    if (['BR', 'BSNL'].includes(code) && !name.includes('stv') && !name.includes('special')) return 'BR';
+    if (['BT'].includes(code) || name.includes('stv') || name.includes('special')) return 'BT';
+  } else if (service === 'dth') {
+    if (['AIRDTH', 'ATV', 'DA'].includes(code) || name.includes('airteldth') || name.includes('airtel dth')) return 'AIRDTH';
+    if (['TP', 'TTV'].includes(code) || name.includes('tataplay') || name.includes('tatasky') || name.includes('tata sky')) return 'TP';
+    if (['DISH', 'DTV'].includes(code) || name.includes('dishtv') || name.includes('dish tv')) return 'DISH';
+    if (['SUN', 'STV'].includes(code) || name.includes('sundirect') || name.includes('sun direct')) return 'SUN';
+    if (['VTV'].includes(code) || name.includes('videocon') || name.includes('d2h')) return 'VTV';
+  }
+
+  return code || name;
+}
+
 /**
  * GET /api/personal/benefits
  * Returns active personal benefit slabs grouped by service type
  */
 const getBenefits = async (req, res) => {
   try {
-    let count = await PersonalCommissionSlab.countDocuments();
-    if (count === 0) {
-      await PersonalCommissionSlab.insertMany(defaultPersonalSlabs);
+    const userAccountType = (req.user && req.user.accountType) ? String(req.user.accountType).toUpperCase() : 'PERSONAL';
+    const reqCategory = (req.query.category || req.query.serviceType || '').toLowerCase().trim();
+
+    let rawSlabs = await OperatorCommission.find({ accountType: userAccountType === 'BUSINESS' ? 'BUSINESS' : 'PERSONAL', status: 'ACTIVE' })
+      .sort({ serviceType: 1, operatorName: 1 })
+      .lean();
+
+    if (rawSlabs.length === 0) {
+      const fallbackSlabs = await PersonalCommissionSlab.find({ status: 'ACTIVE' }).lean();
+      rawSlabs = fallbackSlabs.map((s) => ({
+        accountType: 'PERSONAL',
+        operatorCode: s.operatorCode,
+        operatorName: s.operatorName,
+        serviceType: s.serviceType,
+        commissionType: s.commissionType || 'percentage',
+        commissionValue: s.commissionValue || 0.8,
+        personalCommission: s.commissionValue || 0.8,
+        status: s.status,
+      }));
     }
 
-    const slabs = await PersonalCommissionSlab.find({ status: 'ACTIVE' }).lean();
+    console.log(`[BENEFITS API] RAW RATE COUNT: ${rawSlabs.length} for accountType=${userAccountType}`);
+    for (const s of rawSlabs) {
+      console.log(`[BENEFITS API] RATE: operatorId=${s._id} operatorCode=${s.operatorCode} operatorName=${s.operatorName} accountType=${s.accountType} category=${s.serviceType} personalCommission=${s.personalCommission} retailerCommission=${s.retailerCommission}`);
+    }
 
-    // Group slabs by serviceType
+    // Map slabs per accountType + service category + operatorCode
+    const uniqueMap = new Map();
+    for (const s of rawSlabs) {
+      const service = inferServiceType(s);
+      const code = (s.operatorCode || '').toUpperCase().trim();
+      const name = (s.operatorName || '').trim();
+
+      // Composite key per accountType + serviceType + operatorCode
+      const compositeKey = `${userAccountType}_${service}_${code}`;
+
+      const commVal = (userAccountType === 'BUSINESS')
+        ? (s.retailerCommission ?? s.personalCommission ?? 0.8)
+        : (s.personalCommission ?? s.retailerCommission ?? 0.8);
+
+      const formattedSlab = {
+        id: s._id ? s._id.toString() : compositeKey,
+        accountType: s.accountType || userAccountType,
+        operatorCode: code,
+        operatorName: name || code,
+        serviceType: service,
+        commissionType: s.commissionType || 'percentage',
+        commissionValue: Number(commVal),
+        personalCommission: s.personalCommission ?? commVal,
+        retailerCommission: s.retailerCommission ?? commVal,
+        providerCommission: s.providerCommission ?? 0,
+        status: s.status || 'ACTIVE',
+      };
+
+      if (!uniqueMap.has(compositeKey)) {
+        uniqueMap.set(compositeKey, formattedSlab);
+      } else {
+        uniqueMap.set(compositeKey, formattedSlab);
+      }
+    }
+
+    const slabs = Array.from(uniqueMap.values());
+    console.log(`[BENEFITS API] FINAL DEDUPLICATED RATE COUNT: ${slabs.length}`);
+
     const mobile = slabs.filter(s => s.serviceType === 'mobile');
     const dth = slabs.filter(s => s.serviceType === 'dth');
     const electricity = slabs.filter(s => s.serviceType === 'electricity' || s.serviceType === 'bbps');
+    const gas = slabs.filter(s => s.serviceType === 'gas');
+    const fastag = slabs.filter(s => s.serviceType === 'fastag');
+
+    let filteredSlabs = slabs;
+    if (reqCategory === 'mobile') filteredSlabs = mobile;
+    else if (reqCategory === 'dth') filteredSlabs = dth;
+    else if (reqCategory === 'electricity' || reqCategory === 'bbps') filteredSlabs = electricity;
+    else if (reqCategory === 'gas') filteredSlabs = gas;
+    else if (reqCategory === 'fastag') filteredSlabs = fastag;
 
     return res.status(200).json({
       success: true,
       data: {
-        slabs,
+        accountType: userAccountType,
+        slabs: filteredSlabs,
+        allSlabs: slabs,
         categories: {
           mobile,
           dth,
           electricity,
+          gas,
+          fastag,
         },
       },
     });

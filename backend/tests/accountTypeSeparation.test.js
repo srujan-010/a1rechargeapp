@@ -56,16 +56,27 @@ describe('Account Type Separation Suite (PERSONAL vs RETAILER)', () => {
       reservedPaise: 0,
     });
 
-    // Create test operator commission rule (Retailer 2%, Personal 1.8%)
+    // Create test operator commission rules for both BUSINESS and PERSONAL
     await OperatorCommission.deleteMany({ operatorCode: 'AIRTEL_TEST' });
     await OperatorCommission.create({
+      accountType: 'BUSINESS',
       operatorCode: 'AIRTEL_TEST',
       operatorName: 'Airtel Test',
       serviceType: 'mobile',
       providerCommission: 4,
       retailerCommission: 2.0, // 2%
-      personalCommission: 1.8, // 1.8%
       companyCommission: 2,
+      status: 'ACTIVE',
+    });
+    await OperatorCommission.create({
+      accountType: 'PERSONAL',
+      operatorCode: 'AIRTEL_TEST',
+      operatorName: 'Airtel Test',
+      serviceType: 'mobile',
+      providerCommission: 4,
+      retailerCommission: 1.8,
+      personalCommission: 1.8, // 1.8%
+      companyCommission: 2.2,
       status: 'ACTIVE',
     });
 
@@ -129,7 +140,7 @@ describe('Account Type Separation Suite (PERSONAL vs RETAILER)', () => {
     expect(statusCode).toBeUndefined();
   });
 
-  test('TEST 3 — PERSONAL PRICING & DTO PRIVACY: Strips internal commission fields for Personal users', async () => {
+  test('TEST 3 — PERSONAL PRICING & DTO: Returns full Personal commission details for Personal users', async () => {
     const req = {
       user: personalUser,
       body: {
@@ -154,15 +165,10 @@ describe('Account Type Separation Suite (PERSONAL vs RETAILER)', () => {
     const dto = responseData.data;
     expect(dto.rechargeAmount).toBe(100);
     expect(dto.payableAmount).toBe(98.2); // 100 - 1.8%
+    expect(dto.commissionAmount).toBe(1.8);
+    expect(dto.commissionPercentage).toBe(1.8);
+    expect(dto.accountType).toBe('PERSONAL');
     expect(dto.currency).toBe('INR');
-
-    // PRIVACY VERIFICATION: Ensure internal fields are NEVER exposed to Personal user
-    expect(dto.commissionAmount).toBeUndefined();
-    expect(dto.commissionPercentage).toBeUndefined();
-    expect(dto.retailerCommission).toBeUndefined();
-    expect(dto.providerCommission).toBeUndefined();
-    expect(dto.a1Margin).toBeUndefined();
-    expect(dto.personalAdjustment).toBeUndefined();
   });
 
   test('TEST 4 — RETAILER PRICING DTO: Retailer user receives full retailer commission breakdown', async () => {
@@ -199,18 +205,19 @@ describe('Account Type Separation Suite (PERSONAL vs RETAILER)', () => {
     const pWallet = await Wallet.findOne({ userId: personalUser._id });
     expect(pWallet).toBeNull();
 
-    const commission = await commissionService.calculateCommission('AIRTEL_TEST', 100, 'Airtel Test', 'mobile');
+    const commission = await commissionService.calculateCommission('AIRTEL_TEST', 100, 'Airtel Test', 'mobile', { accountType: 'PERSONAL' });
     expect(commission.personalCommissionPercentage).toBe(1.8);
     expect(commission.personalDiscountAmount).toBe(1.8);
   });
 
   test('TEST 6 — CENTRALIZED COMMISSION SERVICE: Calculates distinct rates for RETAILER vs PERSONAL', async () => {
-    const retDetails = await commissionService.calculateCommission('AIRTEL_TEST', 200, 'Airtel Test', 'mobile');
+    const retDetails = await commissionService.calculateCommission('AIRTEL_TEST', 200, 'Airtel Test', 'mobile', { accountType: 'BUSINESS' });
     expect(retDetails.retailerCommissionPercentage).toBe(2.0);
     expect(retDetails.retailerCommissionAmount).toBe(4.0); // 2% of 200
 
-    expect(retDetails.personalCommissionPercentage).toBe(1.8);
-    expect(retDetails.personalDiscountAmount).toBe(3.6); // 1.8% of 200
+    const persDetails = await commissionService.calculateCommission('AIRTEL_TEST', 200, 'Airtel Test', 'mobile', { accountType: 'PERSONAL' });
+    expect(persDetails.personalCommissionPercentage).toBe(1.8);
+    expect(persDetails.personalDiscountAmount).toBe(3.6); // 1.8% of 200
   });
 
   test('TEST 7 — BACKEND AUTHORITATIVE SOURCE OF TRUTH: User accountType from database is immutable to client tampering', async () => {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/utils/app_navigation.dart';
+import '../../../core/utils/route_resolver.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../domain/models/app_notification.dart';
 import 'notifications_providers.dart';
@@ -477,30 +478,9 @@ class _NotificationCardContent extends ConsumerWidget {
   }
 
   void _handleNotificationAction(BuildContext context, String? action) {
-    if (action == null || action.isEmpty) return;
-    if (action.startsWith('/')) {
-      context.push(action);
-      return;
-    }
-    switch (action) {
-      case 'ROUTE_WALLET':
-        context.go(RouteNames.wallet);
-        break;
-      case 'ROUTE_KYC':
-        context.push(RouteNames.kyc);
-        break;
-      case 'ROUTE_PROFILE':
-        context.go(RouteNames.profileView);
-        break;
-      case 'ROUTE_HISTORY':
-        context.go(RouteNames.transactionHistory);
-        break;
-      default:
-        if (action.contains('transactions') || action.contains('details')) {
-          context.go(RouteNames.transactionHistory);
-        }
-        break;
-    }
+    if (action == null || action.trim().isEmpty) return;
+    final targetRoute = RouteResolver.resolve(action);
+    context.push(targetRoute);
   }
 }
 

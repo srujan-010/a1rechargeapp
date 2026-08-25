@@ -2,14 +2,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../utils/logger.dart';
 import 'secure_storage_service.dart';
 import '../../routes/app_router.dart';
-import '../../core/constants/route_names.dart';
 import 'device_service.dart';
+import '../utils/route_resolver.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -211,10 +210,11 @@ class NotificationService {
     if (payload == null || payload.isEmpty) return;
     try {
       final data = jsonDecode(payload) as Map<String, dynamic>;
-      final route = data['route'] as String?;
-      if (route != null && route.isNotEmpty) {
-        AppLogger.info('Navigating from notification payload to: $route', tag: 'FCM');
-        rootNavigatorKey.currentContext?.push(route);
+      final rawRoute = data['route'] as String?;
+      if (rawRoute != null && rawRoute.isNotEmpty) {
+        final targetRoute = RouteResolver.resolve(rawRoute);
+        AppLogger.info('Navigating from notification payload "$rawRoute" -> "$targetRoute"', tag: 'FCM');
+        rootNavigatorKey.currentContext?.push(targetRoute);
       }
     } catch (e) {
       AppLogger.error('Failed to parse notification payload', tag: 'FCM', error: e);

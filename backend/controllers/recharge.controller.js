@@ -6,6 +6,7 @@ const { resolveProviderOperatorCode, isBsnlOperator } = require('../utils/operat
 const ProviderWallet = require('../models/ProviderWallet');
 const ProviderOperator = require('../models/ProviderOperator');
 const ProviderCircle = require('../models/ProviderCircle');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 
 // @desc    Check health of the A1 Topup provider
@@ -115,10 +116,23 @@ const getRazorpayInstance = () => {
 /**
  * Calculate payable amount and commission breakdown server-side
  */
-const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operatorCode, operatorName, amount, userId, planType, accountType = 'RETAILER' }) => {
+const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operatorCode, operatorName, amount, userId, planType, accountType = 'BUSINESS' }) => {
   const safeAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0;
+
+  let resolvedAccountType = accountType;
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    const userQuery = User.findById(userId);
+    const userDoc = userQuery && typeof userQuery.lean === 'function' ? await userQuery.lean() : await userQuery;
+    if (userDoc && userDoc.accountType) {
+      resolvedAccountType = userDoc.accountType;
+    }
+  }
+  const targetAccountType = String(resolvedAccountType || 'BUSINESS').trim().toUpperCase() === 'PERSONAL' ? 'PERSONAL' : 'BUSINESS';
+
   if (safeAmount <= 0) {
     return {
+      accountType: targetAccountType,
+      commissionRecordId: null,
       rechargeAmount: 0,
       rechargeAmountPaise: 0,
       commissionAmount: 0,
@@ -135,7 +149,7 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
     safeAmount,
     operatorName,
     serviceType,
-    { retailerId: userId ? String(userId) : 'N/A', planType }
+    { retailerId: userId ? String(userId) : 'N/A', planType, accountType: targetAccountType }
   );
 
   const safeVal = (v) => {
@@ -143,7 +157,7 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
     return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
   };
 
-  const isPersonal = String(accountType).toUpperCase() === 'PERSONAL';
+  const isPersonal = targetAccountType === 'PERSONAL';
 
   const commissionAmount = isPersonal
     ? safeVal(commission?.personalDiscountAmount)
@@ -156,6 +170,8 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
   const payableAmount = safeVal(Math.max(0, safeAmount - commissionAmount));
 
   return {
+    accountType: targetAccountType,
+    commissionRecordId: commission?.commissionRecordId || null,
     rechargeAmount: safeAmount,
     rechargeAmountPaise: Math.round(safeAmount * 100),
     commissionAmount,
@@ -317,17 +333,6 @@ const calculateRechargePayable = async (req, res, next) => {
     console.log(`Calculated payableAmount: ${details.payableAmount}`);
     console.log('====================================================\n');
 
-    if (userAccountType === 'PERSONAL') {
-      return res.status(200).json({
-        success: true,
-        data: {
-          rechargeAmount: details.rechargeAmount,
-          payableAmount: details.payableAmount,
-          currency: 'INR',
-        },
-      });
-    }
-
     res.status(200).json({
       success: true,
       data: details,
@@ -466,6 +471,9 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
       providerName: 'A1Topup',
       mobileNumber,
       amount,
+      accountType: payableDetails.accountType,
+      commissionRecordId: payableDetails.commissionRecordId,
+      commissionPercent: payableDetails.commissionPercentage,
       commissionAmount,
       payableAmount,
       operatorCode,
@@ -488,6 +496,8 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
       type: 'debit',
       amountPaise: Math.round(amount * 100),
       payableAmountPaise,
+      accountType: payableDetails.accountType,
+      commissionRecordId: payableDetails.commissionRecordId,
       commissionEarnedPaise: Math.round(commissionAmount * 100),
       status: 'initiated',
       service: serviceType === 'dth' ? 'dth' : 'mobile_recharge',
@@ -1075,18 +1085,23 @@ const executeRecharge = async (req, res, next) => {
       amount,
       userId,
       planType,
-      accountType: req.user?.accountType || 'RETAILER',
+      accountType: req.user?.accountType || 'BUSINESS',
     });
 
     const commissionAmount = payableDetails.commissionAmount;
     const payableAmount = payableDetails.payableAmount; // e.g., 98 for 100 recharge
 
+    transaction.accountType = payableDetails.accountType;
+    transaction.commissionRecordId = payableDetails.commissionRecordId;
+    transaction.commissionPercent = payableDetails.commissionPercentage;
     transaction.commissionAmount = commissionAmount;
     transaction.payableAmount = payableAmount;
     transaction.reservedAmount = payableAmount;
     await transaction.save();
 
     if (globalTransaction) {
+      globalTransaction.accountType = payableDetails.accountType;
+      globalTransaction.commissionRecordId = payableDetails.commissionRecordId;
       globalTransaction.payableAmountPaise = Math.round(payableAmount * 100);
       globalTransaction.commissionEarnedPaise = Math.round(commissionAmount * 100);
       await globalTransaction.save();

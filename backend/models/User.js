@@ -177,8 +177,8 @@ const userSchema = new mongoose.Schema(
     },
     accountType: {
       type: String,
-      enum: ['PERSONAL', 'RETAILER'],
-      default: 'RETAILER',
+      enum: ['PERSONAL', 'BUSINESS', 'RETAILER'],
+      default: 'BUSINESS',
     },
     hasPhysicalShop: {
       type: Boolean,

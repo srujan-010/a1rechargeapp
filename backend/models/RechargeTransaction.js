@@ -62,6 +62,19 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    accountType: {
+      type: String,
+      enum: ['PERSONAL', 'BUSINESS'],
+      default: 'BUSINESS',
+    },
+    commissionRecordId: {
+      type: String,
+      default: null,
+    },
+    commissionPercent: {
+      type: Number,
+      default: 0,
+    },
     commissionAmount: {
       type: Number,
       default: 0,

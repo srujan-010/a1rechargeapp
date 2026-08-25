@@ -42,6 +42,15 @@ const transactionSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  accountType: {
+    type: String,
+    enum: ['PERSONAL', 'BUSINESS'],
+    default: 'BUSINESS',
+  },
+  commissionRecordId: {
+    type: String,
+    default: null,
+  },
   operatorName: {
     type: String,
   },

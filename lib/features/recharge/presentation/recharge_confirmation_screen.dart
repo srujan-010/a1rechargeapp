@@ -496,6 +496,9 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       planType: state.selectedPlanType,
     )));
 
+    final userSession = ref.watch(sessionProvider).valueOrNull;
+    final isPersonal = userSession?.isPersonal ?? false;
+
     int rechargeAmountPaise = state.customAmountPaise ?? 0;
     int commissionAmountPaise = 0;
     int payableAmountPaise = rechargeAmountPaise;
@@ -505,11 +508,19 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         rechargeAmountPaise = (data['rechargeAmountPaise'] as num?)?.toInt() ?? rechargeAmountPaise;
         commissionAmountPaise = (data['commissionAmountPaise'] as num?)?.toInt() ?? 0;
         payableAmountPaise = (data['payableAmountPaise'] as num?)?.toInt() ?? (rechargeAmountPaise - commissionAmountPaise);
+
+        final String resAccountType = (data['accountType'] as String?) ?? (isPersonal ? 'PERSONAL' : 'BUSINESS');
+        final double resCommissionPercent = (data['commissionPercentage'] as num?)?.toDouble() ?? 0.0;
+
+        AppLogger.info(
+          '[COMMISSION UI] Received accountType: $resAccountType, commissionPercent: $resCommissionPercent%, commissionAmountPaise: $commissionAmountPaise',
+          tag: 'RechargeConfirmation',
+        );
       }
     });
 
     final slabsAsync = ref.watch(activeCommissionSlabsProvider);
-    if (commissionAmountPaise == 0) {
+    if (commissionAmountPaise == 0 && state.operator != null) {
       slabsAsync.whenData((slabs) {
         final searchWord = state.operator!.name.toLowerCase().split(' ')[0];
         final slab = slabs.where((s) {
@@ -526,6 +537,15 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
             commissionAmountPaise = (slab.commissionValue * 100).round();
           }
           payableAmountPaise = rechargeAmountPaise - commissionAmountPaise;
+          AppLogger.info(
+            '[COMMISSION UI] Fallback slab found: ${slab.operatorName} (${slab.commissionValue}%), calculated commissionAmountPaise: $commissionAmountPaise',
+            tag: 'RechargeConfirmation',
+          );
+        } else {
+          AppLogger.info(
+            '[COMMISSION UI] accountType: ${isPersonal ? "PERSONAL" : "BUSINESS"}, commission: NOT_CONFIGURED for operator: ${state.operator!.name}',
+            tag: 'RechargeConfirmation',
+          );
         }
       });
     }
@@ -537,9 +557,6 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
 
     final bool isWalletInsufficient = availableWalletPaise < payableAmountPaise;
     final int shortfallPaise = payableAmountPaise - availableWalletPaise;
-
-    final userSession = ref.watch(sessionProvider).valueOrNull;
-    final isPersonal = userSession?.isPersonal ?? false;
 
     // For personal accounts, payment is ALWAYS via UPI/Razorpay direct gateway (wallet is not used)
     final PaymentMethod activeMethod = isPersonal 
@@ -712,8 +729,21 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         const SizedBox(height: 16),
                         _PaymentBreakdownRow(label: 'Recharge Amount', amount: rechargeAmountPaise),
                         const SizedBox(height: 6),
-                        if (!isPersonal && commissionAmountPaise > 0) ...[
-                          _PaymentBreakdownRow(label: 'Commission', amount: commissionAmountPaise, isDeduction: true),
+                        if (commissionAmountPaise > 0) ...[
+                          _PaymentBreakdownRow(
+                            label: isPersonal ? 'Savings / Discount' : 'Commission',
+                            amount: commissionAmountPaise,
+                            isDeduction: true,
+                          ),
+                          const SizedBox(height: 6),
+                        ] else ...[
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              'Commission / Savings: Not configured for this operator',
+                              style: TextStyle(color: AppColors.textHint, fontSize: 12, fontStyle: FontStyle.italic),
+                            ),
+                          ),
                           const SizedBox(height: 6),
                         ],
                         _PaymentBreakdownRow(label: 'Amount Payable', amount: payableAmountPaise, isHighlight: true),

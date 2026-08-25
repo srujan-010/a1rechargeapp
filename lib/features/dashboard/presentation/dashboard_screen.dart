@@ -1568,7 +1568,7 @@ class _PersonalSavingsCard extends ConsumerWidget {
                     style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
-                  const Text('Lifetime Savings', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const Text('Earn on eligible recharges & bill payments', style: TextStyle(color: Colors.white70, fontSize: 12)),
                   const SizedBox(height: 16),
                   const Divider(color: Colors.white24, height: 1),
                   const SizedBox(height: 12),
@@ -1581,12 +1581,12 @@ class _PersonalSavingsCard extends ConsumerWidget {
                   ),
                 ] else ...[
                   const Text(
-                    'Start saving with your first recharge 💙',
+                    'Start earning with your first recharge 💙',
                     style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Get instant discounts on every prepaid mobile, DTH, and bill payment.',
+                    'Earn commission & savings automatically on every mobile, DTH, and bill payment.',
                     style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
                   ),
                 ],

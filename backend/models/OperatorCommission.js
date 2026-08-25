@@ -2,14 +2,22 @@ const mongoose = require('mongoose');
 
 const operatorCommissionSchema = new mongoose.Schema(
   {
+    accountType: {
+      type: String,
+      enum: ['PERSONAL', 'BUSINESS'],
+      default: 'BUSINESS',
+      required: true,
+    },
     operatorCode: {
       type: String,
       required: true,
-      unique: true,
+      trim: true,
+      uppercase: true,
     },
     operatorName: {
       type: String,
       required: true,
+      trim: true,
     },
     serviceType: {
       type: String,
@@ -25,25 +33,21 @@ const operatorCommissionSchema = new mongoose.Schema(
       type: Number,
       required: true,
       default: 0,
-      // e.g., 4 means 4%
     },
     retailerCommission: {
       type: Number,
       required: true,
       default: 0,
-      // e.g., 2 means 2%
     },
     personalCommission: {
       type: Number,
       required: false,
       default: null,
-      // e.g., 0.8 means 0.8% benefit for Personal customer (if null, system uses retailerCommission - PERSONAL_COMMISSION_ADJUSTMENT)
     },
     companyCommission: {
       type: Number,
       required: true,
       default: 0,
-      // e.g., 2 means 2%
     },
     status: {
       type: String,
@@ -53,6 +57,9 @@ const operatorCommissionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Compound Index for accountType + serviceType + operatorCode
+operatorCommissionSchema.index({ accountType: 1, serviceType: 1, operatorCode: 1 }, { unique: true });
 
 const OperatorCommission = mongoose.model('OperatorCommission', operatorCommissionSchema);
 module.exports = OperatorCommission;
