@@ -18,8 +18,8 @@ const startPolling = async (orderId) => {
       const transaction = await RechargeTransaction.findOne({ orderId });
       
       // 2. If it's already resolved (by webhook or manual check), stop polling
-      if (!transaction || transaction.status !== 'PENDING') {
-        console.log(`[Poller] Transaction ${orderId} is no longer PENDING. Stopping poll.`);
+      if (!transaction || transaction.status === 'SUCCESS' || transaction.status === 'FAILED') {
+        console.log(`[Poller] Transaction ${orderId} has terminal status '${transaction ? transaction.status : 'NOT_FOUND'}'. Stopping poll.`);
         return; 
       }
       
@@ -30,7 +30,7 @@ const startPolling = async (orderId) => {
       
       // 4. Fetch updated transaction to see if it resolved
       const updatedTx = await RechargeTransaction.findOne({ orderId });
-      if (updatedTx && updatedTx.status !== 'PENDING') {
+      if (updatedTx && (updatedTx.status === 'SUCCESS' || updatedTx.status === 'FAILED')) {
         console.log(`[Poller] Transaction ${orderId} resolved to ${updatedTx.status}. Stopping poll.`);
         return; // Resolved, exit polling loop
       }

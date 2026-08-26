@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/utils/app_navigation.dart';
 import '../../../core/theme/app_colors.dart';
@@ -17,6 +16,8 @@ import 'recharge_providers.dart';
 import '../../../core/providers/core_providers.dart';
 import '../../../core/utils/razorpay_web_helper.dart';
 import '../../../core/utils/logger.dart';
+import '../../payment/providers/payment_session_provider.dart';
+import '../../../core/services/razorpay_service.dart';
 
 enum PaymentMethod { wallet, upi }
 enum PaymentResultStatus { cancelled, failed, pending, unknown, success }
@@ -34,159 +35,15 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
   bool _isLoading = false;
   PaymentMethod? _selectedPaymentMethod; // Null = auto-select based on balance
 
-  late Razorpay _razorpay;
-  String? _pendingInternalTransactionId;
-  String? _pendingRazorpayOrderId;
-
   @override
   void initState() {
     super.initState();
-    _razorpay = Razorpay();
-    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccessNative);
-    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentErrorNative);
-    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWalletNative);
   }
 
   @override
   void dispose() {
-    _razorpay.clear();
     _pinController.dispose();
     super.dispose();
-  }
-
-  void _handlePaymentSuccessNative(PaymentSuccessResponse response) {
-    AppLogger.info(
-      '[Razorpay Mobile Success] Payment ID: ${response.paymentId}, Order ID: ${response.orderId}',
-      tag: 'RechargeConfirmation',
-    );
-    final paymentId = response.paymentId ?? '';
-    final orderId = response.orderId ?? _pendingRazorpayOrderId ?? '';
-    final signature = response.signature ?? '';
-
-    _executePaymentVerification(
-      paymentId: paymentId,
-      razorpayOrderId: orderId,
-      signature: signature,
-    );
-  }
-
-  void _handlePaymentErrorNative(PaymentFailureResponse response) {
-    AppLogger.error(
-      '[Razorpay Mobile Error] Code: ${response.code}, Message: ${response.message}',
-      tag: 'RechargeConfirmation',
-    );
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    // Code 2 is PAYMENT_CANCELLED in Razorpay SDK
-    final isCancelled = response.code == 2 ||
-        (response.message != null &&
-            (response.message!.toLowerCase().contains('cancel') ||
-                response.message!.toLowerCase().contains('dismiss')));
-
-    if (isCancelled) {
-      AppLogger.info('[Razorpay] User cancelled checkout', tag: 'RechargeConfirmation');
-      _showPaymentStatusModal(
-        status: PaymentResultStatus.cancelled,
-        title: 'Payment Cancelled',
-        message: 'No amount was charged.',
-      );
-    } else {
-      AppLogger.error('[Razorpay] Payment failed: ${response.message}', tag: 'RechargeConfirmation');
-      _showPaymentStatusModal(
-        status: PaymentResultStatus.failed,
-        title: 'Payment Failed',
-        message: response.message ?? 'Your payment could not be completed.',
-      );
-    }
-  }
-
-  void _handleExternalWalletNative(ExternalWalletResponse response) {
-    AppLogger.info('[Razorpay Mobile External Wallet] ${response.walletName}', tag: 'RechargeConfirmation');
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Redirected to external wallet: ${response.walletName}'),
-        backgroundColor: AppColors.primaryBlue,
-      ),
-    );
-  }
-
-  Future<void> _executePaymentVerification({
-    required String paymentId,
-    required String razorpayOrderId,
-    required String signature,
-  }) async {
-    final internalTxId = _pendingInternalTransactionId;
-    if (internalTxId == null || internalTxId.isEmpty) {
-      AppLogger.error('[Razorpay Verify] Internal transaction ID missing', tag: 'RechargeConfirmation');
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    try {
-      if (mounted) {
-        setState(() {
-          _isLoading = true;
-        });
-      }
-
-      AppLogger.info('[Razorpay] Sending verification request to backend...', tag: 'RechargeConfirmation');
-      final repo = ref.read(rechargeRepositoryProvider);
-      final verifyResult = await repo.verifyRazorpayRechargePayment(
-        internalTransactionId: internalTxId,
-        razorpayOrderId: razorpayOrderId,
-        razorpayPaymentId: paymentId,
-        razorpaySignature: signature,
-      );
-
-      if (!mounted) return;
-      ref.invalidate(walletBalanceProvider);
-      ref.invalidate(recentTransactionsProvider);
-      ref.invalidate(earningsSummaryProvider);
-
-      final state = ref.read(rechargeFlowProvider);
-      final receipt = verifyResult.valueOrNull;
-
-      if (receipt != null) {
-        AppLogger.info('[Razorpay] Backend verification: VERIFIED / SUCCESS', tag: 'RechargeConfirmation');
-        context.push(
-          RouteNames.rechargeProcessing,
-          extra: {
-            'orderId': internalTxId,
-            'receipt': receipt,
-            'paymentMode': 'upi',
-            'phoneNumber': state.phoneNumber,
-            'operatorId': state.operator?.id,
-            'operatorCode': state.operator?.shortCode,
-            'operatorName': state.operator?.name,
-            'amountPaise': state.customAmountPaise,
-            'circle': state.circle?.state,
-          },
-        );
-      } else {
-        final err = verifyResult.errorOrNull?.message ?? 'Verification failed';
-        AppLogger.error('[Razorpay] Backend verification error: $err', tag: 'RechargeConfirmation');
-        _showPaymentStatusModal(
-          status: PaymentResultStatus.failed,
-          title: 'Payment Verification Failed',
-          message: err,
-        );
-      }
-    } catch (e) {
-      AppLogger.error('[Razorpay Verification Exception] $e', tag: 'RechargeConfirmation');
-      if (!mounted) return;
-      _showPaymentStatusModal(
-        status: PaymentResultStatus.pending,
-        title: 'Payment Verification Pending',
-        message: 'We are confirming your payment with Razorpay. Please don\'t pay again.',
-        orderId: internalTxId,
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
   }
 
   void _showPaymentStatusModal({
@@ -367,13 +224,25 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       final razorpayKeyId = orderData['razorpayKeyId'] as String;
       final payablePaise = (orderData['payableAmountPaise'] as num).toInt();
 
-      _pendingInternalTransactionId = internalTxId;
-      _pendingRazorpayOrderId = razorpayOrderId;
-
       AppLogger.info(
         '[Razorpay Order Created] Order ID: $razorpayOrderId, Internal Tx: $internalTxId, Payable: $payablePaise paise',
         tag: 'RechargeConfirmation',
       );
+
+      // Start global persistent payment session
+      ref.read(paymentSessionProvider.notifier).startSession(
+            internalTransactionId: internalTxId,
+            razorpayOrderId: razorpayOrderId,
+            type: PaymentSessionType.recharge,
+            extraData: {
+              'phoneNumber': state.phoneNumber,
+              'operatorId': state.operator?.id,
+              'operatorCode': state.operator?.shortCode,
+              'operatorName': state.operator?.name,
+              'amountPaise': state.customAmountPaise,
+              'circle': state.circle?.state,
+            },
+          );
 
       // Step 2: Open Razorpay Checkout modal (Platform specific)
       if (kIsWeb) {
@@ -385,42 +254,27 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
           contact: state.phoneNumber!,
           email: 'retailer@a1recharge.com',
           onSuccess: (paymentId, rzpOrderId, signature) {
-            _executePaymentVerification(
-              paymentId: paymentId,
-              razorpayOrderId: rzpOrderId,
-              signature: signature,
-            );
+            ref.read(paymentSessionProvider.notifier).onRazorpaySuccess(
+                  paymentId: paymentId,
+                  orderId: rzpOrderId,
+                  signature: signature,
+                );
           },
           onError: (err) {
-            if (!mounted) return;
-            setState(() => _isLoading = false);
-            final isCancelled = err.toLowerCase().contains('cancel') || err.toLowerCase().contains('dismiss');
-            if (isCancelled) {
-              _showPaymentStatusModal(
-                status: PaymentResultStatus.cancelled,
-                title: 'Payment Cancelled',
-                message: 'No amount was charged.',
-              );
-            } else {
-              _showPaymentStatusModal(
-                status: PaymentResultStatus.failed,
-                title: 'Payment Failed',
-                message: err.isNotEmpty ? err : 'Your payment could not be completed.',
-              );
-            }
+            ref.read(paymentSessionProvider.notifier).onRazorpayError(
+                  code: -1,
+                  message: err,
+                );
           },
           onDismiss: () {
-            if (!mounted) return;
-            setState(() => _isLoading = false);
-            _showPaymentStatusModal(
-              status: PaymentResultStatus.cancelled,
-              title: 'Payment Cancelled',
-              message: 'No amount was charged.',
-            );
+            ref.read(paymentSessionProvider.notifier).onRazorpayError(
+                  code: 2,
+                  message: 'Payment cancelled',
+                );
           },
         );
       } else {
-        AppLogger.info('[Razorpay] Opening Native Mobile SDK', tag: 'RechargeConfirmation');
+        AppLogger.info('[Razorpay] Opening Native Mobile SDK via RazorpayService', tag: 'RechargeConfirmation');
         final options = {
           'key': razorpayKeyId,
           'amount': payablePaise,
@@ -436,7 +290,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
           }
         };
 
-        _razorpay.open(options);
+        ref.read(razorpayServiceProvider).openCheckout(options);
       }
     } catch (e) {
       AppLogger.error('[Razorpay Order Creation Exception] $e', tag: 'RechargeConfirmation');
@@ -451,6 +305,61 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<PaymentSessionState>(paymentSessionProvider, (previous, next) {
+      if (next.type != PaymentSessionType.recharge) return;
+
+      if (next.status == PaymentSessionStatus.verifying) {
+        if (mounted) setState(() => _isLoading = true);
+      } else if (next.status == PaymentSessionStatus.completed) {
+        if (mounted) setState(() => _isLoading = false);
+        ref.invalidate(walletBalanceProvider);
+        ref.invalidate(recentTransactionsProvider);
+        ref.invalidate(earningsSummaryProvider);
+
+        final receipt = next.receipt;
+        final extra = next.extraData ?? {};
+        ref.read(paymentSessionProvider.notifier).clearSession();
+
+        if (mounted && receipt != null) {
+          context.push(
+            RouteNames.rechargeProcessing,
+            extra: {
+              'orderId': next.internalTransactionId,
+              'receipt': receipt,
+              'paymentMode': 'upi',
+              'phoneNumber': extra['phoneNumber'],
+              'operatorId': extra['operatorId'],
+              'operatorCode': extra['operatorCode'],
+              'operatorName': extra['operatorName'],
+              'amountPaise': extra['amountPaise'],
+              'circle': extra['circle'],
+            },
+          );
+        }
+      } else if (next.status == PaymentSessionStatus.failed) {
+        if (mounted) setState(() => _isLoading = false);
+        final err = next.errorMessage ?? 'Payment verification failed.';
+        ref.read(paymentSessionProvider.notifier).clearSession();
+        if (mounted) {
+          _showPaymentStatusModal(
+            status: PaymentResultStatus.failed,
+            title: 'Payment Failed',
+            message: err,
+          );
+        }
+      } else if (next.status == PaymentSessionStatus.cancelled) {
+        if (mounted) setState(() => _isLoading = false);
+        ref.read(paymentSessionProvider.notifier).clearSession();
+        if (mounted) {
+          _showPaymentStatusModal(
+            status: PaymentResultStatus.cancelled,
+            title: 'Payment Cancelled',
+            message: 'No amount was charged.',
+          );
+        }
+      }
+    });
+
     final state = ref.watch(rechargeFlowProvider);
     final walletBalanceAsync = ref.watch(walletBalanceProvider);
 

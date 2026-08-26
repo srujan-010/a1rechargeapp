@@ -2,6 +2,7 @@ const a1TopupProvider = require('../services/providers/a1topup/provider.service'
 const fast2smsService = require('../services/fast2sms.service');
 const notificationService = require('../services/notification.service');
 const { resolveProviderOperatorCode, isBsnlOperator } = require('../utils/operatorMapper');
+const { normalizeStatus, logStatusCheckAudit } = require('../utils/statusNormalizer');
 
 const ProviderWallet = require('../models/ProviderWallet');
 const ProviderOperator = require('../models/ProviderOperator');
@@ -554,19 +555,19 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
   console.log('====================================================\n');
 
   transaction.providerRequestSent = true;
-  transaction.status = 'RECHARGE_PROCESSING';
+  transaction.status = 'PROCESSING';
   await transaction.save();
 
   if (globalTransaction) {
-    globalTransaction.status = 'pending';
+    globalTransaction.status = 'processing';
     await globalTransaction.save();
   }
 
   // Execute HTTP GET request to A1Topup provider /recharge/api
-  const providerResponse = await a1TopupProvider.recharge({
+  let providerResponse = await a1TopupProvider.recharge({
     orderId: transaction.orderId,
     mobileNumber: transaction.mobileNumber,
-    amount: transaction.amount, // Full ₹100 recharge value
+    amount: transaction.amount,
     operatorCode: transaction.operatorCode,
     circleCode: transaction.circleCode,
     serviceType: transaction.serviceType,
@@ -574,24 +575,49 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
 
   console.log(`[A1TOPUP RECHARGE INITIATION RESPONSE] orderId=${transaction.orderId}, status=${providerResponse.status}, providerTransactionId=${providerResponse.providerTransactionId || 'N/A'}`);
 
-  transaction.providerTransactionId = providerResponse.providerTransactionId || null;
-  transaction.operatorReference = providerResponse.operatorReference || null;
-  transaction.status = providerResponse.status;
+  // Synchronous Polling Window (up to ~15-20s) if initial provider status is non-terminal
+  if (providerResponse.status === 'PENDING' || providerResponse.status === 'PROCESSING') {
+    console.log(`[A1TOPUP SYNC POLLING WINDOW] Initial provider status is ${providerResponse.status}. Starting 15-20s synchronous check window...`);
+    const pollDelays = [3000, 4000, 5000];
+
+    for (const delay of pollDelays) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      try {
+        console.log(`[SYNC POLLER] Polling provider status for ${transaction.orderId} after ${delay}ms...`);
+        const statusCheck = await a1TopupProvider.status(transaction.orderId);
+        if (statusCheck.status === 'SUCCESS' || statusCheck.status === 'FAILED') {
+          console.log(`[SYNC POLLER RESOLVED] Provider transaction ${transaction.orderId} resolved synchronously to ${statusCheck.status}!`);
+          providerResponse = statusCheck;
+          break;
+        }
+      } catch (pollErr) {
+        console.error(`[SYNC POLLER ERROR] Polling check failed for ${transaction.orderId}:`, pollErr.message);
+      }
+    }
+  }
+
+  transaction.providerTransactionId = providerResponse.providerTransactionId || transaction.providerTransactionId;
+  transaction.operatorReference = providerResponse.operatorReference || transaction.operatorReference;
   transaction.providerStatus = providerResponse.status;
   transaction.providerMessage = providerResponse.message || null;
 
   if (globalTransaction) {
-    globalTransaction.providerTransactionId = providerResponse.providerTransactionId || null;
+    globalTransaction.providerTransactionId = providerResponse.providerTransactionId || globalTransaction.providerTransactionId;
     globalTransaction.providerMessage = providerResponse.message || null;
   }
 
-  if (providerResponse.status === 'SUCCESS' || providerResponse.status === 'FAILED') {
-    transaction.completedAt = new Date();
-    if (globalTransaction) globalTransaction.completedAt = new Date();
-  }
-
   if (providerResponse.status === 'SUCCESS') {
-    // Commit wallet hold ONLY IF wallet payment
+    transaction.status = 'SUCCESS';
+    transaction.completedAt = new Date();
+    await transaction.save();
+
+    if (globalTransaction) {
+      globalTransaction.status = 'success';
+      globalTransaction.apiReference = providerResponse.providerTransactionId || transaction.providerTransactionId;
+      globalTransaction.completedAt = new Date();
+      await globalTransaction.save();
+    }
+
     if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
       await walletService.commitReservation(userId, transaction.payableAmount || transaction.amount).catch(e => console.error('[Wallet Commit Warning]:', e.message));
     }
@@ -608,12 +634,6 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
       planType: transaction.planType,
       serviceType: transaction.serviceType,
     });
-
-    if (globalTransaction) {
-      globalTransaction.status = 'success';
-      globalTransaction.apiReference = providerResponse.providerTransactionId;
-      await globalTransaction.save();
-    }
 
     notificationService.sendRechargeSuccess({
       userId,
@@ -633,17 +653,21 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     }
 
   } else if (providerResponse.status === 'FAILED') {
+    transaction.status = 'FAILED';
     transaction.failureReason = providerResponse.message || 'Recharge failed at provider';
+    transaction.completedAt = new Date();
+    await transaction.save();
+
     if (globalTransaction) {
       globalTransaction.status = 'failed';
       globalTransaction.failureReason = transaction.failureReason;
+      globalTransaction.completedAt = new Date();
       await globalTransaction.save();
     }
 
     if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
       await walletService.releaseReservation(userId, transaction.payableAmount || transaction.amount).catch(e => console.error('[Wallet Release Warning]:', e.message));
     } else if (transaction.razorpayPaymentId) {
-      // Auto-refund Razorpay payment for net payable amount
       try {
         const razorpay = getRazorpayInstance();
         const payablePaise = Math.round((transaction.payableAmount || transaction.amount) * 100);
@@ -653,6 +677,8 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
         });
         transaction.status = 'REFUNDED';
         if (globalTransaction) globalTransaction.status = 'reversed';
+        await transaction.save();
+        if (globalTransaction) await globalTransaction.save();
         console.log(`[RAZORPAY REFUND SUCCESS] Refunded ${payablePaise} paise for payment ${transaction.razorpayPaymentId}`);
       } catch (rfErr) {
         console.error(`[RAZORPAY REFUND ERROR] Failed to auto-refund ${transaction.razorpayPaymentId}:`, rfErr.message);
@@ -669,10 +695,14 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
       reason: transaction.failureReason,
     });
 
-  } else if (providerResponse.status === 'PENDING') {
+  } else {
+    // Unresolved after synchronous polling window -> Internal status remains PROCESSING
+    transaction.status = 'PROCESSING';
+    await transaction.save();
+
     if (globalTransaction) {
-      globalTransaction.status = 'pending';
-      globalTransaction.apiReference = providerResponse.providerTransactionId;
+      globalTransaction.status = 'processing';
+      globalTransaction.apiReference = providerResponse.providerTransactionId || transaction.orderId;
       await globalTransaction.save();
     }
 
@@ -689,8 +719,10 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     rechargePoller.startPolling(transaction.orderId);
   }
 
-  await transaction.save();
-  return providerResponse;
+  return {
+    ...providerResponse,
+    status: transaction.status,
+  };
 };
 
 // @desc    Verify Razorpay Payment and Execute Recharge
@@ -1290,19 +1322,164 @@ const checkStatus = async (req, res, next) => {
     }
 
     const statusResponse = await a1TopupProvider.status(transaction.orderId);
+    const normalized = normalizeStatus(statusResponse.status);
 
-    // If status changed to SUCCESS from PENDING, we must run commission/ledger logic
-    if (transaction.status === 'PENDING' && statusResponse.status === 'SUCCESS') {
+    // If status changed to SUCCESS from a non-terminal status, run commission/ledger & DB sync
+    if (normalized.canonical === 'SUCCESS') {
       const now = new Date();
       const updated = await RechargeTransaction.findOneAndUpdate(
-        { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'SUCCESS', providerStatus: 'SUCCESS', operatorReference: statusResponse.operatorReference, providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId, completedAt: now } }
+        { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED', 'PAYMENT_SUCCESS'] } },
+        { $set: { status: 'SUCCESS', providerStatus: 'SUCCESS', operatorReference: statusResponse.operatorReference || transaction.operatorReference, providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId, completedAt: now } }
       );
-      if (!updated) {
-        return res.status(200).json({ success: true, data: statusResponse }); // Already handled
+      if (updated) {
+        // Deduct Wallet ONLY IF WALLET PAYMENT
+        if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
+          await walletService.commitReservation(transaction.userId, transaction.payableAmount || transaction.amount).catch(() => {});
+          await ledgerService.logTransaction({
+            userId: transaction.userId,
+            type: 'DEBIT',
+            amount: transaction.payableAmount || transaction.amount,
+            referenceType: 'RECHARGE',
+            referenceId: transaction._id,
+            description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
+          }).catch(() => {});
+        }
+
+        // Calculate & Credit Commission safely and idempotently
+        await processSuccessCommission({
+          transaction,
+          globalTransaction: null,
+          userId: transaction.userId,
+          orderId: transaction.orderId,
+          mobileNumber: transaction.mobileNumber,
+          operator: { name: transaction.internalOperatorName || transaction.operatorName },
+          operatorCode: transaction.providerOperatorCode || transaction.operatorCode,
+          amount: transaction.amount,
+          planType: transaction.planType,
+          serviceType: 'mobile',
+        });
+
+        // Always update global Transaction model
+        await Transaction.updateOne({ referenceId: transaction.orderId }, {
+          status: 'success',
+          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+          completedAt: now,
+        });
+
+        notificationService.sendRechargeSuccess({
+          userId: transaction.userId,
+          transactionId: statusResponse.providerTransactionId || transaction.orderId,
+          orderId: transaction.orderId,
+          amount: transaction.amount,
+          number: transaction.mobileNumber,
+          isUpdateFromPending: true,
+        });
       }
 
-      // Deduct Wallet ONLY IF WALLET PAYMENT
+    } else if (normalized.canonical === 'FAILED') {
+      const now = new Date();
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
+        { $set: { status: 'FAILED', providerStatus: 'FAILED', failureReason: statusResponse.message, completedAt: now } }
+      );
+      if (updated) {
+        if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
+          try {
+            await walletService.releaseReservation(transaction.userId, transaction.payableAmount || transaction.amount);
+          } catch (walletError) {
+            console.error(`[checkStatus] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+          }
+        } else if (transaction.razorpayPaymentId) {
+          try {
+            const razorpay = getRazorpayInstance();
+            const payablePaise = Math.round((transaction.payableAmount || transaction.amount) * 100);
+            await razorpay.payments.refund(transaction.razorpayPaymentId, {
+              amount: payablePaise,
+              notes: { reason: 'Recharge failed at provider (status check)', orderId: transaction.orderId },
+            });
+          } catch (rfErr) {
+            console.error(`[checkStatus Razorpay Refund Error] ${transaction.razorpayPaymentId}:`, rfErr.message);
+          }
+        }
+
+        await Transaction.updateOne({ referenceId: transaction.orderId }, {
+          status: 'failed',
+          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+          completedAt: now,
+        });
+
+        notificationService.sendRechargeFailed({
+          userId: transaction.userId,
+          transactionId: statusResponse.providerTransactionId || transaction.orderId,
+          orderId: transaction.orderId,
+          amount: transaction.amount,
+          number: transaction.mobileNumber,
+          reason: statusResponse.message || 'Operator rejected the recharge.',
+        });
+      }
+    }
+
+    // Refetch current transaction status to return authoritative state
+    const latestTx = await RechargeTransaction.findOne({ orderId: transaction.orderId }).lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...statusResponse,
+        orderId: transaction.orderId,
+        internalOperator: transaction.internalOperatorName || transaction.operatorId,
+        providerOperatorCode: transaction.providerOperatorCode || transaction.operatorCode,
+        planType: transaction.planType || 'N/A',
+        amount: transaction.amount,
+        circle: transaction.circleCode,
+        providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId,
+        providerStatus: latestTx ? latestTx.status : statusResponse.status,
+        status: latestTx ? latestTx.status : statusResponse.status,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Handle asynchronous callback/webhook from provider
+// @route   POST /api/recharge/callback
+// @access  Public (Provider)
+const providerCallback = async (req, res, next) => {
+  try {
+    const data = Object.keys(req.body).length > 0 ? req.body : req.query;
+    const { txid, txnid, status, opid, message, orderid, client_id } = data;
+
+    const actualTxId = txid || txnid;
+    const actualOrderId = orderid || client_id;
+
+    if (!actualTxId && !actualOrderId) {
+      return res.status(400).send('Invalid payload');
+    }
+
+    const query = {};
+    if (actualOrderId) query.orderId = actualOrderId;
+    else if (actualTxId) query.providerTransactionId = actualTxId;
+
+    const transaction = await RechargeTransaction.findOne(query);
+
+    if (!transaction) {
+      return res.status(404).send('Transaction not found');
+    }
+
+    if (transaction.status === 'SUCCESS' || transaction.status === 'FAILED') {
+      return res.status(200).send('OK');
+    }
+
+    const norm = normalizeStatus(status);
+
+    if (norm.canonical === 'SUCCESS') {
+      const updated = await RechargeTransaction.findOneAndUpdate(
+        { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
+        { $set: { status: 'SUCCESS', providerStatus: 'SUCCESS', operatorReference: opid || transaction.operatorReference } }
+      );
+      if (!updated) return res.status(200).send('OK');
+
       if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
         await walletService.commitReservation(transaction.userId, transaction.payableAmount || transaction.amount).catch(() => {});
         await ledgerService.logTransaction({
@@ -1315,7 +1492,6 @@ const checkStatus = async (req, res, next) => {
         }).catch(() => {});
       }
 
-      // Calculate & Credit Commission safely and idempotently
       await processSuccessCommission({
         transaction,
         globalTransaction: null,
@@ -1329,179 +1505,10 @@ const checkStatus = async (req, res, next) => {
         serviceType: 'mobile',
       });
 
-      notificationService.sendRechargeSuccess({
-        userId: transaction.userId,
-        transactionId: statusResponse.providerTransactionId || transaction.orderId,
-        orderId: transaction.orderId,
-        amount: transaction.amount,
-        number: transaction.mobileNumber,
-        isUpdateFromPending: true,
-      });
-
-    } else if (transaction.status === 'PENDING' && statusResponse.status === 'FAILED') {
-      const now = new Date();
-      const updated = await RechargeTransaction.findOneAndUpdate(
-        { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'FAILED', providerStatus: 'FAILED', failureReason: statusResponse.message, completedAt: now } }
-      );
-      if (!updated) {
-        return res.status(200).json({ success: true, data: statusResponse }); // Already handled
-      }
-
-      if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
-        try {
-          await walletService.releaseReservation(transaction.userId, transaction.payableAmount || transaction.amount);
-        } catch (walletError) {
-          console.error(`[checkStatus] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
-        }
-      } else if (transaction.razorpayPaymentId) {
-        try {
-          const razorpay = getRazorpayInstance();
-          const payablePaise = Math.round((transaction.payableAmount || transaction.amount) * 100);
-          await razorpay.payments.refund(transaction.razorpayPaymentId, {
-            amount: payablePaise,
-            notes: { reason: 'Recharge failed at provider (status check)', orderId: transaction.orderId },
-          });
-        } catch (rfErr) {
-          console.error(`[checkStatus Razorpay Refund Error] ${transaction.razorpayPaymentId}:`, rfErr.message);
-        }
-      }
-
-      await Transaction.updateOne({ referenceId: transaction.orderId }, {
-        status: 'failed',
-        apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
-        completedAt: now,
-      });
-
-      notificationService.sendRechargeFailed({
-        userId: transaction.userId,
-        transactionId: statusResponse.providerTransactionId || transaction.orderId,
-        orderId: transaction.orderId,
-        amount: transaction.amount,
-        number: transaction.mobileNumber,
-        reason: statusResponse.message || 'Operator rejected the recharge.',
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: {
-        ...statusResponse,
-        orderId: transaction.orderId,
-        internalOperator: transaction.internalOperatorName || transaction.operatorId,
-        providerOperatorCode: transaction.providerOperatorCode || transaction.operatorCode,
-        planType: transaction.planType || 'N/A',
-        amount: transaction.amount,
-        circle: transaction.circleCode,
-        providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId,
-        providerStatus: statusResponse.status || transaction.status,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @desc    Handle asynchronous callback/webhook from provider
-// @route   POST /api/recharge/callback
-// @access  Public (Provider)
-const providerCallback = async (req, res, next) => {
-  try {
-    // Assuming A1 Topup sends: { txnid, status, opid, message, client_id }
-    // Providers sometimes use GET instead of POST for webhooks, so check both body and query
-    const data = Object.keys(req.body).length > 0 ? req.body : req.query;
-
-    const { txid, txnid, status, opid, message, orderid, client_id } = data;
-
-    const actualTxId = txid || txnid;
-    const actualOrderId = orderid || client_id;
-
-    if (!actualTxId && !actualOrderId) {
-      return res.status(400).send('Invalid payload');
-    }
-
-    // Find transaction by orderId (actualOrderId) or providerTransactionId (actualTxId)
-    const query = {};
-    if (actualOrderId) query.orderId = actualOrderId;
-    else if (actualTxId) query.providerTransactionId = actualTxId;
-
-    const transaction = await RechargeTransaction.findOne(query);
-
-    if (!transaction) {
-      return res.status(404).send('Transaction not found');
-    }
-
-    // If transaction is already processed, return success (Idempotent)
-    if (transaction.status === 'SUCCESS' || transaction.status === 'FAILED') {
-      return res.status(200).send('OK');
-    }
-
-    let normalizedStatus = 'PENDING';
-    const rawStatus = (status || '').toUpperCase();
-    if (rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED') normalizedStatus = 'SUCCESS';
-    else if (rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'FAILURE') normalizedStatus = 'FAILED';
-
-    if (normalizedStatus === 'SUCCESS') {
-      const updated = await RechargeTransaction.findOneAndUpdate(
-        { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'SUCCESS', operatorReference: opid || transaction.operatorReference } }
-      );
-      if (!updated) return res.status(200).send('OK');
-
-      await walletService.commitReservation(transaction.userId, transaction.amount);
-      await ledgerService.logTransaction({
-        userId: transaction.userId,
-        type: 'DEBIT',
-        amount: transaction.amount,
-        referenceType: 'RECHARGE',
-        referenceId: transaction._id,
-        description: `Recharge for ${transaction.mobileNumber} - Order ID: ${transaction.orderId}`,
-      });
-
-      const commission = await commissionService.calculateCommission(transaction.operatorCode, transaction.amount);
-      if (commission.retailerCommissionAmount > 0) {
-        await walletService.addBalance(transaction.userId, commission.retailerCommissionAmount);
-        await ledgerService.logTransaction({
-          userId: transaction.userId,
-          type: 'CREDIT',
-          amount: commission.retailerCommissionAmount,
-          referenceType: 'COMMISSION',
-          referenceId: transaction._id,
-          description: `Commission for Recharge ${transaction.orderId}`,
-        });
-
-        await Transaction.create({
-          userId: transaction.userId,
-          type: 'credit',
-          amountPaise: commission.retailerCommissionAmount * 100,
-          status: 'success',
-          service: 'commission',
-          referenceId: `COM${Date.now()}${Math.floor(Math.random() * 1000)}`,
-          description: `Commission for Recharge ${transaction.orderId}`,
-          apiReference: transaction._id.toString(),
-          paymentMethod: 'wallet',
-        });
-      }
-
       await Transaction.updateOne({ referenceId: transaction.orderId }, {
         status: 'success',
-        apiReference: actualTxId,
-        commissionEarnedPaise: commission.retailerCommissionAmount * 100
+        apiReference: actualTxId || transaction.providerTransactionId,
       });
-
-      await CommissionHistory.create({
-        transactionId: transaction._id,
-        userId: transaction.userId,
-        operatorCode: transaction.operatorCode,
-        rechargeAmount: transaction.amount,
-        providerCommissionPercentage: commission.providerCommissionPercentage,
-        providerCommissionAmount: commission.providerCommissionAmount,
-        retailerCommissionPercentage: commission.retailerCommissionPercentage,
-        retailerCommissionAmount: commission.retailerCommissionAmount,
-        companyProfitPercentage: commission.companyProfitPercentage,
-        companyProfitAmount: commission.companyProfitAmount,
-      });
-      await RechargeTransaction.updateOne({ _id: transaction._id }, { commissionCalculated: true });
 
       notificationService.sendRechargeSuccess({
         userId: transaction.userId,
@@ -1511,22 +1518,24 @@ const providerCallback = async (req, res, next) => {
         number: transaction.mobileNumber,
         isUpdateFromPending: true,
       });
-    } else if (normalizedStatus === 'FAILED') {
+    } else if (norm.canonical === 'FAILED') {
       const updated = await RechargeTransaction.findOneAndUpdate(
-        { _id: transaction._id, status: 'PENDING' },
-        { $set: { status: 'FAILED', failureReason: message || 'Failed at provider end' } }
+        { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
+        { $set: { status: 'FAILED', providerStatus: 'FAILED', failureReason: message || 'Failed at provider end' } }
       );
       if (!updated) return res.status(200).send('OK');
 
-      try {
-        await walletService.releaseReservation(transaction.userId, transaction.amount);
-      } catch (walletError) {
-        console.error(`[Webhook] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+      if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
+        try {
+          await walletService.releaseReservation(transaction.userId, transaction.payableAmount || transaction.amount);
+        } catch (walletError) {
+          console.error(`[Webhook] Critical Wallet Error for ${transaction.orderId}:`, walletError.message);
+        }
       }
 
       await Transaction.updateOne({ referenceId: transaction.orderId }, {
         status: 'failed',
-        apiReference: actualTxId
+        apiReference: actualTxId || transaction.providerTransactionId,
       });
 
       notificationService.sendRechargeFailed({
@@ -1538,7 +1547,7 @@ const providerCallback = async (req, res, next) => {
         reason: message || 'Operator rejected the recharge.',
       });
     }
-    res.status(200).send('OK'); // Must return 200 OK so provider stops retrying
+    res.status(200).send('OK');
 
   } catch (error) {
     console.error('Webhook Error:', error.message);

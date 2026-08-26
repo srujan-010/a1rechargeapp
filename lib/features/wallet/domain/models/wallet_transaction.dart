@@ -4,7 +4,7 @@ import 'package:equatable/equatable.dart';
 import '../../../../core/utils/operator_formatter.dart';
 
 enum TransactionType { credit, debit }
-enum TransactionStatus { success, pending, failed, reversed }
+enum TransactionStatus { success, pending, processing, failed, reversed }
 
 class WalletTransaction extends Equatable {
   const WalletTransaction({
@@ -96,11 +96,12 @@ class WalletTransaction extends Equatable {
         'closingBalancePaise': closingBalancePaise,
       };
 
-  static TransactionStatus _parseStatus(String? raw) => switch (raw) {
+  static TransactionStatus _parseStatus(String? raw) => switch (raw?.toLowerCase()) {
         'success' => TransactionStatus.success,
+        'processing' || 'recharge_processing' || 'submitted' || 'initiated' => TransactionStatus.processing,
         'pending' => TransactionStatus.pending,
         'failed' => TransactionStatus.failed,
-        'reversed' => TransactionStatus.reversed,
+        'reversed' || 'refunded' => TransactionStatus.reversed,
         _ => TransactionStatus.pending,
       };
 

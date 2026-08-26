@@ -384,7 +384,7 @@ serviceType: ${txn.serviceType}
     if (txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed) {
       return const Color(0xFFDC2626);
     }
-    if (txn.status == TransactionStatus.pending) {
+    if (txn.status == TransactionStatus.pending || txn.status == TransactionStatus.processing) {
       return const Color(0xFFF59E0B);
     }
     
@@ -403,6 +403,7 @@ serviceType: ${txn.serviceType}
       case TransactionStatus.success:
         return const Color(0xFF10B981);
       case TransactionStatus.pending:
+      case TransactionStatus.processing:
         return const Color(0xFFF59E0B);
       case TransactionStatus.failed:
       case TransactionStatus.reversed:

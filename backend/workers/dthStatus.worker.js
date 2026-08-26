@@ -23,7 +23,7 @@ class DthStatusWorker {
       // 1. Query pending DTH transactions
       const pendingTxns = await RechargeTransaction.find({
         serviceType: 'dth',
-        status: 'PENDING'
+        status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING'] }
       }).limit(20);
 
       if (pendingTxns.length === 0) {

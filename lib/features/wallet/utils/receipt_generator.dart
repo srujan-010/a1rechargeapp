@@ -123,7 +123,7 @@ class ReceiptGenerator {
                       pw.Divider(color: PdfColors.grey200, thickness: 1),
                       pw.SizedBox(height: 16),
 
-                      _buildPdfRow('Status', txn.status.name.toUpperCase(), valueColor: txn.status == TransactionStatus.success ? PdfColors.green700 : PdfColors.red700),
+                      _buildPdfRow('Status', txn.status.name.toUpperCase(), valueColor: txn.status == TransactionStatus.success ? PdfColors.green700 : (txn.status == TransactionStatus.pending || txn.status == TransactionStatus.processing ? PdfColors.orange700 : PdfColors.red700)),
                       _buildPdfRow('Transaction ID', txn.referenceId),
                       if (txn.apiReference != null && txn.apiReference!.isNotEmpty)
                         _buildPdfRow('Operator Ref', txn.apiReference!),

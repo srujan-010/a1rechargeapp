@@ -77,7 +77,7 @@ class DthStatusService {
     }
 
     const updatedTxn = await RechargeTransaction.findOneAndUpdate(
-      { _id: txn._id, status: 'PENDING' },
+      { _id: txn._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
       { $set: updateDoc },
       { new: true }
     );

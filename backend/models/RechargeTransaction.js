@@ -43,7 +43,7 @@ const rechargeTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
+      enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
       default: 'INITIATED',
     },
     paymentMethod: {

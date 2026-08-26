@@ -647,7 +647,7 @@ class _PremiumHistoryTile extends StatelessWidget {
   Color get _statusColor {
     return switch (txn.status) {
       TransactionStatus.success => const Color(0xFF10B981),
-      TransactionStatus.pending => const Color(0xFFF59E0B),
+      TransactionStatus.pending || TransactionStatus.processing => const Color(0xFFF59E0B),
       TransactionStatus.failed || TransactionStatus.reversed => const Color(0xFFDC2626),
     };
   }

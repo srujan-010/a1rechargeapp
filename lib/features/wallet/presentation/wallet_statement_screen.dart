@@ -700,7 +700,7 @@ class _TransactionCard extends StatelessWidget {
                       color: isCredit ? AppColors.success : AppColors.textPrimary,
                     ),
                   ),
-                  if (transaction.status == TransactionStatus.pending) ...[
+                  if (transaction.status == TransactionStatus.pending || transaction.status == TransactionStatus.processing) ...[
                     const SizedBox(height: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -708,9 +708,9 @@ class _TransactionCard extends StatelessWidget {
                         color: AppColors.warningLight,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
-                        'Pending',
-                        style: TextStyle(
+                      child: Text(
+                        transaction.status == TransactionStatus.processing ? 'Processing' : 'Pending',
+                        style: const TextStyle(
                           color: AppColors.warning,
                           fontSize: 9.5,
                           fontWeight: FontWeight.bold,

@@ -35,9 +35,9 @@ class PendingRechargeWorker {
     this.isRunning = true;
 
     try {
-      // Find all transactions that are PENDING in MongoDB
+      // Find all transactions that are in non-terminal states in MongoDB
       const pendingTransactions = await RechargeTransaction.find({
-        status: 'PENDING'
+        status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING'] }
       }).limit(50); // Process in batches
 
       if (pendingTransactions.length === 0) {
@@ -96,7 +96,7 @@ class PendingRechargeWorker {
       const now = new Date();
 
       if (statusResponse.status === 'SUCCESS') {
-        const updateQuery = { _id: transaction._id, status: 'PENDING' };
+        const updateQuery = { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } };
         const updateFields = {
           $set: {
             status: 'SUCCESS',
@@ -197,7 +197,7 @@ class PendingRechargeWorker {
         console.log(`[Worker] Transaction ${transaction.orderId} marked SUCCESS on both RechargeTransaction and Global Transaction.`);
 
       } else if (statusResponse.status === 'FAILED') {
-        const updateQuery = { _id: transaction._id, status: 'PENDING' };
+        const updateQuery = { _id: transaction._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } };
         const updateFields = {
           $set: {
             status: 'FAILED',

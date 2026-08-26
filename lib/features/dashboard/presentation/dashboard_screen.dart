@@ -1154,7 +1154,7 @@ class _TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusColor = switch (txn.status) {
       TransactionStatus.success => AppColors.success,
-      TransactionStatus.pending => AppColors.warning,
+      TransactionStatus.pending || TransactionStatus.processing => AppColors.warning,
       TransactionStatus.failed || TransactionStatus.reversed => AppColors.error,
     };
     

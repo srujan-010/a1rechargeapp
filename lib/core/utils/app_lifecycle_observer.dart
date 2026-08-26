@@ -4,6 +4,8 @@ import '../../features/security_pin/providers/security_pin_provider.dart';
 import '../../core/providers/core_providers.dart';
 import '../../core/utils/logger.dart';
 
+import '../../features/payment/providers/payment_session_provider.dart';
+
 class AppLifecycleObserver extends ConsumerStatefulWidget {
   const AppLifecycleObserver({
     super.key,
@@ -35,9 +37,21 @@ class _AppLifecycleObserverState extends ConsumerState<AppLifecycleObserver> wit
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final paymentSession = ref.read(paymentSessionProvider);
+
     if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.inactive) {
+      if (paymentSession.isPaymentInProgress) {
+        AppLogger.info('[LIFECYCLE] Active external payment session detected (${paymentSession.status}). Background relock suppressed.', tag: 'LIFECYCLE');
+        return;
+      }
       _pausedAt ??= DateTime.now();
     } else if (state == AppLifecycleState.resumed) {
+      if (paymentSession.isPaymentInProgress) {
+        AppLogger.info('[LIFECYCLE] App resumed during active payment session. Triggering recovery check...', tag: 'LIFECYCLE');
+        ref.read(paymentSessionProvider.notifier).onAppResumed();
+        return;
+      }
+
       if (_pausedAt != null) {
         final elapsed = DateTime.now().difference(_pausedAt!);
         _pausedAt = null;

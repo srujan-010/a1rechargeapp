@@ -87,6 +87,7 @@ import '../features/security_pin/presentation/forgot_security_pin_screen.dart';
 import '../features/security_pin/presentation/reset_security_pin_screen.dart';
 import '../features/security_pin/presentation/security_pin_unlock_screen.dart';
 import '../features/security_pin/providers/security_pin_provider.dart';
+import '../features/payment/providers/payment_session_provider.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/settings/presentation/device_info_screen.dart';
 import '../features/support/presentation/need_help_screen.dart';
@@ -130,10 +131,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAppLockRoute = state.matchedLocation == RouteNames.appLock;
       final isForgotResetPinRoute = state.matchedLocation.startsWith('/security-pin/forgot') || state.matchedLocation.startsWith('/security-pin/reset');
 
-      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, isAuthenticated=$isAuthenticated, isSecPinConfigured=$isSecPinConfigured, isUnlocked=$isUnlocked', tag: 'Router');
+      final paymentSession = ref.read(paymentSessionProvider);
+
+      AppLogger.info('Router Redirect Check: CurrentRoute=${state.matchedLocation}, AuthState=${authState.runtimeType}, hasJwt=$hasJwt, isAuthenticated=$isAuthenticated, isSecPinConfigured=$isSecPinConfigured, isUnlocked=$isUnlocked, isPaymentInProgress=${paymentSession.isPaymentInProgress}', tag: 'Router');
 
       // Allow splash to always render
       if (isSplash) return null;
+
+      // 0. Active Razorpay Payment Session -> Bypass security lock redirect to preserve payment flow
+      if (paymentSession.isPaymentInProgress) {
+        AppLogger.info('Router Decision: Active Razorpay Payment Session (${paymentSession.status}). Security PIN lock bypassed.', tag: 'Router');
+        return null;
+      }
 
       // 1. Unauthenticated → redirect to OTP login
       if (!isAuthenticated && !isAuthRoute) {
@@ -917,6 +926,7 @@ class _SessionListenable extends ChangeNotifier {
     ref.listen(authNotifierProvider, (_, __) => notifyListeners());
     ref.listen(hasValidJwtProvider, (_, __) => notifyListeners());
     ref.listen(securityPinProvider, (_, __) => notifyListeners());
+    ref.listen(paymentSessionProvider, (_, __) => notifyListeners());
   }
 }
 

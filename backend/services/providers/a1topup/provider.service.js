@@ -1,6 +1,7 @@
 const axios = require('axios');
 const ProviderInterface = require('../Provider.interface');
 const config = require('../../../config/a1topup.config');
+const { normalizeStatus, logStatusCheckAudit } = require('../../../utils/statusNormalizer');
 
 class A1TopupProvider extends ProviderInterface {
   constructor() {
@@ -254,21 +255,9 @@ class A1TopupProvider extends ProviderInterface {
    * Helper to normalize A1 Topup response
    */
   _normalizeResponse(data, orderId = null) {
-    // This maps A1 Topup's specific fields to our generic format
-    let status = 'PENDING';
-    
-    // Some APIs use lowercase, some uppercase keys.
     const rawStatusValue = data.status || data.Status || '';
-    const rawStatus = String(rawStatusValue).toUpperCase().trim();
-    
-    if (rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED') {
-      status = 'SUCCESS';
-    } else if (rawStatus === 'FAILED' || rawStatus === 'ERROR' || rawStatus === 'FAILURE') {
-      status = 'FAILED';
-    } else {
-      // Anything else is PENDING (Timeout, Unknown, etc)
-      status = 'PENDING';
-    }
+    const norm = normalizeStatus(rawStatusValue);
+    const status = norm.canonical; // 'SUCCESS', 'FAILED', or 'PROCESSING'
 
     let rawMessage = data.message || data.opid || 'Processed';
     let cleanMessage = rawMessage;
@@ -286,13 +275,26 @@ class A1TopupProvider extends ProviderInterface {
       }
     }
 
+    const providerTransactionId = data.txid || data.txnid || data.provider_id || null;
+    const resolvedOrderId = data.orderid || data.client_id || orderId;
+
+    logStatusCheckAudit({
+      internalTransactionId: resolvedOrderId,
+      providerTransactionId,
+      orderId: resolvedOrderId,
+      providerStatus: rawStatusValue,
+      normalizedStatus: norm,
+    });
+
     return {
       success: status === 'SUCCESS',
       status: status,
+      globalStatus: norm.global,
+      isTerminal: norm.isTerminal,
       message: cleanMessage,
-      providerTransactionId: data.txid || data.txnid || data.provider_id || null,
-      operatorReference: (status === 'FAILED') ? null : (data.opid || data.operator_ref || null), // Only map opid to operatorReference if SUCCESS. Otherwise it's an error message.
-      orderId: data.orderid || data.client_id || orderId,
+      providerTransactionId,
+      operatorReference: (status === 'FAILED') ? null : (data.opid || data.operator_ref || null),
+      orderId: resolvedOrderId,
       rawResponse: data,
     };
   }
