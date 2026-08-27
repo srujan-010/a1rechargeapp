@@ -190,14 +190,14 @@ class PlanApiService {
   isOperatorSupportedForLastRechargeAndExpiry(operatorCode) {
     if (!operatorCode) return false;
     const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
-    const plansApiOpCode = resolvePlansApiOperatorCode(operatorCode);
-    // Supported PlansAPI codes: 2 (Airtel) and 23 (VI/Vodafone)
-    return plansApiOpCode === '2' || plansApiOpCode === '23';
+    const plansApiOpCode = String(resolvePlansApiOperatorCode(operatorCode) || '').trim().toUpperCase();
+    // Supported PlansAPI codes: 2 (or AT for Airtel) and 23 (or VI/ID for VI/Vodafone)
+    return plansApiOpCode === '2' || plansApiOpCode === 'AT' || plansApiOpCode === '23' || plansApiOpCode === 'VI';
   }
 
   /**
    * Check Last Recharge via PlanAPI (/Mobile/CheckLastRecharge)
-   * Strictly uses PlansAPI numeric operator codes (2 for Airtel, 23 for VI).
+   * Strictly uses PlansAPI operator codes (2/AT for Airtel, 23/VI for VI).
    */
   async checkLastRecharge(mobileNumber, operatorCode) {
     const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
@@ -241,7 +241,7 @@ class PlanApiService {
 
   /**
    * Check Recharge Expiry via PlanAPI (/Mobile/RechargeExpiryDate)
-   * Strictly uses PlansAPI numeric operator codes (2 for Airtel, 23 for VI).
+   * Strictly uses PlansAPI operator codes (2/AT for Airtel, 23/VI for VI).
    */
   async checkRechargeExpiry(mobileNumber, operatorCode) {
     const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');

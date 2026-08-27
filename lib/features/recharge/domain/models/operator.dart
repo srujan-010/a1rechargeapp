@@ -11,7 +11,8 @@ class Operator extends Equatable {
     required this.type,
     this.circle,
     this.shortCode,
-    this.planApiCode,
+    this.a1TopupCode,
+    this.plansApiCode,
     this.isActive = true,
   });
 
@@ -21,10 +22,11 @@ class Operator extends Equatable {
   final OperatorType type;
   final String? circle;
   final String? shortCode;
-  final String? planApiCode;
+  final String? a1TopupCode;
+  final String? plansApiCode;
   final bool isActive;
 
-  String? get code => shortCode;
+  String? get code => a1TopupCode ?? shortCode;
 
   factory Operator.fromJson(Map<String, dynamic> json) => Operator(
         id: json['id'] as String? ?? json['_id'] as String? ?? '',
@@ -33,7 +35,8 @@ class Operator extends Equatable {
         type: _parseType((json['type'] ?? json['serviceType']) as String?),
         circle: json['circle'] as String?,
         shortCode: json['shortCode'] as String? ?? json['code'] as String?,
-        planApiCode: json['plansInfoCode'] as String? ?? json['planApiCode'] as String?,
+        a1TopupCode: json['a1TopupCode'] as String? ?? json['shortCode'] as String? ?? json['code'] as String?,
+        plansApiCode: json['plansApiCode'] as String? ?? json['plansInfoCode'] as String?,
         isActive: json['isActive'] as bool? ?? json['status'] as bool? ?? true,
       );
 
@@ -44,7 +47,8 @@ class Operator extends Equatable {
         'type': type.name,
         'circle': circle,
         'shortCode': shortCode,
-        'planApiCode': planApiCode,
+        'a1TopupCode': a1TopupCode,
+        'plansApiCode': plansApiCode,
         'isActive': isActive,
       };
 

@@ -573,36 +573,17 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     serviceType: transaction.serviceType,
   });
 
-  console.log(`[A1TOPUP RECHARGE INITIATION RESPONSE] orderId=${transaction.orderId}, status=${providerResponse.status}, providerTransactionId=${providerResponse.providerTransactionId || 'N/A'}`);
+  const safeProviderTxId = (!providerResponse.providerTransactionId || providerResponse.providerTransactionId === 'N/A') ? null : providerResponse.providerTransactionId;
 
-  // Synchronous Polling Window (up to ~15-20s) if initial provider status is non-terminal
-  if (providerResponse.status === 'PENDING' || providerResponse.status === 'PROCESSING') {
-    console.log(`[A1TOPUP SYNC POLLING WINDOW] Initial provider status is ${providerResponse.status}. Starting 15-20s synchronous check window...`);
-    const pollDelays = [3000, 4000, 5000];
+  console.log(`[A1TOPUP RECHARGE INITIATION RESPONSE] orderId=${transaction.orderId}, status=${providerResponse.status}, providerTransactionId=${safeProviderTxId || 'N/A'}`);
 
-    for (const delay of pollDelays) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-      try {
-        console.log(`[SYNC POLLER] Polling provider status for ${transaction.orderId} after ${delay}ms...`);
-        const statusCheck = await a1TopupProvider.status(transaction.orderId);
-        if (statusCheck.status === 'SUCCESS' || statusCheck.status === 'FAILED') {
-          console.log(`[SYNC POLLER RESOLVED] Provider transaction ${transaction.orderId} resolved synchronously to ${statusCheck.status}!`);
-          providerResponse = statusCheck;
-          break;
-        }
-      } catch (pollErr) {
-        console.error(`[SYNC POLLER ERROR] Polling check failed for ${transaction.orderId}:`, pollErr.message);
-      }
-    }
-  }
-
-  transaction.providerTransactionId = providerResponse.providerTransactionId || transaction.providerTransactionId;
-  transaction.operatorReference = providerResponse.operatorReference || transaction.operatorReference;
+  transaction.providerTransactionId = safeProviderTxId || transaction.providerTransactionId || null;
+  transaction.operatorReference = providerResponse.operatorReference || transaction.operatorReference || null;
   transaction.providerStatus = providerResponse.status;
   transaction.providerMessage = providerResponse.message || null;
 
   if (globalTransaction) {
-    globalTransaction.providerTransactionId = providerResponse.providerTransactionId || globalTransaction.providerTransactionId;
+    globalTransaction.providerTransactionId = safeProviderTxId || globalTransaction.providerTransactionId || null;
     globalTransaction.providerMessage = providerResponse.message || null;
   }
 
@@ -613,7 +594,7 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
 
     if (globalTransaction) {
       globalTransaction.status = 'success';
-      globalTransaction.apiReference = providerResponse.providerTransactionId || transaction.providerTransactionId;
+      globalTransaction.apiReference = safeProviderTxId || transaction.orderId;
       globalTransaction.completedAt = new Date();
       await globalTransaction.save();
     }
@@ -637,7 +618,7 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
 
     notificationService.sendRechargeSuccess({
       userId,
-      transactionId: providerResponse.providerTransactionId || transaction.orderId,
+      transactionId: safeProviderTxId || transaction.orderId,
       orderId: transaction.orderId,
       operator: transaction.internalOperatorName || 'Operator',
       amount: transaction.amount,
@@ -687,7 +668,7 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
 
     notificationService.sendRechargeFailed({
       userId,
-      transactionId: providerResponse.providerTransactionId || transaction.orderId,
+      transactionId: safeProviderTxId || transaction.orderId,
       orderId: transaction.orderId,
       operator: transaction.internalOperatorName || 'Operator',
       amount: transaction.amount,
@@ -696,19 +677,19 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     });
 
   } else {
-    // Unresolved after synchronous polling window -> Internal status remains PROCESSING
+    // Provider status is PENDING / PROCESSING / UNKNOWN -> Status remains PROCESSING
     transaction.status = 'PROCESSING';
     await transaction.save();
 
     if (globalTransaction) {
       globalTransaction.status = 'processing';
-      globalTransaction.apiReference = providerResponse.providerTransactionId || transaction.orderId;
+      globalTransaction.apiReference = safeProviderTxId || transaction.orderId;
       await globalTransaction.save();
     }
 
     notificationService.sendRechargePending({
       userId,
-      transactionId: providerResponse.providerTransactionId || transaction.orderId,
+      transactionId: safeProviderTxId || transaction.orderId,
       orderId: transaction.orderId,
       operator: transaction.internalOperatorName || 'Operator',
       amount: transaction.amount,
@@ -719,18 +700,20 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     rechargePoller.startPolling(transaction.orderId);
   }
 
-  return {
-    ...providerResponse,
-    status: transaction.status,
-  };
+  return providerResponse;
 };
 
 // @desc    Verify Razorpay Payment and Execute Recharge
 // @route   POST /api/provider/a1topup/verify-razorpay-payment
 // @access  Private (Retailer)
 const verifyRazorpayRechargePayment = async (req, res, next) => {
+  const startTime = Date.now();
+  console.log('[RZP VERIFY] start');
+
   const { internalTransactionId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
   const userId = req.user._id;
+
+  console.log(`[RZP VERIFY] auth complete: ${Date.now() - startTime}ms`);
 
   if (!internalTransactionId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
     return res.status(400).json({
@@ -741,10 +724,12 @@ const verifyRazorpayRechargePayment = async (req, res, next) => {
   }
 
   try {
+    const orderLookupStart = Date.now();
     const transaction = await RechargeTransaction.findOne({
       orderId: internalTransactionId,
       userId,
     });
+    console.log(`[RZP VERIFY] order lookup: ${Date.now() - orderLookupStart}ms`);
 
     if (!transaction) {
       return res.status(404).json({
@@ -754,11 +739,14 @@ const verifyRazorpayRechargePayment = async (req, res, next) => {
       });
     }
 
+    const globalTxStart = Date.now();
     const globalTransaction = await Transaction.findOne({ referenceId: internalTransactionId });
+    console.log(`[RZP VERIFY] transaction lookup: ${Date.now() - globalTxStart}ms`);
 
-    // Idempotency Check: If provider request was ALREADY sent and status is already resolved/pending
-    if (transaction.providerRequestSent && ['SUCCESS', 'FAILED', 'PENDING'].includes(transaction.status)) {
-      console.log(`[RAZORPAY RECHARGE VERIFICATION IDEMPOTENT] Transaction ${internalTransactionId} already dispatched with status ${transaction.status}`);
+    // Idempotency Guard: If transaction is already verified or dispatched
+    if (transaction.razorpayPaymentId === razorpayPaymentId || (transaction.providerRequestSent && ['SUCCESS', 'FAILED', 'PROCESSING', 'PENDING'].includes(transaction.status))) {
+      console.log(`[RAZORPAY RECHARGE VERIFICATION IDEMPOTENT] Transaction ${internalTransactionId} already verified/dispatched with status ${transaction.status}`);
+      console.log(`[RZP VERIFY] completed (idempotent): ${Date.now() - startTime}ms`);
       return res.status(200).json({
         success: transaction.status !== 'FAILED',
         message: `Payment already verified and recharge status is ${transaction.status}`,
@@ -766,10 +754,10 @@ const verifyRazorpayRechargePayment = async (req, res, next) => {
           transactionId: transaction.orderId,
           referenceId: transaction.orderId,
           operatorRef: transaction.operatorReference || transaction.providerTransactionId || 'N/A',
-          status: transaction.status.toLowerCase(),
+          status: (transaction.status || 'PROCESSING').toLowerCase(),
           amountPaise: Math.round(transaction.amount * 100),
-          commissionAmountPaise: Math.round(transaction.commissionAmount * 100),
-          payableAmountPaise: Math.round(transaction.payableAmount * 100),
+          commissionAmountPaise: Math.round((transaction.commissionAmount || 0) * 100),
+          payableAmountPaise: Math.round((transaction.payableAmount || transaction.amount) * 100),
           mobileNumber: transaction.mobileNumber,
           operatorName: transaction.internalOperatorName || 'Operator',
           timestamp: transaction.completedAt || transaction.updatedAt,
@@ -779,12 +767,15 @@ const verifyRazorpayRechargePayment = async (req, res, next) => {
     }
 
     // Cryptographic Signature Verification
+    const sigStart = Date.now();
     const expectedSignature = crypto
       .createHmac('sha256', (process.env.RAZORPAY_KEY_SECRET || '').trim())
       .update(`${razorpayOrderId}|${razorpayPaymentId}`)
       .digest('hex');
 
     const isValidSignature = expectedSignature === razorpaySignature.trim();
+    console.log(`[RZP VERIFY] signature verified: ${Date.now() - sigStart}ms`);
+
     if (!isValidSignature && process.env.NODE_ENV === 'production') {
       transaction.status = 'FAILED';
       transaction.failureReason = 'Razorpay payment signature verification failed (Tampered payment)';
@@ -801,39 +792,53 @@ const verifyRazorpayRechargePayment = async (req, res, next) => {
       });
     }
 
-    // Save Razorpay Payment ID & Signature
+    // Save Razorpay Payment ID & Signature, set status to PROCESSING
+    const updateStart = Date.now();
     transaction.razorpayPaymentId = razorpayPaymentId;
     transaction.razorpaySignature = razorpaySignature;
+    transaction.status = 'PROCESSING';
     await transaction.save();
 
     if (globalTransaction) {
       globalTransaction.razorpayPaymentId = razorpayPaymentId;
+      globalTransaction.status = 'processing';
       await globalTransaction.save();
     }
+    console.log(`[RZP VERIFY] transaction update: ${Date.now() - updateStart}ms`);
 
-    // Now execute A1Topup recharge via Central Unified Execution Engine
-    const providerResponse = await dispatchA1TopupRecharge({ transaction, globalTransaction, userId });
+    console.log(`[RZP VERIFY] completed: ${Date.now() - startTime}ms`);
 
-    const statusLower = (providerResponse.status || transaction.status).toLowerCase();
-    const isSuccess = statusLower === 'success' || statusLower === 'pending';
-
-    return res.status(200).json({
-      success: isSuccess,
-      message: isSuccess ? 'Recharge executed successfully' : (transaction.failureReason || 'Recharge failed at operator'),
+    // Return successful verification response quickly to client
+    res.status(200).json({
+      success: true,
+      message: 'Payment verified successfully. Recharge processing initiated.',
       data: {
         transactionId: transaction.orderId,
         referenceId: transaction.orderId,
-        operatorRef: providerResponse.operatorReference || providerResponse.providerTransactionId || 'N/A',
-        status: statusLower,
+        operatorRef: transaction.operatorReference || transaction.providerTransactionId || 'N/A',
+        status: 'processing',
         amountPaise: Math.round(transaction.amount * 100),
-        commissionAmountPaise: Math.round(transaction.commissionAmount * 100),
-        payableAmountPaise: Math.round(transaction.payableAmount * 100),
+        commissionAmountPaise: Math.round((transaction.commissionAmount || 0) * 100),
+        payableAmountPaise: Math.round((transaction.payableAmount || transaction.amount) * 100),
         mobileNumber: transaction.mobileNumber,
         operatorName: transaction.internalOperatorName || 'Operator',
-        timestamp: transaction.completedAt || new Date(),
-        failureReason: transaction.failureReason || null,
+        timestamp: transaction.updatedAt || new Date(),
+        failureReason: null,
       },
     });
+
+    // Execute provider recharge asynchronously in background without holding HTTP open
+    setImmediate(async () => {
+      try {
+        console.log(`[RZP VERIFY BACKGROUND] Starting async recharge submission for ${transaction.orderId}...`);
+        const bgStart = Date.now();
+        await dispatchA1TopupRecharge({ transaction, globalTransaction, userId });
+        console.log(`[RZP VERIFY BACKGROUND] Async recharge dispatch completed for ${transaction.orderId} in ${Date.now() - bgStart}ms`);
+      } catch (bgErr) {
+        console.error(`[RZP VERIFY BACKGROUND ERROR] Failed for ${transaction.orderId}:`, bgErr.message);
+      }
+    });
+
   } catch (error) {
     console.error('[RAZORPAY VERIFY & RECHARGE ERROR]:', error);
     next(error);

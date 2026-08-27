@@ -17,6 +17,14 @@ const providerOperatorSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    a1TopupCode: {
+      type: String,
+      default: '',
+    },
+    plansApiCode: {
+      type: String,
+      default: '',
+    },
     serviceType: {
       type: String,
       required: true,

@@ -26,10 +26,18 @@ const normalizeStatus = (rawStatus) => {
     };
   }
 
-  // Non-terminal states (PENDING, PROCESSING, IN_PROGRESS, SUBMITTED, INITIATED, RECHARGE_PROCESSING)
+  if (['PENDING', 'PROCESSING', 'IN_PROGRESS', 'SUBMITTED', 'INITIATED', 'RECHARGE_PROCESSING', 'ACCEPTED', 'QUEUED'].includes(str)) {
+    return {
+      canonical: 'PROCESSING',
+      global: 'processing',
+      isTerminal: false,
+    };
+  }
+
+  // Unknown or missing statuses (e.g. UNKNOWN, empty, null, error responses)
   return {
-    canonical: 'PROCESSING',
-    global: 'processing',
+    canonical: 'UNKNOWN',
+    global: 'unknown',
     isTerminal: false,
   };
 };
@@ -38,10 +46,11 @@ const normalizeStatus = (rawStatus) => {
  * Audit log helper for recording provider status check responses.
  */
 const logStatusCheckAudit = ({ internalTransactionId, providerTransactionId, orderId, providerStatus, normalizedStatus, checkedAt = new Date() }) => {
+  const safeProviderTxId = (!providerTransactionId || providerTransactionId === 'N/A') ? null : providerTransactionId;
   console.log(`[STATUS AUDIT LOG ${checkedAt.toISOString()}]`, {
-    internalTransactionId,
-    providerTransactionId: providerTransactionId || 'N/A',
-    orderId,
+    internalTransactionId: internalTransactionId || null,
+    providerTransactionId: safeProviderTxId || 'N/A',
+    orderId: orderId || null,
     providerStatus: providerStatus || 'UNKNOWN',
     normalizedStatus: normalizedStatus ? normalizedStatus.canonical : 'UNKNOWN',
     isTerminal: normalizedStatus ? normalizedStatus.isTerminal : false,

@@ -244,7 +244,7 @@ class A1TopupProvider extends ProviderInterface {
         }
       });
 
-      return this._normalizeResponse(response.data);
+      return this._normalizeResponse(response.data, orderId);
     } catch (error) {
       console.error('[A1TopupProvider] Status check failed:', error.message);
       throw new Error(`Provider Status Error: ${error.response?.data?.message || error.message}`);
@@ -255,9 +255,13 @@ class A1TopupProvider extends ProviderInterface {
    * Helper to normalize A1 Topup response
    */
   _normalizeResponse(data, orderId = null) {
+    if (!data || typeof data !== 'object') {
+      data = {};
+    }
+
     const rawStatusValue = data.status || data.Status || '';
     const norm = normalizeStatus(rawStatusValue);
-    const status = norm.canonical; // 'SUCCESS', 'FAILED', or 'PROCESSING'
+    const status = norm.canonical; // 'SUCCESS', 'FAILED', 'PROCESSING', or 'UNKNOWN'
 
     let rawMessage = data.message || data.opid || 'Processed';
     let cleanMessage = rawMessage;
@@ -275,14 +279,18 @@ class A1TopupProvider extends ProviderInterface {
       }
     }
 
-    const providerTransactionId = data.txid || data.txnid || data.provider_id || null;
+    let providerTransactionId = data.txid || data.txnid || data.provider_id || null;
+    if (providerTransactionId === 'N/A' || providerTransactionId === 'null' || providerTransactionId === 'undefined') {
+      providerTransactionId = null;
+    }
+
     const resolvedOrderId = data.orderid || data.client_id || orderId;
 
     logStatusCheckAudit({
       internalTransactionId: resolvedOrderId,
       providerTransactionId,
       orderId: resolvedOrderId,
-      providerStatus: rawStatusValue,
+      providerStatus: rawStatusValue || 'UNKNOWN',
       normalizedStatus: norm,
     });
 

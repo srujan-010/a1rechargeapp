@@ -13,56 +13,64 @@ const path = require('path');
 exports.getOperators = async (req, res) => {
   try {
     const { service } = req.query;
-    console.log('req.query:', req.query);
-    
-    // Load central operator registry
-    const registryPath = path.join(__dirname, '../../assets/operator_registry.json');
-    let operatorsData = {};
-    if (fs.existsSync(registryPath)) {
-      const raw = fs.readFileSync(registryPath, 'utf8');
-      operatorsData = JSON.parse(raw);
-    } else {
-      console.log('operator_registry.json not found at:', registryPath);
+    let filter = { status: true };
+
+    if (service) {
+      const serviceUpper = String(service).trim().toUpperCase();
+      if (serviceUpper === 'MOBILE' || serviceUpper === 'PREPAID') {
+        filter.serviceType = { $in: ['Mobile', 'PREPAID', 'Prepaid'] };
+      } else {
+        filter.serviceType = new RegExp(`^${service.trim()}$`, 'i');
+      }
     }
 
-    let uniqueOperators = [];
-    
-    if (service) {
-      let serviceKey = service.toUpperCase();
-      if (serviceKey === 'MOBILE') {
-        serviceKey = 'PREPAID';
+    let dbOperators = await ProviderOperator.find(filter).sort({ displayOrder: 1 }).lean();
+
+    // Fallback seed if DB is empty
+    if (!dbOperators || dbOperators.length === 0) {
+      const registryPath = path.join(__dirname, '../../assets/operator_registry.json');
+      let operatorsData = {};
+      if (fs.existsSync(registryPath)) {
+        const raw = fs.readFileSync(registryPath, 'utf8');
+        operatorsData = JSON.parse(raw);
       }
-      
-      if (operatorsData[serviceKey]) {
-        uniqueOperators = operatorsData[serviceKey].filter(op => op.active !== false);
-      }
-    } else {
-      // Flatten all categories
+      let fallbackList = [];
       Object.keys(operatorsData).forEach(key => {
         const activeOps = operatorsData[key].filter(op => op.active !== false);
-        uniqueOperators.push(...activeOps);
+        fallbackList.push(...activeOps);
       });
+      dbOperators = fallbackList.map(op => ({
+        _id: op.name.toLowerCase().replace(/\s+/g, '-'),
+        name: op.name,
+        serviceType: op.service,
+        code: op.code,
+        a1TopupCode: op.code,
+        plansApiCode: op.code.toString(),
+        status: op.active,
+      }));
     }
 
-    // Map the JSON structure to match what the frontend expects
-    // Frontend expects: { name, serviceType, code, _id/id }
-    uniqueOperators = uniqueOperators.map(op => ({
+    const formattedOperators = dbOperators.map(op => ({
+      id: (op._id || op.name).toString(),
       name: op.name,
-      serviceType: op.service,
-      code: op.code,
-      shortCode: op.code.toString(),
-      status: op.active,
-      id: op.name.toLowerCase().replace(/\s+/g, '-')
+      serviceType: op.serviceType,
+      code: op.a1TopupCode || op.code,
+      a1TopupCode: op.a1TopupCode || op.code,
+      plansApiCode: op.plansApiCode || op.plansInfoCode || '',
+      shortCode: String(op.a1TopupCode || op.code),
+      status: op.status,
     }));
 
-    console.log('Number of unique operators returned:', uniqueOperators.length);
-
-    res.json({
+    return res.json({
       success: true,
-      count: uniqueOperators.length,
-      data: uniqueOperators
+      count: formattedOperators.length,
+      data: formattedOperators,
     });
   } catch (error) {
+    console.error('[getOperators Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
     console.error('Error fetching operators:', error);
     res.status(500).json({ success: false, message: 'Server Error', error: error.message });
   }

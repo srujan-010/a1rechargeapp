@@ -172,8 +172,10 @@ const seedOperators = async () => {
           provider: 'A1Topup',
           name: op.name,
           code: op.code,
+          a1TopupCode: op.code,
+          plansApiCode: op.plansInfoCode || '',
           serviceType: op.serviceType,
-          plansInfoCode: op.plansInfoCode,
+          plansInfoCode: op.plansInfoCode || '',
           displayOrder: displayOrder++
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }

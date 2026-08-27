@@ -69,6 +69,7 @@ class PaymentSessionState {
 
 class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
   final Ref _ref;
+  bool _isVerificationInProgress = false;
 
   PaymentSessionNotifier(this._ref) : super(const PaymentSessionState());
 
@@ -83,6 +84,7 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
       tag: 'PAYMENT_SESSION',
     );
 
+    _isVerificationInProgress = false;
     state = PaymentSessionState(
       status: PaymentSessionStatus.razorpayOpen,
       type: type,
@@ -121,6 +123,7 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
       tag: 'PAYMENT_SESSION',
     );
 
+    _isVerificationInProgress = false;
     final isCancelled = code == 2 ||
         (message != null &&
             (message.toLowerCase().contains('cancel') || message.toLowerCase().contains('dismiss')));
@@ -146,6 +149,22 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
   }
 
   Future<void> verifyPayment() async {
+    if (_isVerificationInProgress) {
+      AppLogger.warning(
+        '[PAYMENT_SESSION] verifyPayment skipped — verification network request is already in progress.',
+        tag: 'PAYMENT_SESSION',
+      );
+      return;
+    }
+
+    if (state.status == PaymentSessionStatus.completed) {
+      AppLogger.info(
+        '[PAYMENT_SESSION] verifyPayment skipped — payment session is already completed.',
+        tag: 'PAYMENT_SESSION',
+      );
+      return;
+    }
+
     final internalTxId = state.internalTransactionId;
     final rzpOrderId = state.razorpayOrderId;
     final rzpPaymentId = state.razorpayPaymentId;
@@ -159,6 +178,8 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
       );
       return;
     }
+
+    _isVerificationInProgress = true;
 
     try {
       AppLogger.info(
@@ -225,11 +246,21 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
         status: PaymentSessionStatus.failed,
         errorMessage: e.toString(),
       );
+    } finally {
+      _isVerificationInProgress = false;
     }
   }
 
   void onAppResumed() {
     if (!state.isPaymentInProgress) return;
+
+    if (_isVerificationInProgress) {
+      AppLogger.info(
+        '[PAYMENT_SESSION] App resumed while verification is already actively running. Skipping duplicate verify request.',
+        tag: 'PAYMENT_SESSION',
+      );
+      return;
+    }
 
     AppLogger.info(
       '[PAYMENT_SESSION] App resumed while payment is in progress (Status: ${state.status}). Checking session recovery...',
@@ -244,6 +275,7 @@ class PaymentSessionNotifier extends StateNotifier<PaymentSessionState> {
 
   void clearSession() {
     AppLogger.info('[PAYMENT_SESSION] Clearing payment session.', tag: 'PAYMENT_SESSION');
+    _isVerificationInProgress = false;
     state = const PaymentSessionState();
   }
 }

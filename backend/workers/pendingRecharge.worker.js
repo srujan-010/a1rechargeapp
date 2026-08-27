@@ -68,6 +68,11 @@ class PendingRechargeWorker {
 
   async processTransaction(transaction) {
     try {
+      if (!transaction || !transaction.orderId) {
+        console.error('[Worker ERROR] Invalid transaction record or missing orderId. Skipping reconciliation attempt.');
+        return;
+      }
+
       // Step 1: Verify Mongo query by looking up document by orderId
       const foundDoc = await RechargeTransaction.findOne({ orderId: transaction.orderId });
       console.log(`\n[Worker] Mongo Query Verification for orderId '${transaction.orderId}':`);
@@ -93,6 +98,7 @@ class PendingRechargeWorker {
       console.log(`  Provider Response:`, JSON.stringify(statusResponse.rawResponse || statusResponse, null, 2));
       console.log(`  Provider Status: ${statusResponse.status}`);
 
+      const safeProviderTxId = (!statusResponse.providerTransactionId || statusResponse.providerTransactionId === 'N/A') ? null : statusResponse.providerTransactionId;
       const now = new Date();
 
       if (statusResponse.status === 'SUCCESS') {
@@ -101,7 +107,7 @@ class PendingRechargeWorker {
           $set: {
             status: 'SUCCESS',
             providerStatus: 'SUCCESS',
-            providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId,
+            providerTransactionId: safeProviderTxId || transaction.providerTransactionId,
             operatorReference: statusResponse.operatorReference || transaction.operatorReference,
             completedAt: now,
           }
@@ -189,7 +195,7 @@ class PendingRechargeWorker {
         // Update global Transaction model
         await Transaction.updateOne({ referenceId: transaction.orderId }, { 
           status: 'success', 
-          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+          apiReference: safeProviderTxId || transaction.orderId,
           completedAt: now,
         });
 
@@ -203,7 +209,7 @@ class PendingRechargeWorker {
             status: 'FAILED',
             providerStatus: 'FAILED',
             failureReason: statusResponse.message,
-            providerTransactionId: statusResponse.providerTransactionId || transaction.providerTransactionId,
+            providerTransactionId: safeProviderTxId || transaction.providerTransactionId,
             completedAt: now,
           }
         };
@@ -257,11 +263,13 @@ class PendingRechargeWorker {
         
         await Transaction.updateOne({ referenceId: transaction.orderId }, { 
           status: 'failed', 
-          apiReference: statusResponse.providerTransactionId || transaction.providerTransactionId,
+          apiReference: safeProviderTxId || transaction.orderId,
           completedAt: now,
         });
 
         console.log(`[Worker] Transaction ${transaction.orderId} marked FAILED.`);
+      } else if (statusResponse.status === 'UNKNOWN') {
+        console.warn(`[Worker WARNING] Provider status for ${transaction.orderId} returned UNKNOWN. Reconciliation pending.`);
       } else {
         console.log(`[Worker] Transaction ${transaction.orderId} is still PENDING at provider.`);
       }

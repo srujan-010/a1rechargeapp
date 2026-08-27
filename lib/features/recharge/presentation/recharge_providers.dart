@@ -118,11 +118,15 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
     final op = ops.where((o) => o.id == params.operatorId || o.shortCode == params.operatorId).firstOrNull;
     
     if (op != null) {
-       final registeredOp = OperatorRegistry.instance.getOperatorByName(op.name);
-       if (registeredOp != null) {
-         operatorCode = registeredOp.code.toString();
-       } else if (op.shortCode != null && op.shortCode!.isNotEmpty) {
-         operatorCode = op.shortCode!;
+       if (op.plansApiCode != null && op.plansApiCode!.isNotEmpty) {
+         operatorCode = op.plansApiCode!;
+       } else {
+         final registeredOp = OperatorRegistry.instance.getOperatorByName(op.name);
+         if (registeredOp != null) {
+           operatorCode = registeredOp.code.toString();
+         } else if (op.shortCode != null && op.shortCode!.isNotEmpty) {
+           operatorCode = op.shortCode!;
+         }
        }
     } else {
        final registeredOp = OperatorRegistry.instance.getOperatorByName(params.operatorId);
