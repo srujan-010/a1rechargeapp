@@ -80,7 +80,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       } else if (_selectedFilter == 'Failed') {
         matchesType = txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed;
       } else if (_selectedFilter == 'Pending') {
-        matchesType = txn.status == TransactionStatus.pending || txn.status == TransactionStatus.processing || txn.status == TransactionStatus.initiated;
+        matchesType = txn.status == TransactionStatus.pending || txn.status == TransactionStatus.processing;
       }
 
       if (!matchesType) return false;
@@ -276,10 +276,10 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                       children: [
                         const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
                         const SizedBox(height: 16),
-                        Text('Could not load history.', style: AppTextTheme.textTheme.titleMedium),
+                        Text('Unable to load transactions', style: AppTextTheme.textTheme.titleMedium),
                         const SizedBox(height: 16),
                         AppButton(
-                          label: 'Retry',
+                          label: 'Try Again',
                           onPressed: () => ref.invalidate(historyTransactionsProvider),
                         ),
                       ],

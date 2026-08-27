@@ -1,5 +1,6 @@
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
+const RechargeTransaction = require('../models/RechargeTransaction');
 const Notification = require('../models/Notification');
 
 const { getWalletFundingMode, isPaymentGatewayEnabled } = require('../config/walletConfig');
@@ -75,65 +76,119 @@ const getBalance = async (req, res, next) => {
 const getStatement = async (req, res, next) => {
   try {
     const { page = 1, limit = 20, type, days } = req.query;
-    const skip = (page - 1) * limit;
 
-    const query = { userId: req.user._id };
-
-    if (type === 'credits' || type === 'credit') {
-      query.$or = [
-        { type: 'credit' },
-        { service: { $in: ['wallet_topup', 'commission', 'admin_credit'] } }
-      ];
-    } else if (type === 'debits' || type === 'debit') {
-      query.$or = [
-        { type: 'debit' },
-        { service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] } }
-      ];
+    const userIds = [req.user._id];
+    if (req.user._id && typeof req.user._id.toString === 'function') {
+      userIds.push(req.user._id.toString());
     }
+
+    const baseQuery = { userId: { $in: userIds } };
 
     if (days && !isNaN(Number(days))) {
       const daysNum = Number(days);
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysNum);
-      query.createdAt = { $gte: startDate };
+      baseQuery.createdAt = { $gte: startDate };
     }
 
-    const transactions = await Transaction.find(query)
+    const txQuery = { ...baseQuery };
+
+    if (type === 'credits' || type === 'credit') {
+      txQuery.$or = [
+        { type: 'credit' },
+        { service: { $in: ['wallet_topup', 'commission', 'admin_credit'] } }
+      ];
+    } else if (type === 'debits' || type === 'debit') {
+      txQuery.$or = [
+        { type: 'debit' },
+        { service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] } }
+      ];
+    }
+
+    const globalTransactions = await Transaction.find(txQuery)
       .select('_id service type operatorName operatorId mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference providerTransactionId failureReason providerMessage description')
       .sort({ createdAt: -1 })
-      .skip(Number(skip))
-      .limit(Number(limit))
       .lean()
       .maxTimeMS(3000);
 
+    const formattedGlobal = globalTransactions.map(t => {
+      const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
+      return {
+        id: String(t._id),
+        type: isCred ? 'credit' : 'debit',
+        serviceType: t.service || 'mobile_recharge',
+        operatorName: t.operatorName || '',
+        operatorId: t.operatorId || null,
+        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service || 'mobile_recharge', t.operatorName),
+        customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
+        amount: t.amountPaise,
+        commission: t.commissionEarnedPaise || 0,
+        status: String(t.status || 'pending').toLowerCase(),
+        createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
+        completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
+        updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
+        paymentMethod: t.paymentMethod || 'wallet',
+        referenceNumber: t.referenceId,
+        clientOrderId: t.referenceId,
+        apiReference: t.apiReference || '',
+        providerTransactionId: t.providerTransactionId || t.apiReference || null,
+        failureReason: t.failureReason || null,
+        providerMessage: t.providerMessage || null,
+        description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
+      };
+    });
+
+    // Also query RechargeTransaction collection to ensure any recharge records are merged if missing
+    let formattedRecharges = [];
+    if (!type || type === 'all' || type === 'debits' || type === 'debit') {
+      const rechargeTxns = await RechargeTransaction.find(baseQuery)
+        .sort({ createdAt: -1 })
+        .lean()
+        .maxTimeMS(3000);
+
+      const existingRefIds = new Set(formattedGlobal.map(t => t.referenceNumber).filter(Boolean));
+
+      formattedRecharges = rechargeTxns
+        .filter(r => !existingRefIds.has(r.orderId) && !existingRefIds.has(String(r._id)))
+        .map(r => {
+          const serviceType = r.serviceType === 'dth' ? 'dth' : 'mobile_recharge';
+          return {
+            id: String(r._id),
+            type: 'debit',
+            serviceType,
+            operatorName: r.internalOperatorName || r.operatorCode || 'Operator',
+            operatorId: r.operatorCode || null,
+            transactionTitle: serviceType === 'dth' ? 'DTH Recharge' : 'Mobile Recharge',
+            customerIdentifier: r.mobileNumber || '',
+            amount: Math.round((r.amount || 0) * 100), // convert INR to paise
+            commission: Math.round((r.commissionAmount || 0) * 100),
+            status: String(r.status || 'pending').toLowerCase(),
+            createdAt: (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)).toISOString(),
+            completedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
+            updatedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
+            paymentMethod: r.paymentMethod || 'RAZORPAY_UPI',
+            referenceNumber: r.orderId,
+            clientOrderId: r.orderId,
+            apiReference: r.providerTransactionId || '',
+            providerTransactionId: r.providerTransactionId || null,
+            failureReason: r.failureReason || null,
+            providerMessage: r.providerMessage || null,
+            description: `Recharge for ${r.mobileNumber}`,
+          };
+        });
+    }
+
+    const merged = [...formattedGlobal, ...formattedRecharges];
+    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const startIndex = (pageNum - 1) * limitNum;
+    const paginated = merged.slice(startIndex, startIndex + limitNum);
+
     res.status(200).json({
       success: true,
-      data: transactions.map(t => {
-        const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
-        return {
-          id: t._id,
-          type: isCred ? 'credit' : 'debit',
-          serviceType: t.service,
-          operatorName: t.operatorName || '',
-          operatorId: t.operatorId || null,
-          transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service, t.operatorName),
-          customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
-          amount: t.amountPaise,
-          commission: t.commissionEarnedPaise || 0,
-          status: t.status,
-          createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
-          completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
-          updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
-          paymentMethod: t.paymentMethod || 'wallet',
-          referenceNumber: t.referenceId,
-          clientOrderId: t.referenceId,
-          apiReference: t.apiReference || '',
-          providerTransactionId: t.providerTransactionId || t.apiReference || null,
-          failureReason: t.failureReason || null,
-          providerMessage: t.providerMessage || null,
-          description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
-        };
-      })
+      data: paginated,
     });
   } catch (error) {
     next(error);

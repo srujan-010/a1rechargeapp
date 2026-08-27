@@ -256,6 +256,18 @@ final personalBenefitsProvider = FutureProvider.autoDispose<List<PersonalBenefit
   return cachedSlabs;
 });
 
+final currentPlanProvider = FutureProvider.autoDispose<LastRecharge?>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>?>(
+    '/personal/current-plan',
+    fromJson: (json) => json as Map<String, dynamic>?,
+  );
+  if (response.success && response.data != null) {
+    return LastRecharge.fromJson(response.data!);
+  }
+  return null;
+});
+
 final lastRechargeProvider = FutureProvider.autoDispose<LastRecharge?>((ref) async {
   final apiClient = ref.watch(apiClientProvider);
   final response = await apiClient.get<Map<String, dynamic>?>(

@@ -737,9 +737,146 @@ const getLastSuccessfulRecharge = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/personal/current-plan
+ * Evaluates strictly whether the user has an active/current Monthly or Yearly plan.
+ * Top-ups (₹10, ₹20, ₹50), talktime vouchers, data vouchers are NEVER returned as current plans.
+ */
+const getCurrentPlan = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const userIds = [userId];
+    if (userId && typeof userId.toString === 'function') {
+      userIds.push(userId.toString());
+    }
+
+    const rawPhone = (req.user && (req.user.phone || req.user.mobileNumber || req.user.mobile))
+      ? String(req.user.phone || req.user.mobileNumber || req.user.mobile).replace('+91', '').trim()
+      : '';
+
+    const isMonthlyOrYearlyPlan = (txn) => {
+      if (!txn) return false;
+      const pType = String(txn.planType || '').toUpperCase().trim();
+      const name = String(txn.planName || '').toUpperCase().trim();
+      const category = String(txn.selectedCategory || '').toUpperCase().trim();
+      const amount = Number(txn.amount || 0);
+
+      if (pType === 'TOPUP' || pType === 'TALKTIME' || category.includes('TOPUP') || category.includes('TALKTIME')) {
+        return false;
+      }
+      if (amount <= 50) return false;
+      if (pType === 'MONTHLY' || pType === 'YEARLY' || pType === 'UNLIMITED' || pType === 'PLAN' || pType === 'STV') {
+        return true;
+      }
+      if (name.includes('VALIDITY') || name.includes('MONTH') || name.includes('YEAR') || name.includes('DAYS') || name.includes('UNLIMITED')) {
+        return true;
+      }
+      return amount >= 100;
+    };
+
+    const pendingPlanTxn = await RechargeTransaction.findOne({
+      userId: { $in: userIds },
+      status: 'PENDING',
+    }).sort({ createdAt: -1 }).lean();
+
+    if (pendingPlanTxn && isMonthlyOrYearlyPlan(pendingPlanTxn)) {
+      return res.status(200).json({
+        success: true,
+        hasActivePlan: true,
+        isPending: true,
+        data: {
+          title: 'Recharge in Progress',
+          operatorName: pendingPlanTxn.internalOperatorName || pendingPlanTxn.operatorCode,
+          operatorCode: pendingPlanTxn.operatorCode,
+          mobileNumber: pendingPlanTxn.mobileNumber,
+          amount: pendingPlanTxn.amount,
+          validity: 'Processing...',
+          daysRemaining: null,
+          status: 'PENDING',
+          colorState: 'AMBER',
+        },
+      });
+    }
+
+    if (rawPhone) {
+      const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+      let planCache = await UserPlanCache.findOne({ userId: { $in: userIds }, mobileNumber: rawPhone });
+      const isCacheValid = planCache && (Date.now() - new Date(planCache.fetchedAt).getTime() < TWENTY_FOUR_HOURS_MS);
+
+      if (planCache && isCacheValid && (planCache.expiryDate || planCache.validity)) {
+        const expDate = planCache.expiryDate ? new Date(planCache.expiryDate) : null;
+        let daysRem = planCache.daysRemaining;
+        if (expDate && !isNaN(expDate.getTime())) {
+          daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        }
+
+        let colorState = 'GREEN';
+        let title = 'Your Current Plan';
+        if (daysRem !== null && daysRem !== undefined) {
+          if (daysRem < 0) {
+            colorState = 'EXPIRED';
+            title = 'Plan Expired';
+          } else if (daysRem <= 2) {
+            colorState = 'RED';
+          } else if (daysRem <= 7) {
+            colorState = 'AMBER';
+          }
+        }
+
+        return res.status(200).json({
+          success: true,
+          hasActivePlan: true,
+          data: {
+            title,
+            mobileNumber: rawPhone,
+            operatorName: planCache.operatorName || 'Operator',
+            operatorCode: planCache.operatorCode || '',
+            validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
+            expiryDate: expDate ? expDate.toISOString() : null,
+            daysRemaining: daysRem,
+            colorState,
+          },
+        });
+      }
+    }
+
+    const latestSuccessPlanTxn = await RechargeTransaction.findOne({
+      userId: { $in: userIds },
+      status: 'SUCCESS',
+    }).sort({ createdAt: -1 }).lean();
+
+    if (latestSuccessPlanTxn && isMonthlyOrYearlyPlan(latestSuccessPlanTxn)) {
+      return res.status(200).json({
+        success: true,
+        hasActivePlan: true,
+        data: {
+          title: 'Your Current Plan',
+          mobileNumber: latestSuccessPlanTxn.mobileNumber,
+          operatorName: latestSuccessPlanTxn.internalOperatorName || latestSuccessPlanTxn.operatorCode,
+          operatorCode: latestSuccessPlanTxn.operatorCode,
+          amount: latestSuccessPlanTxn.amount,
+          validity: latestSuccessPlanTxn.planName || 'Active Plan',
+          daysRemaining: null,
+          colorState: 'GREEN',
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      hasActivePlan: false,
+      data: null,
+    });
+  } catch (error) {
+    console.error('[getCurrentPlan Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getSavings,
   getBenefits,
+  getCurrentPlan,
   getLastRecharge,
   getLastSuccessfulRecharge,
   getRecentTransactions,

@@ -4,6 +4,7 @@ const { protect } = require('../middleware/authMiddleware');
 const {
   getSavings,
   getBenefits,
+  getCurrentPlan,
   getLastRecharge,
   getLastSuccessfulRecharge,
   getRecentTransactions,
@@ -14,6 +15,7 @@ router.use(protect);
 
 router.get('/savings', getSavings);
 router.get('/benefits', getBenefits);
+router.get('/current-plan', getCurrentPlan);
 router.get('/last-recharge', getLastRecharge);
 router.get('/last-successful', getLastSuccessfulRecharge);
 router.get('/recent-transactions', getRecentTransactions);

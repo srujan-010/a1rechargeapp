@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import '../../../core/constants/route_names.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_theme.dart';
@@ -133,7 +132,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 const SliverToBoxAdapter(child: SizedBox(height: 20)),
               ],
 
-              // ── PERSONAL ONLY: Lifetime Savings & Last Recharge ──
+              // ── PERSONAL ONLY: Lifetime Savings, Current Plan & Last Recharge ──
               if (isPersonal) ...[
                 SliverToBoxAdapter(
                   child: Padding(
@@ -146,7 +145,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
-                    child: _PersonalLastRechargeCard(),
+                    child: _PersonalCurrentPlanCard(),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -154,7 +153,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pagePadding),
-                    child: const _PersonalLastSuccessfulRechargeCard(),
+                    child: _PersonalLastRechargeCard(),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -1916,215 +1915,160 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
   }
 }
 
-class _PersonalLastSuccessfulRechargeCard extends ConsumerWidget {
-  const _PersonalLastSuccessfulRechargeCard();
-
-  String _formatDate(String isoString) {
-    if (isoString.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(isoString).toLocal();
-      return DateFormat('dd MMM yyyy').format(dt);
-    } catch (_) {
-      return isoString;
-    }
-  }
+class _PersonalCurrentPlanCard extends ConsumerWidget {
+  const _PersonalCurrentPlanCard();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lastSuccessAsync = ref.watch(lastSuccessfulRechargeProvider);
+    final currentPlanAsync = ref.watch(currentPlanProvider);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return currentPlanAsync.when(
+      data: (plan) {
+        final hasActivePlan = plan != null && (plan.cardType == 'PLAN_STATUS' || plan.validity != null || plan.expiryDate != null);
+
+        if (hasActivePlan) {
+          final displayOpName = OperatorFormatter.getDisplayOperatorName(plan.operatorName);
+          final isExpired = plan.colorState == 'EXPIRED';
+          final isRed = plan.colorState == 'RED';
+          final isAmber = plan.colorState == 'AMBER';
+
+          Color statusColor = AppColors.success;
+          Color statusBg = AppColors.success.withOpacity(0.1);
+          if (isExpired || isRed) {
+            statusColor = AppColors.error;
+            statusBg = AppColors.error.withOpacity(0.1);
+          } else if (isAmber) {
+            statusColor = const Color(0xFFD97706);
+            statusBg = const Color(0xFFFEF3C7);
+          }
+
+          String badgeText = plan.validity ?? (plan.daysRemaining != null ? '${plan.daysRemaining} days remaining' : 'Active Plan');
+
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primaryBlue),
+                        const SizedBox(width: 8),
+                        Text(
+                          plan.title.isNotEmpty ? plan.title : 'Your Current Plan',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        ),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: () => context.push(RouteNames.mobileRecharge),
+                      child: const Text('View Details →', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
+                      child: Text(
+                        displayOpName.isNotEmpty ? displayOpName[0] : 'P',
+                        style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          if (plan.mobileNumber.isNotEmpty)
+                            Text(plan.mobileNumber, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        badgeText,
+                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Empty state for "Your Current Plan"
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.history_rounded, size: 18, color: AppColors.primaryBlue),
+              Row(
+                children: const [
+                  Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primaryBlue),
                   SizedBox(width: 8),
                   Text(
-                    'Last Recharge',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
+                    'Your Current Plan',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                   ),
                 ],
               ),
-              TextButton(
-                onPressed: () => context.go(RouteNames.transactionHistory),
-                child: const Text(
-                  'View History →',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              const SizedBox(height: 12),
+              const Text(
+                'No active plan',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Choose a monthly or yearly plan to get started.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => context.push(RouteNames.mobileRecharge),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('View Plans', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          lastSuccessAsync.when(
-            data: (txn) {
-              if (txn == null) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'No recharge yet',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Complete your first recharge to see your latest recharge here.',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                );
-              }
-
-              final formattedDate = _formatDate(txn.rechargeDate);
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
-                        child: Text(
-                          txn.operatorName.isNotEmpty ? txn.operatorName[0] : '📱',
-                          style: const TextStyle(
-                            color: AppColors.primaryBlue,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              txn.operatorName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            if (txn.mobileNumber.isNotEmpty)
-                              Text(
-                                txn.mobileNumber,
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 13,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            CurrencyFormatter.fromRupees(txn.amount),
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          if (formattedDate.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              formattedDate,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF86EFAC)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF15803D)),
-                            SizedBox(width: 4),
-                            Text(
-                              'Successful',
-                              style: TextStyle(
-                                color: Color(0xFF15803D),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              );
-            },
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            error: (err, _) => const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'No recharge yet',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Complete your first recharge to see your latest recharge here.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }
