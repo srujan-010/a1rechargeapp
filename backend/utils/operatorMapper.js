@@ -53,7 +53,15 @@ function isBsnlStvPlan(planType = '', selectedCategory = '', planName = '', reqP
  */
 function resolvePlansApiOperatorCode(operator) {
   if (typeof operator === 'string') {
-    return operator.trim();
+    const clean = operator.trim();
+    if (/^\d+$/.test(clean)) return clean;
+    const upper = clean.toUpperCase();
+    if (upper === 'AT' || upper === 'AIRTEL' || upper === 'A') return '2';
+    if (upper === 'VI' || upper === 'VODAFONE' || upper === 'V' || upper === 'IDEA' || upper === 'I') return '23';
+    if (upper === 'JIO' || upper === 'RELIANCE' || upper === 'RC' || upper === 'RJ') return '11';
+    if (upper === 'BT' || upper === 'BSNL TOPUP' || upper === 'BSNL-TOPUP') return '4';
+    if (upper === 'BR' || upper === 'BSNL SPECIAL' || upper === 'BSNL-STV') return '5';
+    return clean;
   }
   return getPlansApiOperatorCode(operator);
 }
