@@ -826,6 +826,7 @@ const getCurrentPlan = async (req, res) => {
         return res.status(200).json({
           success: true,
           hasActivePlan: true,
+          source: 'planapi_cache',
           data: {
             title,
             mobileNumber: rawPhone,
@@ -837,6 +838,64 @@ const getCurrentPlan = async (req, res) => {
             colorState,
           },
         });
+      }
+
+      // Query live Plans API for recharge expiry date
+      try {
+        const planApiService = require('../services/planapi.service');
+        const opRes = await planApiService.detectMobileOperator(rawPhone);
+        const opCode = opRes.success && opRes.data ? (opRes.data.OperatorCode || opRes.data.operator_code || 'AT') : 'AT';
+
+        const expRes = await planApiService.checkRechargeExpiry(rawPhone, opCode);
+        if (expRes.supported && expRes.success && expRes.data && expRes.data.outgoing) {
+          const expDate = new Date(expRes.data.outgoing);
+          const daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+          let colorState = 'GREEN';
+          let title = 'Your Current Plan';
+          if (daysRem < 0) {
+            colorState = 'EXPIRED';
+            title = 'Plan Expired';
+          } else if (daysRem <= 2) {
+            colorState = 'RED';
+          } else if (daysRem <= 7) {
+            colorState = 'AMBER';
+          }
+
+          await UserPlanCache.findOneAndUpdate(
+            { userId: userId, mobileNumber: rawPhone },
+            {
+              userId: userId,
+              mobileNumber: rawPhone,
+              operatorName: opCode,
+              operatorCode: opCode,
+              validity: `${daysRem} days remaining`,
+              expiryDate: expDate,
+              daysRemaining: daysRem,
+              colorState,
+              fetchedAt: new Date(),
+            },
+            { upsert: true, new: true }
+          );
+
+          return res.status(200).json({
+            success: true,
+            hasActivePlan: true,
+            source: 'planapi',
+            data: {
+              title,
+              mobileNumber: rawPhone,
+              operatorName: opCode,
+              operatorCode: opCode,
+              validity: `${daysRem} days remaining`,
+              expiryDate: expDate.toISOString(),
+              daysRemaining: daysRem,
+              colorState,
+            },
+          });
+        }
+      } catch (err) {
+        console.log('[getCurrentPlan PlansAPI Fetch Warning]:', err.message);
       }
     }
 
