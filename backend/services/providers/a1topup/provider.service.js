@@ -164,59 +164,66 @@ class A1TopupProvider extends ProviderInterface {
     const { orderId, mobileNumber, amount, operatorCode, circleCode, serviceType, accountType } = options;
     const finalCircleCode = (circleCode && String(circleCode).trim() !== '') ? String(circleCode).trim() : '4';
 
+    const payload = {
+      username: config.username,
+      pwd: config.password,
+      format: config.format || 'json',
+      number: mobileNumber,
+      amount: amount,
+      operatorcode: operatorCode,
+      circlecode: finalCircleCode,
+      orderid: orderId,
+    };
+
+    const safeParams = {
+      endpoint: `${config.baseUrl}/recharge/api`,
+      method: 'GET',
+      username: config.username ? `${config.username.substring(0, 3)}***` : '***',
+      pwd: '***',
+      circlecode: finalCircleCode,
+      operatorcode: operatorCode,
+      number: mobileNumber ? `${mobileNumber.substring(0, 4)}***${mobileNumber.substring(mobileNumber.length - 2)}` : '***',
+      amount: amount,
+      orderid: orderId,
+      format: config.format || 'json',
+    };
+
+    console.log('\n====================================================');
+    console.log('[A1TOPUP LIVE HTTP REQUEST]');
+    console.log(JSON.stringify(safeParams, null, 2));
+    console.log('====================================================\n');
+
+    const startTime = Date.now();
     try {
-      const payload = {
-        username: config.username,
-        pwd: config.password,
-        format: config.format || 'json',
-        number: mobileNumber,
-        amount: amount,
-        operatorcode: operatorCode,
-        circlecode: finalCircleCode,
-        orderid: orderId,
-      };
-
-      console.log('\n====================================================');
-      console.log('[A1TOPUP REAL REQUEST]');
-      console.log(`orderId=${orderId}`);
-      console.log(`mobileNumber=${mobileNumber}`);
-      console.log(`operatorCode=${operatorCode}`);
-      console.log(`circleCode=${finalCircleCode}`);
-      console.log(`amount=${amount}`);
-      console.log(`serviceType=${serviceType || 'mobile'}`);
-      console.log(`accountType=${accountType || 'N/A'}`);
-      console.log(`endpoint=${config.baseUrl}/recharge/api`);
-      console.log('====================================================\n');
-
       // Most Indian topup APIs strictly use GET with query parameters
       const response = await this.client.get('/recharge/api', { params: payload });
+      const elapsedMs = Date.now() - startTime;
 
       console.log('\n====================================================');
-      console.log('[A1TOPUP RAW RESPONSE]');
+      console.log('[A1TOPUP LIVE HTTP RESPONSE]');
       console.log(`httpStatus=${response.status}`);
-      console.log(`responseCode=${response.data?.status || response.data?.code || response.data?.error || 'N/A'}`);
-      console.log(`status=${response.data?.status || 'N/A'}`);
-      console.log(`message=${response.data?.message || response.data?.opid || response.data?.errmsg || 'N/A'}`);
-      console.log(`providerTransactionId=${response.data?.txid || response.data?.txnid || response.data?.provider_id || 'N/A'}`);
-      console.log(`errorCode=${response.data?.error || response.data?.errcode || 'N/A'}`);
-      console.log(`errorMessage=${response.data?.errmsg || response.data?.message || 'N/A'}`);
-      console.log(`rawData=${JSON.stringify(response.data)}`);
+      console.log(`elapsedMs=${elapsedMs}ms`);
+      console.log(`rawBody=${typeof response.data === 'object' ? JSON.stringify(response.data) : response.data}`);
       console.log('====================================================\n');
 
       return this._normalizeResponse(response.data, orderId);
     } catch (error) {
-      console.error('[A1TopupProvider] Recharge failed with exception:');
-      console.error(`Error Message: ${error.message}`);
+      const elapsedMs = Date.now() - startTime;
+      console.error('\n====================================================');
+      console.error('[A1TOPUP LIVE HTTP ERROR]');
+      console.error(`elapsedMs=${elapsedMs}ms`);
+      console.error(`errorType=${error.code || error.name}`);
+      console.error(`message=${error.message}`);
       if (error.response) {
-        console.error(`HTTP Error Status: ${error.response.status}`);
-        console.error(`HTTP Error Data: ${JSON.stringify(error.response.data)}`);
+        console.error(`httpStatus=${error.response.status}`);
+        console.error(`responseBody=${typeof error.response.data === 'object' ? JSON.stringify(error.response.data) : error.response.data}`);
       }
-      
-      // Determine if error is a timeout or reachability issue to mark as PENDING instead of FAILED
+      console.error('====================================================\n');
+
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
         return {
           success: false,
-          status: 'PENDING',
+          status: 'PROVIDER_TIMEOUT',
           message: 'Provider timeout. Status unknown.',
           providerTransactionId: null,
           orderId: orderId,
@@ -225,7 +232,7 @@ class A1TopupProvider extends ProviderInterface {
       
       return {
         success: false,
-        status: 'FAILED',
+        status: 'PROVIDER_UNREACHABLE',
         message: error.response?.data?.message || error.message,
         providerTransactionId: null,
         orderId: orderId,

@@ -602,7 +602,7 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
 
   const safeProviderTxId = (!providerResponse.providerTransactionId || providerResponse.providerTransactionId === 'N/A') ? null : providerResponse.providerTransactionId;
 
-  console.log(`[A1TOPUP RECHARGE INITIATION RESPONSE] orderId=${transaction.orderId}, status=${providerResponse.status}, providerTransactionId=${safeProviderTxId || 'N/A'}`);
+  console.log(`[A1TOPUP ADAPTER RESULT] orderId=${transaction.orderId}, status=${providerResponse.status}, providerTransactionId=${safeProviderTxId || 'N/A'}`);
 
   transaction.providerTransactionId = safeProviderTxId || transaction.providerTransactionId || null;
   transaction.operatorReference = providerResponse.operatorReference || transaction.operatorReference || null;
