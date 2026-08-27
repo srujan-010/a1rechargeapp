@@ -236,12 +236,35 @@ const getLastRecharge = async (req, res) => {
       ? String(req.user.phone || req.user.mobileNumber || req.user.mobile).replace('+91', '').trim()
       : '';
 
-    // ── PRIORITY 1: ACTIVE PENDING TRANSACTION ──
+    // Helper to identify genuine Monthly/Yearly recharge plans (excluding ₹10/₹20 top-ups)
+    const isMonthlyOrYearlyPlan = (txn) => {
+      if (!txn) return false;
+      const pType = String(txn.planType || '').toUpperCase().trim();
+      const name = String(txn.planName || '').toUpperCase().trim();
+      const category = String(txn.selectedCategory || '').toUpperCase().trim();
+      const amount = Number(txn.amount || 0);
+
+      if (pType === 'TOPUP' || pType === 'TALKTIME' || category.includes('TOPUP') || category.includes('TALKTIME')) {
+        return false;
+      }
+      if (amount <= 50) {
+        return false;
+      }
+      if (pType === 'MONTHLY' || pType === 'YEARLY' || pType === 'UNLIMITED' || pType === 'PLAN' || pType === 'STV') {
+        return true;
+      }
+      if (name.includes('VALIDITY') || name.includes('MONTH') || name.includes('YEAR') || name.includes('DAYS') || name.includes('UNLIMITED')) {
+        return true;
+      }
+      return amount >= 100;
+    };
+
+    // ── PRIORITY 1: ACTIVE PENDING MONTHLY/YEARLY PLAN TRANSACTION ──
     const pendingTxn = await RechargeTransaction.findOne({ userId, status: 'PENDING' })
       .sort({ createdAt: -1 })
       .lean();
 
-    if (pendingTxn) {
+    if (pendingTxn && isMonthlyOrYearlyPlan(pendingTxn)) {
       console.log('[PERSONAL PLAN]', JSON.stringify({
         userId,
         operator: pendingTxn.internalOperatorName || pendingTxn.operatorCode,

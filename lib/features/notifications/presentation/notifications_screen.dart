@@ -498,7 +498,7 @@ NotificationType _getNotificationType(AppNotification notif) {
     return NotificationType.failed;
   }
 
-  if (title.contains('processing') || message.contains('processing') || message.contains('submitted')) {
+  if (title.contains('processing') || message.contains('processing') || message.contains('submitted') || title.contains('pending') || message.contains('pending')) {
     return NotificationType.processing;
   }
 

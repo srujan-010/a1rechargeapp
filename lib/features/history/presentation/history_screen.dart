@@ -69,18 +69,18 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     return txns.where((txn) {
       // 1. Apply Type Filter
       bool matchesType = true;
-      if (_selectedFilter == 'Recharges') {
+      if (_selectedFilter == 'Recharge' || _selectedFilter == 'Recharges') {
         matchesType = txn.serviceType == 'mobile_recharge' || txn.serviceType == 'mobile' || txn.serviceType == 'dth';
-      } else if (_selectedFilter == 'Top-ups') {
-        matchesType = txn.serviceType == 'wallet_topup';
+      } else if (_selectedFilter == 'Wallet' || _selectedFilter == 'Top-ups') {
+        matchesType = txn.serviceType == 'wallet_topup' || txn.serviceType == 'admin_credit';
       } else if (_selectedFilter == 'Commission') {
         matchesType = txn.serviceType == 'commission';
       } else if (_selectedFilter == 'Bills') {
-        matchesType = txn.serviceType == 'bbps';
+        matchesType = txn.serviceType == 'bbps' || txn.serviceType == 'electricity' || txn.serviceType == 'gas' || txn.serviceType == 'fastag';
       } else if (_selectedFilter == 'Failed') {
         matchesType = txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed;
       } else if (_selectedFilter == 'Pending') {
-        matchesType = txn.status == TransactionStatus.pending;
+        matchesType = txn.status == TransactionStatus.pending || txn.status == TransactionStatus.processing || txn.status == TransactionStatus.initiated;
       }
 
       if (!matchesType) return false;
