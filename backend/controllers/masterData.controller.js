@@ -71,10 +71,6 @@ exports.getOperators = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-    console.error('Error fetching operators:', error);
-    res.status(500).json({ success: false, message: 'Server Error', error: error.message });
-  }
-};
 
 // @desc    Get all active circles
 // @route   GET /api/circles
