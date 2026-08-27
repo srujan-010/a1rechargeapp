@@ -10,8 +10,9 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/widgets/app_button.dart';
-import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
+import '../../../core/services/local_cache_service.dart';
+import '../../../core/utils/logger.dart';
 import 'history_providers.dart';
 import '../../wallet/domain/models/wallet_transaction.dart';
 
@@ -66,7 +67,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 
   List<WalletTransaction> _filterTransactions(List<WalletTransaction> txns) {
-    return txns.where((txn) {
+    final filtered = txns.where((txn) {
       // 1. Apply Type Filter
       bool matchesType = true;
       if (_selectedFilter == 'Recharge' || _selectedFilter == 'Recharges') {
@@ -97,6 +98,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
       return true;
     }).toList();
+
+    AppLogger.info(
+      '[HISTORY]\n'
+      'FILTER\n'
+      'selectedTab = $_selectedFilter\n'
+      'beforeFilter = ${txns.length}\n'
+      'afterFilter = ${filtered.length}',
+      tag: 'HISTORY',
+    );
+
+    return filtered;
   }
 
   @override
@@ -132,6 +144,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
         bottom: false,
         child: RefreshIndicator(
           onRefresh: () async {
+            LocalCacheService.instance.delete(LocalCacheService.instance.historyBox, 'cached_statement');
             ref.invalidate(historyTransactionsProvider);
             await ref.read(historyTransactionsProvider.future);
           },

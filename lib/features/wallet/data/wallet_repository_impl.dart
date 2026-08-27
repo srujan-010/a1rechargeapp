@@ -49,14 +49,36 @@ class WalletRepositoryImpl implements WalletRepository {
         if (from != null) 'from': from.toIso8601String(),
         if (to != null) 'to': to.toIso8601String(),
       };
+      AppLogger.info(
+        '[HISTORY]\n'
+        'API REQUEST\n'
+        'endpoint: /wallet/statement\n'
+        'page: $page\n'
+        'limit: $pageSize',
+        tag: 'HISTORY',
+      );
+
       final response = await apiClient.get<List<WalletTransaction>>(
         '/wallet/statement',
         queryParameters: queryParams,
         fromJson: (json) {
           final list = json as List<dynamic>? ?? [];
-          return list
+          AppLogger.info(
+            '[HISTORY]\n'
+            'API RESPONSE\n'
+            'rawTransactionCount: ${list.length}',
+            tag: 'HISTORY',
+          );
+          final parsed = list
               .map((item) => WalletTransaction.fromJson(item as Map<String, dynamic>))
               .toList();
+          AppLogger.info(
+            '[HISTORY]\n'
+            'PARSED\n'
+            'parsedTransactionCount: ${parsed.length}',
+            tag: 'HISTORY',
+          );
+          return parsed;
         },
       );
       if (!response.success || response.data == null) {
