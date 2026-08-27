@@ -844,7 +844,8 @@ const getCurrentPlan = async (req, res) => {
       try {
         const planApiService = require('../services/planapi.service');
         const opRes = await planApiService.detectMobileOperator(rawPhone);
-        const opCode = opRes.success && opRes.data ? (opRes.data.OperatorCode || opRes.data.operator_code || 'AT') : 'AT';
+        const rawOpName = opRes.success && opRes.data ? (opRes.data.Operator || opRes.data.operator || 'Airtel') : 'Airtel';
+        const opCode = opRes.success && opRes.data ? (opRes.data.OpCode || opRes.data.OperatorCode || opRes.data.operator_code || '2') : '2';
 
         const expRes = await planApiService.checkRechargeExpiry(rawPhone, opCode);
         if (expRes.supported && expRes.success && expRes.data && expRes.data.outgoing) {
