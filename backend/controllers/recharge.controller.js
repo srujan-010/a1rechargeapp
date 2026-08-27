@@ -370,7 +370,17 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
     }
     amount = amount || 0;
 
-    if (!mobileNumber || mobileNumber === 'N/A' || !amount || amount <= 0 || !operatorId) {
+    // Clean planId: if planId is empty string or whitespace, treat as null
+    if (typeof planId === 'string' && planId.trim() === '') {
+      planId = null;
+    }
+
+    const rawOpCode = req.body.operatorCode || reqProviderOpCode;
+    const effectiveOperatorId = (operatorId && String(operatorId).trim() !== '')
+      ? operatorId
+      : (rawOpCode || req.body.operatorName);
+
+    if (!mobileNumber || mobileNumber === 'N/A' || !amount || amount <= 0 || !effectiveOperatorId) {
       return res.status(400).json({
         success: false,
         code: 'INVALID_PAYLOAD',
@@ -380,34 +390,38 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
 
     // Resolve Provider Mapping
     let operator;
-    if (mongoose.Types.ObjectId.isValid(operatorId)) {
+    if (operatorId && mongoose.Types.ObjectId.isValid(operatorId)) {
       operator = await ProviderOperator.findById(operatorId);
     }
-    if (!operator) {
-      const codeLookup = String(operatorId || '').toUpperCase().trim();
-      operator = await ProviderOperator.findOne({ code: codeLookup, provider: 'A1Topup' });
+    if (!operator && effectiveOperatorId) {
+      const codeLookup = String(effectiveOperatorId || '').toUpperCase().trim();
+      operator = await ProviderOperator.findOne({ code: codeLookup });
     }
-    if (!operator) {
-      const firstWord = String(req.body.operatorName || '').trim().split(' ')[0];
-      operator = await ProviderOperator.findOne({ name: new RegExp(firstWord, 'i'), provider: 'A1Topup' });
+    if (!operator && rawOpCode) {
+      const codeLookup = String(rawOpCode).toUpperCase().trim();
+      operator = await ProviderOperator.findOne({ code: codeLookup });
+    }
+    if (!operator && (req.body.operatorName || effectiveOperatorId)) {
+      const searchWord = String(req.body.operatorName || effectiveOperatorId).trim().split(' ')[0];
+      operator = await ProviderOperator.findOne({ name: new RegExp(searchWord, 'i') });
     }
     if (!operator || !operator.status) {
       return res.status(400).json({
         success: false,
         code: 'INVALID_OPERATOR',
-        message: `Invalid or disabled operator ID '${operatorId}'`,
+        message: `Invalid or disabled operator ID '${operatorId || effectiveOperatorId}'`,
       });
     }
 
     let operatorCode = operator.code;
     const providerOperatorCode = resolveProviderOperatorCode({
       operator,
-      operatorId,
+      operatorId: operator._id.toString(),
       operatorName: req.body.operatorName || operator.name,
       planType,
       selectedCategory,
       planName,
-      providerOperatorCode: reqProviderOpCode,
+      providerOperatorCode: reqProviderOpCode || rawOpCode,
     });
     if (operator.serviceType?.toUpperCase() !== 'DTH' && serviceType !== 'dth') {
       operatorCode = providerOperatorCode;
@@ -416,8 +430,11 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
     let circle;
     if (circleId && mongoose.Types.ObjectId.isValid(circleId)) {
       circle = await ProviderCircle.findById(circleId);
-    } else {
-      circle = await ProviderCircle.findOne({ code: '4', provider: 'A1Topup' });
+    } else if (circleId) {
+      circle = await ProviderCircle.findOne({ code: String(circleId).trim() });
+    }
+    if (!circle) {
+      circle = await ProviderCircle.findOne({ code: '4' });
     }
     const circleCode = circle ? circle.code : '4';
 
@@ -456,8 +473,8 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
         retailerId: userId.toString(),
         userId: userId.toString(),
         serviceType,
-        operatorId: String(operatorId),
-        circleId: String(circleId),
+        operatorId: operator._id.toString(),
+        circleId: String(circleId || circleCode),
         rechargeAmount: amount,
         commissionAmount,
         payableAmount,
@@ -482,13 +499,13 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
       status: 'PAYMENT_PENDING',
       paymentMethod: 'RAZORPAY_UPI',
       razorpayOrderId: razorpayOrder.id,
-      operatorId: String(operatorId),
+      operatorId: operator._id.toString(),
       serviceType,
       planId: planId || null,
       planName: planName || null,
       planType: planType || null,
       providerOperatorCode,
-      internalOperatorId: String(operatorId),
+      internalOperatorId: operator._id.toString(),
       internalOperatorName: req.body.operatorName || operator.name,
     });
 
@@ -507,7 +524,7 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
       recipientName: mobileNumber,
       mobileNumber: mobileNumber,
       operatorName: operator.name,
-      operatorId: String(operatorId),
+      operatorId: operator._id.toString(),
       paymentMethod: 'razorpay',
       razorpayOrderId: razorpayOrder.id,
     });
@@ -563,6 +580,15 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     await globalTransaction.save();
   }
 
+  console.log('\n====================================================');
+  console.log('[A1TOPUP MAPPING]');
+  console.log(`internalCircleId=${transaction.circleCode || 'N/A'}`);
+  console.log(`internalCircleName=Maharashtra`);
+  console.log(`providerCircleCode=${transaction.circleCode}`);
+  console.log(`operatorCode=${transaction.operatorCode}`);
+  console.log(`amount=${transaction.amount}`);
+  console.log('====================================================\n');
+
   // Execute HTTP GET request to A1Topup provider /recharge/api
   let providerResponse = await a1TopupProvider.recharge({
     orderId: transaction.orderId,
@@ -571,6 +597,7 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     operatorCode: transaction.operatorCode,
     circleCode: transaction.circleCode,
     serviceType: transaction.serviceType,
+    accountType: transaction.accountType,
   });
 
   const safeProviderTxId = (!providerResponse.providerTransactionId || providerResponse.providerTransactionId === 'N/A') ? null : providerResponse.providerTransactionId;

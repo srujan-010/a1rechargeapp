@@ -161,7 +161,7 @@ class A1TopupProvider extends ProviderInterface {
    * Execute Recharge
    */
   async recharge(options) {
-    const { orderId, mobileNumber, amount, operatorCode, circleCode, serviceType } = options;
+    const { orderId, mobileNumber, amount, operatorCode, circleCode, serviceType, accountType } = options;
     const finalCircleCode = (circleCode && String(circleCode).trim() !== '') ? String(circleCode).trim() : '4';
 
     try {
@@ -176,29 +176,32 @@ class A1TopupProvider extends ProviderInterface {
         orderid: orderId,
       };
 
-      const safeParams = {
-        username: config.username || '***',
-        circlecode: finalCircleCode,
-        operatorcode: operatorCode,
-        number: mobileNumber,
-        amount: amount,
-        orderid: orderId,
-        format: config.format || 'json',
-      };
-
-      if (serviceType === 'DTH' || (orderId && String(orderId).startsWith('A1DTH'))) {
-        console.log('\n[DTH] Final Provider Request:');
-        console.log(JSON.stringify(safeParams, null, 2));
-      }
-
-      console.log(`[DTH] Final request URL: ${config.baseUrl}/recharge/api`);
-      console.log(`[${new Date().toISOString()}] [11] IMMEDIATELY BEFORE axios.get()`, { url: `${config.baseUrl}/recharge/api`, params: safeParams });
+      console.log('\n====================================================');
+      console.log('[A1TOPUP REAL REQUEST]');
+      console.log(`orderId=${orderId}`);
+      console.log(`mobileNumber=${mobileNumber}`);
+      console.log(`operatorCode=${operatorCode}`);
+      console.log(`circleCode=${finalCircleCode}`);
+      console.log(`amount=${amount}`);
+      console.log(`serviceType=${serviceType || 'mobile'}`);
+      console.log(`accountType=${accountType || 'N/A'}`);
+      console.log(`endpoint=${config.baseUrl}/recharge/api`);
+      console.log('====================================================\n');
 
       // Most Indian topup APIs strictly use GET with query parameters
       const response = await this.client.get('/recharge/api', { params: payload });
 
-      console.log(`[DTH] Raw response from A1:`, JSON.stringify(response.data));
-      console.log(`[${new Date().toISOString()}] [12] IMMEDIATELY AFTER axios.get()`, { status: response.status, data: response.data });
+      console.log('\n====================================================');
+      console.log('[A1TOPUP RAW RESPONSE]');
+      console.log(`httpStatus=${response.status}`);
+      console.log(`responseCode=${response.data?.status || response.data?.code || response.data?.error || 'N/A'}`);
+      console.log(`status=${response.data?.status || 'N/A'}`);
+      console.log(`message=${response.data?.message || response.data?.opid || response.data?.errmsg || 'N/A'}`);
+      console.log(`providerTransactionId=${response.data?.txid || response.data?.txnid || response.data?.provider_id || 'N/A'}`);
+      console.log(`errorCode=${response.data?.error || response.data?.errcode || 'N/A'}`);
+      console.log(`errorMessage=${response.data?.errmsg || response.data?.message || 'N/A'}`);
+      console.log(`rawData=${JSON.stringify(response.data)}`);
+      console.log('====================================================\n');
 
       return this._normalizeResponse(response.data, orderId);
     } catch (error) {
@@ -244,6 +247,13 @@ class A1TopupProvider extends ProviderInterface {
         }
       });
 
+      console.log('\n====================================================');
+      console.log('[A1TOPUP STATUS CHECK RAW RESPONSE]');
+      console.log(`orderId=${orderId}`);
+      console.log(`httpStatus=${response.status}`);
+      console.log(`rawData=${JSON.stringify(response.data)}`);
+      console.log('====================================================\n');
+
       return this._normalizeResponse(response.data, orderId);
     } catch (error) {
       console.error('[A1TopupProvider] Status check failed:', error.message);
@@ -259,11 +269,11 @@ class A1TopupProvider extends ProviderInterface {
       data = {};
     }
 
-    const rawStatusValue = data.status || data.Status || '';
+    const rawStatusValue = data.status || data.Status || (data.error ? 'FAILED' : '');
     const norm = normalizeStatus(rawStatusValue);
     const status = norm.canonical; // 'SUCCESS', 'FAILED', 'PROCESSING', or 'UNKNOWN'
 
-    let rawMessage = data.message || data.opid || 'Processed';
+    let rawMessage = data.message || data.opid || data.errmsg || 'Processed';
     let cleanMessage = rawMessage;
 
     // Map dirty provider errors to clean UI errors
@@ -280,7 +290,13 @@ class A1TopupProvider extends ProviderInterface {
     }
 
     let providerTransactionId = data.txid || data.txnid || data.provider_id || null;
-    if (providerTransactionId === 'N/A' || providerTransactionId === 'null' || providerTransactionId === 'undefined') {
+    if (
+      providerTransactionId === 'N/A' ||
+      providerTransactionId === 'null' ||
+      providerTransactionId === 'undefined' ||
+      providerTransactionId === 0 ||
+      providerTransactionId === '0'
+    ) {
       providerTransactionId = null;
     }
 

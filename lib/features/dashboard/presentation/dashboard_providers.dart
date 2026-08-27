@@ -22,6 +22,11 @@ final walletRepositoryProvider = Provider<WalletRepository>((ref) {
 class WalletBalanceNotifier extends AsyncNotifier<WalletBalance> {
   @override
   FutureOr<WalletBalance> build() {
+    final userSession = ref.watch(sessionProvider).valueOrNull;
+    if (userSession?.isPersonal ?? false) {
+      return WalletBalance.zero();
+    }
+
     final cache = LocalCacheService.instance;
     final cachedMap = cache.get<Map<dynamic, dynamic>>(cache.walletBox, 'cached_balance');
     WalletBalance? cachedBalance;
@@ -41,6 +46,11 @@ class WalletBalanceNotifier extends AsyncNotifier<WalletBalance> {
   }
 
   Future<void> _refreshInBackground() async {
+    final userSession = ref.read(sessionProvider).valueOrNull;
+    if (userSession?.isPersonal ?? false) {
+      return;
+    }
+
     try {
       final repo = ref.read(walletRepositoryProvider);
       final result = await repo.getBalance().timeout(const Duration(seconds: 3));

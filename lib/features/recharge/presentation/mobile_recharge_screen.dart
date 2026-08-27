@@ -159,10 +159,17 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
           
           // Wait for providers to be ready to avoid silently failing on first use
           final operators = await ref.read(operatorsProvider('mobile').future);
-          final opResult = operators.firstWhere(
-            (op) => op.name.toLowerCase() == operatorName.toLowerCase() || (op.shortCode != null && op.shortCode!.toLowerCase() == res.operatorCode?.toLowerCase()),
-            orElse: () => Operator(id: '', name: operatorName, logoUrl: '', type: OperatorType.prepaid, shortCode: res.operatorCode),
-          );
+          final searchName = operatorName.toLowerCase().replaceAll('gsm', '').trim();
+          final opResult = operators.where((op) {
+            final opNameLower = op.name.toLowerCase();
+            return opNameLower == operatorName.toLowerCase() ||
+                   opNameLower == searchName ||
+                   operatorName.toLowerCase().contains(opNameLower) ||
+                   opNameLower.contains(operatorName.toLowerCase()) ||
+                   (op.shortCode != null && op.shortCode!.toLowerCase() == res.operatorCode?.toLowerCase()) ||
+                   (op.a1TopupCode != null && op.a1TopupCode!.toLowerCase() == res.operatorCode?.toLowerCase());
+          }).firstOrNull ?? operators.where((o) => o.name.toUpperCase().contains('BSNL')).firstOrNull ??
+          Operator(id: res.operatorCode ?? '', name: operatorName, logoUrl: '', type: OperatorType.prepaid, shortCode: res.operatorCode);
           
           final circles = await ref.read(circlesProvider.future);
           final circleResult = circles.firstWhere(

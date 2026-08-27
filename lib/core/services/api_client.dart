@@ -94,8 +94,19 @@ class ApiClient {
             AppLogger.error('Timeout Type: ${error.type.name}', tag: 'HTTP');
             AppLogger.error('Stack Trace: ${error.stackTrace}', tag: 'HTTP');
             AppLogger.error('Response Status: ${error.response?.statusCode}', tag: 'HTTP');
-            // Do NOT print response.data here directly
-            AppLogger.error('Response Body: [OMITTED]', tag: 'HTTP');
+            if (error.response?.data != null) {
+              final data = error.response!.data;
+              if (data is Map) {
+                final safeMessage = data['message'] ?? data['error'] ?? data['msg'];
+                final safeCode = data['code'] ?? data['errorCode'];
+                final safeErrors = data['errors'] ?? data['validationErrors'];
+                AppLogger.error('[RAZORPAY ORDER ERROR] status: ${error.response?.statusCode}, errorCode: $safeCode, message: $safeMessage, validationErrors: $safeErrors', tag: 'HTTP');
+              } else {
+                AppLogger.error('[RAZORPAY ORDER ERROR] status: ${error.response?.statusCode}, body: $data', tag: 'HTTP');
+              }
+            } else {
+              AppLogger.error('Response Body: [EMPTY]', tag: 'HTTP');
+            }
             AppLogger.error('===============================================', tag: 'HTTP');
 
             if (error.response?.statusCode == 401) {

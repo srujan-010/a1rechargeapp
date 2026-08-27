@@ -363,6 +363,10 @@ class RechargeRepositoryImpl implements RechargeRepository {
     String? providerOperatorCode,
   }) async {
     try {
+      final cleanPlanId = (planId != null && planId.trim().isNotEmpty) ? planId.trim() : null;
+
+      debugPrint('[RECHARGE ORDER PAYLOAD LOG] mobileNumber: $phoneNumber, operatorId: $operatorId, operatorName: $operatorName, circleId: $circleId, serviceType: $serviceType, amountPaise: $amountPaise, planId: $cleanPlanId, providerOperatorCode: $providerOperatorCode');
+
       final response = await apiClient.post<Map<String, dynamic>>(
         '/services/recharge/create-razorpay-order',
         data: {
@@ -372,11 +376,11 @@ class RechargeRepositoryImpl implements RechargeRepository {
           'circleId': circleId,
           'serviceType': serviceType,
           'amountPaise': amountPaise,
-          if (planId != null) 'planId': planId,
-          if (planName != null) 'planName': planName,
-          if (planType != null) 'planType': planType,
-          if (selectedCategory != null) 'selectedCategory': selectedCategory,
-          if (providerOperatorCode != null) 'providerOperatorCode': providerOperatorCode,
+          if (cleanPlanId != null) 'planId': cleanPlanId,
+          if (planName != null && planName.trim().isNotEmpty) 'planName': planName,
+          if (planType != null && planType.trim().isNotEmpty) 'planType': planType,
+          if (selectedCategory != null && selectedCategory.trim().isNotEmpty) 'selectedCategory': selectedCategory,
+          if (providerOperatorCode != null && providerOperatorCode.trim().isNotEmpty) 'providerOperatorCode': providerOperatorCode,
         },
         fromJson: (json) => json is Map<String, dynamic> ? json : {},
       );
