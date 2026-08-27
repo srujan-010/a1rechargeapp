@@ -27,6 +27,7 @@ class Operator extends Equatable {
   final bool isActive;
 
   String? get code => a1TopupCode ?? shortCode;
+  String? get planApiCode => plansApiCode;
 
   factory Operator.fromJson(Map<String, dynamic> json) => Operator(
         id: json['id'] as String? ?? json['_id'] as String? ?? '',
