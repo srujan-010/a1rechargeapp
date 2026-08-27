@@ -20,6 +20,10 @@ import '../../commission/presentation/commission_providers.dart';
 import '../../commission/domain/models/commission_slab.dart';
 import 'dashboard_providers.dart';
 import '../../personal/presentation/personal_providers.dart';
+import '../../history/presentation/history_providers.dart';
+import '../../recharge/presentation/recharge_providers.dart';
+import '../../recharge/domain/models/operator.dart';
+import '../../recharge/domain/models/circle.dart';
 import 'package:flutter/services.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -40,6 +44,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Future<void> _refresh() async {
+    final userSession = ref.read(sessionProvider).valueOrNull;
+    final isPersonal = userSession?.isPersonal ?? false;
+
+    if (isPersonal) {
+      ref.invalidate(personalSavingsProvider);
+      ref.invalidate(personalBenefitsProvider);
+      ref.invalidate(currentPlanProvider);
+      ref.invalidate(lastRechargeProvider);
+      ref.invalidate(frequentNumbersProvider);
+      ref.invalidate(historyTransactionsProvider);
+      await Future.wait([
+        ref.read(personalSavingsProvider.future).catchError((_) => PersonalSavings(lifetimeSavings: 0, monthlySavings: 0, previousMonthSavings: 0, totalCompletedCount: 0)),
+        ref.read(currentPlanProvider.future).catchError((_) => null),
+        ref.read(lastRechargeProvider.future).catchError((_) => null),
+      ]).catchError((_) => <Object>[]);
+      return;
+    }
+
     ref.invalidate(walletBalanceProvider);
     ref.invalidate(recentTransactionsProvider);
     ref.invalidate(earningsSummaryProvider);
@@ -1620,43 +1642,16 @@ class _SavingsStat extends StatelessWidget {
 }
 
 class _PersonalLastRechargeCard extends ConsumerWidget {
+  const _PersonalLastRechargeCard();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lastRechargeAsync = ref.watch(lastRechargeProvider);
 
     return lastRechargeAsync.when(
       data: (txn) {
-        if (txn == null) return const SizedBox.shrink();
-
-        final cardType = txn.cardType;
-
-        final displayOpName = OperatorFormatter.getDisplayOperatorName(txn.operatorName);
-
-        // ── CASE 1 & CASE 5: PLAN STATUS / NO PLAN ──
-        if (cardType == 'PLAN_STATUS' || cardType == 'NO_PLAN') {
-          final isExpired = txn.colorState == 'EXPIRED';
-          final isRed = txn.colorState == 'RED';
-          final isAmber = txn.colorState == 'AMBER';
-
-          Color statusColor = AppColors.success;
-          Color statusBg = AppColors.success.withOpacity(0.1);
-          if (isExpired || isRed) {
-            statusColor = AppColors.error;
-            statusBg = AppColors.error.withOpacity(0.1);
-          } else if (isAmber) {
-            statusColor = const Color(0xFFD97706); // Amber
-            statusBg = const Color(0xFFFEF3C7);
-          }
-
-          String badgeText = 'Active Plan';
-          if (isExpired) {
-            badgeText = 'Plan Expired';
-          } else if (txn.validity != null && txn.validity!.isNotEmpty) {
-            badgeText = txn.validity!;
-          } else if (txn.daysRemaining != null) {
-            badgeText = '${txn.daysRemaining} days remaining';
-          }
-
+        if (txn == null || txn.status != 'SUCCESS') {
+          // Empty State for "Your Last Recharge"
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -1674,93 +1669,42 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      children: [
-                        const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primaryBlue),
-                        const SizedBox(width: 8),
+                      children: const [
+                        Icon(Icons.history_rounded, size: 18, color: AppColors.primaryBlue),
+                        SizedBox(width: 8),
                         Text(
-                          txn.title.isNotEmpty ? txn.title : 'Your Plan',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          'Your Last Recharge',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                         ),
                       ],
                     ),
                     TextButton(
-                      onPressed: () => context.push(RouteNames.mobileRecharge),
-                      child: const Text('View Details →', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      onPressed: () => context.go(RouteNames.transactionHistory),
+                      child: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                if (cardType == 'PLAN_STATUS') ...[
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
-                        child: Text(
-                          displayOpName.isNotEmpty ? displayOpName[0] : 'P',
-                          style: const TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                if (txn.amount > 0) ...[
-                                  const SizedBox(width: 6),
-                                  Text(CurrencyFormatter.fromRupees(txn.amount), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.primaryBlue)),
-                                ],
-                              ],
-                            ),
-                            if (txn.mobileNumber.isNotEmpty)
-                              Text(txn.mobileNumber, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: statusBg,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          badgeText,
-                          style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else ...[
-                  // CASE 5: New user with zero recharges
-                  const Text(
-                    'No active plan yet',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Start your first recharge and track your savings.',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                  ),
-                ],
+                const SizedBox(height: 12),
+                const Text(
+                  'No recharge yet',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Complete your first recharge to see your latest recharge here.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
+                  child: OutlinedButton(
                     onPressed: () => context.push(RouteNames.mobileRecharge),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryBlue,
-                      foregroundColor: Colors.white,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryBlue,
+                      side: const BorderSide(color: AppColors.primaryBlue),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text(
-                      isExpired
-                          ? 'Recharge Now'
-                          : (cardType == 'NO_PLAN' ? 'View Plans & Recharge' : 'Recharge Again'),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    child: const Text('Recharge Now', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -1768,20 +1712,17 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
           );
         }
 
-        // ── STATE 2 & 3: PENDING / FAILED / SUCCESS RECHARGE CARD ──
-        final isPending = cardType == 'PENDING';
-        final isFailed = cardType == 'FAILED';
+        final displayOpName = OperatorFormatter.getDisplayOperatorName(txn.operatorName);
+        final tag = txn.rechargeType?.isNotEmpty == true
+            ? txn.rechargeType!
+            : (txn.amount <= 50 ? 'Top-up' : 'Mobile Recharge');
 
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isPending
-                  ? const Color(0xFFF59E0B)
-                  : (isFailed ? AppColors.error.withOpacity(0.5) : const Color(0xFFE2E8F0)),
-            ),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: [
               BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
             ],
@@ -1792,13 +1733,15 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    txn.title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.textPrimary),
-                    ),
+                  Row(
+                    children: const [
+                      Icon(Icons.history_rounded, size: 18, color: AppColors.primaryBlue),
+                      SizedBox(width: 8),
+                      Text(
+                        'Your Last Recharge',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
+                    ],
                   ),
                   TextButton(
                     onPressed: () => context.go(RouteNames.transactionHistory),
@@ -1806,18 +1749,16 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: isPending
-                        ? const Color(0xFFFEF3C7)
-                        : (isFailed ? AppColors.error.withOpacity(0.1) : AppColors.primaryBlueLight.withOpacity(0.2)),
+                    backgroundColor: AppColors.primaryBlueLight.withOpacity(0.2),
                     child: Text(
                       displayOpName.isNotEmpty ? displayOpName[0] : 'R',
-                      style: TextStyle(
-                        color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
+                      style: const TextStyle(
+                        color: AppColors.primaryBlue,
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
                       ),
@@ -1828,18 +1769,27 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        Row(
+                          children: [
+                            Text(displayOpName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            if (tag.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  tag,
+                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         const SizedBox(height: 2),
                         Text(txn.mobileNumber, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                        if (isFailed && txn.failureReason != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            txn.failureReason!,
-                            style: const TextStyle(color: AppColors.error, fontSize: 11, fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -1854,17 +1804,13 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isPending
-                              ? const Color(0xFFFEF3C7)
-                              : (isFailed ? AppColors.error.withOpacity(0.1) : AppColors.success.withOpacity(0.1)),
+                          color: AppColors.success.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          isPending ? 'PENDING' : (isFailed ? 'FAILED' : '✓ Successful'),
+                        child: const Text(
+                          '✓ Successful',
                           style: TextStyle(
-                            color: isPending
-                                ? const Color(0xFFD97706)
-                                : (isFailed ? AppColors.error : AppColors.success),
+                            color: AppColors.success,
                             fontWeight: FontWeight.bold,
                             fontSize: 11,
                           ),
@@ -1879,28 +1825,55 @@ class _PersonalLastRechargeCard extends ConsumerWidget {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    if (isPending) {
-                      context.go(RouteNames.transactionHistory);
-                    } else {
-                      context.pushNamed(
-                        RouteNames.mobileRecharge,
-                        extra: {
-                          'phoneNumber': txn.mobileNumber,
-                          'operatorCode': txn.operatorCode,
-                        },
-                      );
-                    }
+                    final ops = ref.read(operatorsProvider('mobile')).valueOrNull ?? [];
+                    final circles = ref.read(circlesProvider).valueOrNull ?? [];
+
+                    final op = ops.where((o) {
+                      final search = txn.operatorName.toLowerCase();
+                      final nameLower = o.name.toLowerCase();
+                      return o.id == txn.operatorCode ||
+                             o.shortCode == txn.operatorCode ||
+                             o.plansApiCode == txn.operatorCode ||
+                             nameLower == search ||
+                             (search.isNotEmpty && nameLower.contains(search));
+                    }).firstOrNull ?? Operator(
+                      id: txn.operatorCode.isNotEmpty ? txn.operatorCode : '2',
+                      name: txn.operatorName.isNotEmpty ? txn.operatorName : 'Airtel',
+                      logoUrl: '',
+                      type: OperatorType.prepaid,
+                      shortCode: txn.operatorCode.isNotEmpty ? txn.operatorCode : '2',
+                      a1TopupCode: txn.operatorCode.isNotEmpty ? txn.operatorCode : 'AT',
+                      plansApiCode: '2',
+                    );
+
+                    final targetCircleCode = txn.circleCode ?? '';
+                    final circle = circles.where((c) {
+                      return c.code == targetCircleCode ||
+                             c.id == targetCircleCode ||
+                             c.state.toLowerCase() == targetCircleCode.toLowerCase();
+                    }).firstOrNull ?? const Circle(id: '90', state: 'Maharashtra', code: '90');
+
+                    final amountPaise = (txn.amount * 100).round();
+
+                    ref.read(rechargeFlowProvider.notifier).setupRechargeAgain(
+                      phoneNumber: txn.mobileNumber,
+                      operator: op,
+                      circle: circle,
+                      amountPaise: amountPaise,
+                      rechargeType: txn.rechargeType,
+                      providerOperatorCode: txn.operatorCode,
+                    );
+
+                    context.push(RouteNames.rechargeConfirm);
                   },
-                  icon: Icon(isPending ? Icons.info_outline : Icons.refresh_rounded, size: 18),
-                  label: Text(
-                    isPending ? 'View Details' : (isFailed ? 'Try Again' : 'Recharge Again'),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text(
+                    'Recharge Again',
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
-                    side: BorderSide(
-                      color: isPending ? const Color(0xFFD97706) : (isFailed ? AppColors.error : AppColors.primaryBlue),
-                    ),
+                    foregroundColor: AppColors.primaryBlue,
+                    side: const BorderSide(color: AppColors.primaryBlue),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
@@ -1998,16 +1971,28 @@ class _PersonalCurrentPlanCard extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusBg,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        badgeText,
-                        style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (plan.amount > 0) ...[
+                          Text(
+                            CurrencyFormatter.fromRupees(plan.amount),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.primaryBlue),
+                          ),
+                          const SizedBox(height: 2),
+                        ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: statusBg,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            badgeText,
+                            style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -2095,42 +2080,47 @@ class _PersonalFrequentNumbersRow extends ConsumerWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
                   final fn = numbers[index];
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: const Color(0xFFEFF6FF),
-                          child: Icon(
-                            fn.operatorName.contains('DTH') ? Icons.tv_rounded : Icons.phone_android_rounded,
-                            size: 16,
-                            color: AppColors.primaryBlue,
+                  return GestureDetector(
+                    onTap: () {
+                      context.push(
+                        RouteNames.mobileRecharge,
+                        extra: {
+                          'phoneNumber': fn.mobileNumber,
+                          'operatorName': fn.operatorName,
+                          'operatorCode': fn.operatorCode,
+                          'circleCode': fn.circleCode,
+                        },
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFFEFF6FF),
+                            child: Icon(
+                              fn.operatorName.contains('DTH') ? Icons.tv_rounded : Icons.phone_android_rounded,
+                              size: 16,
+                              color: AppColors.primaryBlue,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(fn.mobileNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(fn.operatorName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-                          ],
-                        ),
-                        const SizedBox(width: 12),
-                        GestureDetector(
-                          onTap: () {
-                            context.pushNamed(
-                              RouteNames.mobileRecharge,
-                              extra: {'phoneNumber': fn.mobileNumber},
-                            );
-                          },
-                          child: Container(
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(fn.mobileNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text(fn.operatorName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+                            ],
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: AppColors.primaryBlue,
@@ -2138,8 +2128,8 @@ class _PersonalFrequentNumbersRow extends ConsumerWidget {
                             ),
                             child: const Text('Recharge', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },

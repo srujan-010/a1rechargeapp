@@ -74,6 +74,11 @@ final commissionRepositoryProvider = Provider<CommissionRepository>((ref) {
 class ActiveCommissionSlabsNotifier extends AsyncNotifier<List<CommissionSlab>> {
   @override
   FutureOr<List<CommissionSlab>> build() {
+    final userSession = ref.read(sessionProvider).valueOrNull;
+    if (userSession != null && userSession.isPersonal) {
+      return <CommissionSlab>[];
+    }
+
     final cache = LocalCacheService.instance;
     final cachedList = cache.get<List<dynamic>>(cache.offersBox, 'cached_commission_slabs');
     List<CommissionSlab>? cachedSlabs;
@@ -94,6 +99,11 @@ class ActiveCommissionSlabsNotifier extends AsyncNotifier<List<CommissionSlab>> 
   }
 
   Future<void> _refreshInBackground() async {
+    final userSession = ref.read(sessionProvider).valueOrNull;
+    if (userSession != null && userSession.isPersonal) {
+      return;
+    }
+
     try {
       final repo = ref.read(commissionRepositoryProvider);
       final freshSlabs = await repo.getActiveSlabs().timeout(const Duration(seconds: 4));
@@ -125,6 +135,11 @@ final activeCommissionSlabsProvider = AsyncNotifierProvider<ActiveCommissionSlab
 /// Joins earned entries against active slabs by slabId to get operator names.
 final earnedCommissionProvider = FutureProvider.family<EarnedCommissionSummary,
     CommissionPeriod>((ref, period) async {
+  final userSession = ref.watch(sessionProvider).valueOrNull;
+  if (userSession != null && userSession.isPersonal) {
+    return EarnedCommissionSummary.zero;
+  }
+
   final repo = ref.watch(commissionRepositoryProvider);
   final slabsAsync = await ref.watch(activeCommissionSlabsProvider.future);
 

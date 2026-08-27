@@ -138,7 +138,12 @@ class PendingRechargeWorker {
         console.log(`  modifiedCount: ${modifiedCount}`);
 
         if (!updated) {
-          console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping further processing.`);
+          const currentDoc = await RechargeTransaction.findById(transaction._id).lean();
+          if (currentDoc && (currentDoc.status === 'FAILED' || currentDoc.status === 'REFUNDED')) {
+            console.warn(`[RECONCILIATION EXCEPTION] Late provider SUCCESS received for order ${transaction.orderId}. Internal status is ${currentDoc.status} with refundStatus=${currentDoc.refundStatus}. Status preserved as ${currentDoc.status}.`);
+          } else {
+            console.log(`[Worker] Transaction ${transaction.orderId} already resolved. Skipping further processing.`);
+          }
           return;
         }
 

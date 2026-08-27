@@ -111,6 +111,7 @@ class LastRecharge {
   final double payableAmount;
   final double savingsAmount;
   final String status;
+  final String? rechargeType;
   final String? failureReason;
   final String? colorState; // 'GREEN' | 'AMBER' | 'RED' | 'EXPIRED'
   final int? daysRemaining;
@@ -132,6 +133,7 @@ class LastRecharge {
     required this.payableAmount,
     required this.savingsAmount,
     required this.status,
+    this.rechargeType,
     this.failureReason,
     this.colorState,
     this.daysRemaining,
@@ -146,11 +148,12 @@ class LastRecharge {
     final lastRec = (json['lastRecharge'] is Map<String, dynamic>) ? (json['lastRecharge'] as Map<String, dynamic>) : null;
 
     final String cardType = dataObj['cardType'] as String? ?? (json['hasActivePlan'] == true ? 'PLAN_STATUS' : (json['hasLastRecharge'] == true ? 'SUCCESS' : 'NO_PLAN'));
-    final String title = dataObj['title'] as String? ?? (cardType == 'PLAN_STATUS' ? 'Your Plan' : (cardType == 'SUCCESS' ? 'Your Last Recharge' : 'Your Plan'));
+    final String title = dataObj['title'] as String? ?? (cardType == 'PLAN_STATUS' ? 'Your Current Plan' : (cardType == 'SUCCESS' ? 'Your Last Recharge' : 'Your Current Plan'));
 
     final rawOpName = dataObj['operatorName'] as String? ?? (json['operator'] as String? ?? (lastRec != null ? lastRec['operator'] as String? ?? '' : ''));
     final rawOpCode = dataObj['operatorCode'] as String? ?? (json['operatorCode'] as String? ?? (lastRec != null ? lastRec['operatorCode'] as String? ?? '' : ''));
     final displayOpName = OperatorFormatter.getDisplayOperatorName(rawOpName.isNotEmpty ? rawOpName : rawOpCode);
+    final recType = dataObj['rechargeType'] as String? ?? (lastRec != null ? lastRec['rechargeType'] as String? : null);
 
     return LastRecharge(
       cardType: cardType,
@@ -165,12 +168,13 @@ class LastRecharge {
       payableAmount: (dataObj['payableAmount'] as num?)?.toDouble() ?? (lastRec != null ? (lastRec['payableAmount'] as num?)?.toDouble() ?? 0.0 : 0.0),
       savingsAmount: (dataObj['savingsAmount'] as num?)?.toDouble() ?? (lastRec != null ? (lastRec['savingsAmount'] as num?)?.toDouble() ?? 0.0 : 0.0),
       status: dataObj['status'] as String? ?? 'SUCCESS',
+      rechargeType: recType,
       failureReason: dataObj['failureReason'] as String?,
       colorState: dataObj['colorState'] as String?,
       daysRemaining: (dataObj['daysRemaining'] as num?)?.toInt(),
       expiryDate: dataObj['expiryDate'] as String? ?? json['expiryDate'] as String?,
       validity: dataObj['validity'] as String? ?? json['validity'] as String?,
-      statusText: dataObj['statusText'] as String? ?? (json['hasLastRecharge'] == false && json['hasActivePlan'] == false ? 'No active plan yet' : null),
+      statusText: dataObj['statusText'] as String? ?? (json['hasLastRecharge'] == false && json['hasActivePlan'] == false ? 'No active plan' : null),
       createdAt: dataObj['createdAt'] as String? ?? (lastRec != null ? lastRec['date'] as String? ?? '' : ''),
     );
   }
@@ -180,6 +184,7 @@ class FrequentNumber {
   final String mobileNumber;
   final String operatorName;
   final String operatorCode;
+  final String? circleCode;
   final double lastRechargeAmount;
   final int count;
 
@@ -187,6 +192,7 @@ class FrequentNumber {
     required this.mobileNumber,
     required this.operatorName,
     required this.operatorCode,
+    this.circleCode,
     required this.lastRechargeAmount,
     required this.count,
   });
@@ -198,6 +204,7 @@ class FrequentNumber {
       mobileNumber: json['mobileNumber'] as String? ?? '',
       operatorName: OperatorFormatter.getDisplayOperatorName(rawOpName.isNotEmpty ? rawOpName : rawOpCode),
       operatorCode: rawOpCode,
+      circleCode: json['circleCode'] as String? ?? json['circle'] as String?,
       lastRechargeAmount: (json['lastRechargeAmount'] as num?)?.toDouble() ?? 0.0,
       count: (json['count'] as num?)?.toInt() ?? 1,
     );
@@ -208,7 +215,15 @@ final personalSavingsProvider = FutureProvider.autoDispose<PersonalSavings>((ref
   final apiClient = ref.watch(apiClientProvider);
   final response = await apiClient.get<Map<String, dynamic>>(
     '/personal/savings',
-    fromJson: (json) => json as Map<String, dynamic>,
+    fromJson: (json) {
+      if (json is Map<String, dynamic>) {
+        if (json['data'] is Map<String, dynamic>) {
+          return json['data'] as Map<String, dynamic>;
+        }
+        return json;
+      }
+      return <String, dynamic>{};
+    },
   );
   if (response.success && response.data != null) {
     return PersonalSavings.fromJson(response.data!);
@@ -272,6 +287,18 @@ final lastRechargeProvider = FutureProvider.autoDispose<LastRecharge?>((ref) asy
   final apiClient = ref.watch(apiClientProvider);
   final response = await apiClient.get<Map<String, dynamic>?>(
     '/personal/last-recharge',
+    fromJson: (json) => json as Map<String, dynamic>?,
+  );
+  if (response.success && response.data != null) {
+    return LastRecharge.fromJson(response.data!);
+  }
+  return null;
+});
+
+final pendingRechargeProvider = FutureProvider.autoDispose<LastRecharge?>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  final response = await apiClient.get<Map<String, dynamic>?>(
+    '/personal/pending-recharge',
     fromJson: (json) => json as Map<String, dynamic>?,
   );
   if (response.success && response.data != null) {

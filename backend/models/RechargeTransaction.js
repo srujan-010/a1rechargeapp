@@ -43,8 +43,33 @@ const rechargeTransactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'],
+      enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED', 'REVERSED'],
       default: 'INITIATED',
+    },
+    refundStatus: {
+      type: String,
+      enum: ['NONE', 'NOT_APPLICABLE', 'PROCESSING', 'REFUNDED', 'FAILED'],
+      default: 'NONE',
+    },
+    refundAmount: {
+      type: Number,
+      default: 0,
+    },
+    refundReason: {
+      type: String,
+      default: null,
+    },
+    refundReference: {
+      type: String,
+      default: null,
+    },
+    refundedAt: {
+      type: Date,
+      default: null,
+    },
+    refundError: {
+      type: String,
+      default: null,
     },
     paymentMethod: {
       type: String,
@@ -64,7 +89,7 @@ const rechargeTransactionSchema = new mongoose.Schema(
     },
     accountType: {
       type: String,
-      enum: ['PERSONAL', 'BUSINESS'],
+      enum: ['PERSONAL', 'BUSINESS', 'RETAILER'],
       default: 'BUSINESS',
     },
     commissionRecordId: {

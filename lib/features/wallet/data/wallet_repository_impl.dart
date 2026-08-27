@@ -62,7 +62,17 @@ class WalletRepositoryImpl implements WalletRepository {
         '/wallet/statement',
         queryParameters: queryParams,
         fromJson: (json) {
-          final list = json as List<dynamic>? ?? [];
+          final List<dynamic> list;
+          if (json is List) {
+            list = json;
+          } else if (json is Map && json['data'] is List) {
+            list = json['data'] as List<dynamic>;
+          } else if (json is Map && json['transactions'] is List) {
+            list = json['transactions'] as List<dynamic>;
+          } else {
+            list = [];
+          }
+
           AppLogger.info(
             '[HISTORY]\n'
             'API RESPONSE\n'
@@ -70,7 +80,7 @@ class WalletRepositoryImpl implements WalletRepository {
             tag: 'HISTORY',
           );
           final parsed = list
-              .map((item) => WalletTransaction.fromJson(item as Map<String, dynamic>))
+              .map((item) => WalletTransaction.fromJson(Map<String, dynamic>.from(item as Map)))
               .toList();
           AppLogger.info(
             '[HISTORY]\n'

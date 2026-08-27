@@ -137,6 +137,9 @@ pendingRechargeWorker.start(2 * 60 * 1000); // Check every 2 minutes
 const dthStatusWorker = require('./workers/dthStatus.worker');
 dthStatusWorker.start(30 * 1000); // Check every 30 seconds
 
+const autoTimeoutRefundWorker = require('./workers/autoTimeoutRefund.worker');
+autoTimeoutRefundWorker.start(2 * 60 * 1000); // Check every 2 minutes
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {

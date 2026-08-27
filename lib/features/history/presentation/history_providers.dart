@@ -18,12 +18,12 @@ class HistoryTransactionsNotifier extends AsyncNotifier<List<WalletTransaction>>
 
       AppLogger.info(
         '[HISTORY DEBUG]\n'
+        'accountType: ${userSession?.accountType ?? "PERSONAL"}\n'
         'authenticatedUserId: ${userSession?.id ?? "authenticated_user"}\n'
         'endpoint: /wallet/statement\n'
         'HTTP status: ${result.isSuccess ? 200 : "ERROR"}\n'
         'raw transaction count: ${freshTxns?.length ?? 0}\n'
-        'parsed transaction count: ${freshTxns?.length ?? 0}\n'
-        'filtered transaction count: ${freshTxns?.length ?? 0}',
+        'parsed transaction count: ${freshTxns?.length ?? 0}',
         tag: 'HISTORY_DEBUG',
       );
 

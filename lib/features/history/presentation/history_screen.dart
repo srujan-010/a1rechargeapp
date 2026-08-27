@@ -100,12 +100,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }).toList();
 
     AppLogger.info(
-      '[HISTORY]\n'
-      'FILTER\n'
-      'selectedTab = $_selectedFilter\n'
-      'beforeFilter = ${txns.length}\n'
-      'afterFilter = ${filtered.length}',
-      tag: 'HISTORY',
+      '[HISTORY DEBUG]\n'
+      'Account Type: PERSONAL\n'
+      'Selected Tab: $_selectedFilter\n'
+      'Parsed Transactions: ${txns.length}\n'
+      'Filtered Transactions: ${filtered.length}',
+      tag: 'HISTORY_DEBUG',
     );
 
     return filtered;

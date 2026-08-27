@@ -43,15 +43,40 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
     _checkPermissionStatus();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final session = ref.read(rechargeSessionProvider);
-      if (session.sessionId == null || session.serviceType != 'PREPAID') {
+      String? passedPhone;
+      String? passedOpName;
+      String? passedOpCode;
+      String? passedCircle;
+
+      try {
+        final extra = GoRouterState.of(context).extra;
+        if (extra is Map<String, dynamic>) {
+          passedPhone = extra['phoneNumber'] as String?;
+          passedOpName = extra['operatorName'] as String?;
+          passedOpCode = extra['operatorCode'] as String?;
+          passedCircle = extra['circleCode'] as String? ?? extra['circle'] as String?;
+        }
+      } catch (_) {}
+
+      final state = ref.read(rechargeFlowProvider);
+      final phoneToUse = passedPhone ?? state.phoneNumber;
+
+      if (phoneToUse != null && phoneToUse.trim().isNotEmpty) {
         ref.read(rechargeSessionProvider.notifier).startNewSession('PREPAID');
-        _phoneController.clear();
+        final cleanPhone = phoneToUse.replaceAll(RegExp(r'\D'), '');
+        final last10 = cleanPhone.length >= 10 ? cleanPhone.substring(cleanPhone.length - 10) : cleanPhone;
+        _phoneController.text = last10;
         _searchController.clear();
-        _phoneFocusNode.requestFocus();
+
+        _initOperatorAndCircle(last10, opName: passedOpName, opCode: passedOpCode, circle: passedCircle);
       } else {
-        final state = ref.read(rechargeFlowProvider);
-        if (state.phoneNumber != null) {
+        final session = ref.read(rechargeSessionProvider);
+        if (session.sessionId == null || session.serviceType != 'PREPAID') {
+          ref.read(rechargeSessionProvider.notifier).startNewSession('PREPAID');
+          _phoneController.clear();
+          _searchController.clear();
+          _phoneFocusNode.requestFocus();
+        } else if (state.phoneNumber != null) {
           _phoneController.text = state.phoneNumber!;
         } else {
           _phoneFocusNode.requestFocus();
@@ -169,6 +194,53 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
         ref.read(rechargeFlowProvider.notifier).setDetecting(false);
       }
     }
+  }
+
+  Future<void> _initOperatorAndCircle(String phone, {String? opName, String? opCode, String? circle}) async {
+    final cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
+    final last10 = cleanPhone.length >= 10 ? cleanPhone.substring(cleanPhone.length - 10) : cleanPhone;
+
+    ref.read(rechargeFlowProvider.notifier).setPhoneNumber(last10);
+
+    if (opName != null || opCode != null) {
+      try {
+        final operators = await ref.read(operatorsProvider('mobile').future);
+        final searchOp = (opName ?? opCode ?? '').toLowerCase();
+        final opResult = operators.where((o) =>
+          o.id == opCode ||
+          o.shortCode?.toLowerCase() == searchOp ||
+          o.plansApiCode?.toLowerCase() == searchOp ||
+          o.name.toLowerCase() == searchOp ||
+          o.name.toLowerCase().contains(searchOp)
+        ).firstOrNull ?? Operator(
+          id: opCode ?? '2',
+          name: opName ?? 'Airtel',
+          logoUrl: '',
+          type: OperatorType.prepaid,
+          shortCode: opCode ?? '2',
+          a1TopupCode: opCode ?? 'AT',
+          plansApiCode: '2',
+        );
+
+        final circles = await ref.read(circlesProvider.future);
+        final searchCircle = (circle ?? '').toLowerCase();
+        final circleResult = circles.where((c) =>
+          c.code == circle ||
+          c.id == circle ||
+          c.state.toLowerCase() == searchCircle ||
+          searchCircle.contains(c.state.toLowerCase())
+        ).firstOrNull ?? const Circle(id: '90', state: 'Maharashtra', code: '90');
+
+        ref.read(rechargeFlowProvider.notifier).setAutoDetection(opResult, circleResult);
+        return;
+      } catch (e) {
+        debugPrint('[FLOW] _initOperatorAndCircle error: $e');
+      }
+    }
+
+    // Fallback to API operator detection
+    ref.read(rechargeFlowProvider.notifier).setDetecting(true);
+    await _resolveOperator(last10);
   }
 
   void _onRecentTap(String phone) {

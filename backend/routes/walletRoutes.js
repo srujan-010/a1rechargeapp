@@ -4,12 +4,14 @@ const { getBalance, getStatement, topupWallet, getDashboardSummary, getDashboard
 const { protect, requireRetailer } = require('../middleware/authMiddleware');
 
 router.use(protect);
-router.use(requireRetailer);
 
-router.get('/balance', getBalance);
+// Statement is the universal transaction history endpoint for ALL accounts (Personal and Retailer)
 router.get('/statement', getStatement);
-router.post('/topup', topupWallet);
-router.get('/summary', getDashboardSummary);
-router.get('/analytics', getDashboardAnalytics);
+
+// Retailer-only wallet operations
+router.get('/balance', requireRetailer, getBalance);
+router.post('/topup', requireRetailer, topupWallet);
+router.get('/summary', requireRetailer, getDashboardSummary);
+router.get('/analytics', requireRetailer, getDashboardAnalytics);
 
 module.exports = router;

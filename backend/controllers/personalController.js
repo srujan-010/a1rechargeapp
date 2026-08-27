@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const RechargeTransaction = require('../models/RechargeTransaction');
+const Transaction = require('../models/Transaction');
 const PersonalCommissionSlab = require('../models/PersonalCommissionSlab');
 const OperatorCommission = require('../models/OperatorCommission');
 
@@ -28,6 +29,11 @@ const defaultPersonalSlabs = [
 const getSavings = async (req, res) => {
   try {
     const userId = req.user._id;
+    const userIds = [userId];
+    if (userId && typeof userId.toString === 'function') {
+      userIds.push(userId.toString());
+    }
+
     const now = new Date();
     const startOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -35,8 +41,8 @@ const getSavings = async (req, res) => {
 
     // Fetch all SUCCESS transactions for user
     const transactions = await RechargeTransaction.find({
-      userId,
-      status: 'SUCCESS',
+      userId: { $in: userIds },
+      status: { $in: ['SUCCESS', 'success', 'COMPLETED', 'completed'] },
     }).lean();
 
     let lifetimeSavings = 0;
@@ -54,6 +60,15 @@ const getSavings = async (req, res) => {
         previousMonthSavings += savings;
       }
     }
+
+    console.log('\n[SAVINGS DEBUG]');
+    console.log(`userId: ${userId.toString()}`);
+    console.log(`currentMonth: ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+    console.log(`successfulEligibleTransactions: ${transactions.length}`);
+    for (const txn of transactions) {
+      console.log(`  ${txn.providerTransactionId || txn.orderId} -> ₹${(txn.commissionAmount || 0).toFixed(2)}`);
+    }
+    console.log(`totalSavings: ₹${Number(lifetimeSavings.toFixed(2))}\n`);
 
     return res.status(200).json({
       success: true,
@@ -222,404 +237,122 @@ const UserPlanCache = require('../models/UserPlanCache');
 const planApiService = require('../services/planapi.service');
 
 /**
+/**
  * GET /api/personal/last-recharge
- * Personal Home Plan & Last Recharge evaluator:
- * CASE 1: Valid active plan information is available -> hasActivePlan: true
- * CASE 2: Successful recent recharge exists, active validity info unavailable -> hasLastRecharge: true
- * CASE 3 & 4: PlanAPI checked where supported (Airtel/VI), fallback to A1 Recharge history for unsupported operators
- * CASE 5: User has zero recharges -> hasActivePlan: false, hasLastRecharge: false ("No active plan yet")
+ * Strictly returns the customer's most recent SUCCESSFUL recharge transaction.
+ * Does NOT query PlanAPI or UserPlanCache.
+ * Ignores PENDING, FAILED, and non-terminal transactions.
  */
 const getLastRecharge = async (req, res) => {
   try {
     const userId = req.user._id;
-    const rawPhone = (req.user && (req.user.phone || req.user.mobileNumber || req.user.mobile))
-      ? String(req.user.phone || req.user.mobileNumber || req.user.mobile).replace('+91', '').trim()
-      : '';
+    const userIds = [userId];
+    if (userId && typeof userId.toString === 'function') {
+      userIds.push(userId.toString());
+    }
 
-    // Helper to identify genuine Monthly/Yearly recharge plans (excluding ₹10/₹20 top-ups)
-    const isMonthlyOrYearlyPlan = (txn) => {
-      if (!txn) return false;
-      const pType = String(txn.planType || '').toUpperCase().trim();
-      const name = String(txn.planName || '').toUpperCase().trim();
-      const category = String(txn.selectedCategory || '').toUpperCase().trim();
-      const amount = Number(txn.amount || 0);
-
-      if (pType === 'TOPUP' || pType === 'TALKTIME' || category.includes('TOPUP') || category.includes('TALKTIME')) {
-        return false;
-      }
-      if (amount <= 50) {
-        return false;
-      }
-      if (pType === 'MONTHLY' || pType === 'YEARLY' || pType === 'UNLIMITED' || pType === 'PLAN' || pType === 'STV') {
-        return true;
-      }
-      if (name.includes('VALIDITY') || name.includes('MONTH') || name.includes('YEAR') || name.includes('DAYS') || name.includes('UNLIMITED')) {
-        return true;
-      }
-      return amount >= 100;
-    };
-
-    // ── PRIORITY 1: ACTIVE PENDING MONTHLY/YEARLY PLAN TRANSACTION ──
-    const pendingTxn = await RechargeTransaction.findOne({ userId, status: 'PENDING' })
-      .sort({ createdAt: -1 })
+    // Query most recent SUCCESSFUL recharge transaction
+    const latestSuccessTxn = await RechargeTransaction.findOne({
+      userId: { $in: userIds },
+      status: { $in: ['SUCCESS', 'success', 'COMPLETED', 'completed'] },
+    })
+      .sort({ completedAt: -1, createdAt: -1 })
       .lean();
 
-    if (pendingTxn && isMonthlyOrYearlyPlan(pendingTxn)) {
-      console.log('[PERSONAL PLAN]', JSON.stringify({
-        userId,
-        operator: pendingTxn.internalOperatorName || pendingTxn.operatorCode,
-        transactionFound: true,
-        lastRechargeFound: false,
-        planFound: false,
-        planSource: 'pending_transaction',
-        expiryAvailable: false,
-      }));
-
+    if (!latestSuccessTxn) {
       return res.status(200).json({
         success: true,
-        hasActivePlan: false,
         hasLastRecharge: false,
-        isPending: true,
-        data: {
-          cardType: 'PENDING',
-          title: 'Recharge in Progress',
-          id: pendingTxn._id,
-          orderId: pendingTxn.orderId,
-          mobileNumber: pendingTxn.mobileNumber,
-          operatorName: pendingTxn.internalOperatorName || pendingTxn.operatorCode,
-          operatorCode: pendingTxn.operatorCode,
-          circleCode: pendingTxn.circleCode,
-          amount: pendingTxn.amount,
-          payableAmount: pendingTxn.payableAmount || pendingTxn.amount,
-          status: 'PENDING',
-          createdAt: pendingTxn.createdAt,
-        },
+        data: null,
       });
     }
 
-    // ── QUERY MOST RECENT RECHARGE TRANSACTION ──
-    const mostRecentTxn = await RechargeTransaction.findOne({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
+    // Infer recharge label / category (Top-up, Data Recharge, Mobile Recharge, etc.)
+    let rechargeType = 'Mobile Recharge';
+    const rawType = String(latestSuccessTxn.planType || '').toUpperCase().trim();
+    const rawName = String(latestSuccessTxn.planName || '').toLowerCase().trim();
+    const amount = Number(latestSuccessTxn.amount || 0);
 
-    // ── PRIORITY 2: FAILED TRANSACTION ──
-    if (mostRecentTxn && mostRecentTxn.status === 'FAILED') {
-      console.log('[PERSONAL PLAN]', JSON.stringify({
-        userId,
-        operator: mostRecentTxn.internalOperatorName || mostRecentTxn.operatorCode,
-        transactionFound: true,
-        lastRechargeFound: false,
-        planFound: false,
-        planSource: 'failed_transaction',
-        expiryAvailable: false,
-      }));
-
-      return res.status(200).json({
-        success: true,
-        hasActivePlan: false,
-        hasLastRecharge: false,
-        isFailed: true,
-        data: {
-          cardType: 'FAILED',
-          title: 'Recharge Failed',
-          id: mostRecentTxn._id,
-          orderId: mostRecentTxn.orderId,
-          mobileNumber: mostRecentTxn.mobileNumber,
-          operatorName: mostRecentTxn.internalOperatorName || mostRecentTxn.operatorCode,
-          operatorCode: mostRecentTxn.operatorCode,
-          circleCode: mostRecentTxn.circleCode,
-          amount: mostRecentTxn.amount,
-          payableAmount: mostRecentTxn.payableAmount || mostRecentTxn.amount,
-          status: 'FAILED',
-          failureReason: mostRecentTxn.failureReason || 'Provider processing error',
-          createdAt: mostRecentTxn.createdAt,
-        },
-      });
+    if (rawType === 'TOPUP' || rawType === 'TALKTIME' || rawName.includes('topup') || rawName.includes('top-up') || amount <= 50) {
+      rechargeType = 'Top-up';
+    } else if (rawType === 'DATA' || rawName.includes('data') || rawName.includes('4g') || rawName.includes('5g')) {
+      rechargeType = 'Data Recharge';
+    } else if (latestSuccessTxn.planName) {
+      rechargeType = latestSuccessTxn.planName;
     }
-
-    // ── QUERY RECENT SUCCESSFUL RECHARGE ──
-    const latestSuccessTxn = await RechargeTransaction.findOne({ userId, status: 'SUCCESS' })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const targetMobile = (latestSuccessTxn && latestSuccessTxn.mobileNumber) ? latestSuccessTxn.mobileNumber : rawPhone;
-    let targetOperator = (latestSuccessTxn && latestSuccessTxn.operatorCode) ? latestSuccessTxn.operatorCode : 'AT';
-
-    // ── CHECK 24-HOUR PERSISTENT USER PLAN CACHE FIRST ──
-    if (rawPhone) {
-      const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-      let planCache = await UserPlanCache.findOne({ userId, mobileNumber: rawPhone });
-      const isCacheValid = planCache && (Date.now() - new Date(planCache.fetchedAt).getTime() < TWENTY_FOUR_HOURS_MS);
-
-      if (planCache && isCacheValid && (planCache.expiryDate || planCache.validity)) {
-        const expDate = planCache.expiryDate ? new Date(planCache.expiryDate) : null;
-        let daysRem = planCache.daysRemaining;
-        if (expDate && !isNaN(expDate.getTime())) {
-          daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        }
-
-        let colorState = 'GREEN';
-        let title = 'Your Plan';
-        if (daysRem !== null && daysRem !== undefined) {
-          if (daysRem < 0) {
-            colorState = 'EXPIRED';
-            title = 'Plan Expired';
-          } else if (daysRem <= 2) {
-            colorState = 'RED';
-          } else if (daysRem <= 7) {
-            colorState = 'AMBER';
-          } else {
-            colorState = 'GREEN';
-          }
-        }
-
-        console.log('[PERSONAL PLAN]', JSON.stringify({
-          userId,
-          operator: planCache.operatorName || targetOperator,
-          transactionFound: !!mostRecentTxn,
-          lastRechargeFound: !!latestSuccessTxn,
-          planFound: true,
-          planSource: 'user_plan_cache',
-          expiryAvailable: !!expDate,
-        }));
-
-        return res.status(200).json({
-          success: true,
-          hasActivePlan: true,
-          hasLastRecharge: !!latestSuccessTxn,
-          source: 'user_plan_cache',
-          operator: planCache.operatorName || targetOperator,
-          operatorCode: planCache.operatorCode || targetOperator,
-          mobileNumber: rawPhone,
-          validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
-          expiryDate: expDate ? expDate.toISOString() : null,
-          daysRemaining: daysRem,
-          data: {
-            cardType: 'PLAN_STATUS',
-            title,
-            mobileNumber: rawPhone,
-            operatorName: planCache.operatorName || targetOperator,
-            operatorCode: planCache.operatorCode || targetOperator,
-            validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
-            expiryDate: expDate ? expDate.toISOString() : null,
-            daysRemaining: daysRem,
-            colorState,
-          },
-        });
-      }
-    }
-
-    // Check PlanAPI for active plan/expiry details if operator is supported (Airtel/VI)
-    let planApiData = null;
-    let planExpiryData = null;
-
-    // If no past recharge transaction, attempt operator detection via PlanAPI for rawPhone
-    if (!latestSuccessTxn && targetMobile) {
-      try {
-        const detectRes = await planApiService.detectMobileOperator(targetMobile);
-        if (detectRes && detectRes.success && detectRes.data) {
-          const rawOpName = (detectRes.data.Operator || detectRes.data.operator || detectRes.data.OperatorName || '').toUpperCase();
-          if (rawOpName.includes('AIRTEL')) targetOperator = 'AT';
-          else if (rawOpName.includes('JIO') || rawOpName.includes('RELIANCE')) targetOperator = 'JO';
-          else if (rawOpName.includes('VI') || rawOpName.includes('VODAFONE') || rawOpName.includes('IDEA')) targetOperator = 'VI';
-          else if (rawOpName.includes('BSNL')) targetOperator = 'BT';
-        }
-      } catch (e) {
-        console.log('[PERSONAL PLAN] Auto-detect operator failed:', e.message);
-      }
-    }
-
-    if (targetMobile && planApiService.isOperatorSupportedForLastRechargeAndExpiry(targetOperator)) {
-      try {
-        const [lastRes, expRes] = await Promise.all([
-          planApiService.checkLastRecharge(targetMobile, targetOperator),
-          planApiService.checkRechargeExpiry(targetMobile, targetOperator),
-        ]);
-        if (lastRes && lastRes.success) planApiData = lastRes.data;
-        if (expRes && expRes.success) planExpiryData = expRes.data;
-      } catch (err) {
-        console.log('[PlanAPI Check Error]:', err.message);
-      }
-    }
-
-    // CASE 1: Active plan info available from PlanAPI or verified validity
-    const hasActivePlanData = !!(planExpiryData && (planExpiryData.outgoing || planExpiryData.incoming));
-
-    // Check 24-hour persistent UserPlanCache if live PlanAPI response is empty
-    if (!hasActivePlanData && rawPhone) {
-      const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-      let planCache = await UserPlanCache.findOne({ userId, mobileNumber: rawPhone });
-      const isCacheValid = planCache && (Date.now() - new Date(planCache.fetchedAt).getTime() < TWENTY_FOUR_HOURS_MS);
-
-      if (planCache && (planCache.expiryDate || planCache.validity)) {
-        const expDate = planCache.expiryDate ? new Date(planCache.expiryDate) : null;
-        let daysRem = planCache.daysRemaining;
-        if (expDate && !isNaN(expDate.getTime())) {
-          daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        }
-
-        let colorState = 'GREEN';
-        let title = 'Your Plan';
-        if (daysRem !== null && daysRem !== undefined) {
-          if (daysRem < 0) {
-            colorState = 'EXPIRED';
-            title = 'Plan Expired';
-          } else if (daysRem <= 2) {
-            colorState = 'RED';
-          } else if (daysRem <= 7) {
-            colorState = 'AMBER';
-          } else {
-            colorState = 'GREEN';
-          }
-        }
-
-        console.log('[PERSONAL PLAN]', JSON.stringify({
-          userId,
-          operator: planCache.operatorName || targetOperator,
-          transactionFound: !!mostRecentTxn,
-          lastRechargeFound: !!latestSuccessTxn,
-          planFound: true,
-          planSource: 'user_plan_cache',
-          expiryAvailable: !!expDate,
-        }));
-
-        return res.status(200).json({
-          success: true,
-          hasActivePlan: true,
-          hasLastRecharge: !!latestSuccessTxn,
-          source: 'user_plan_cache',
-          operator: planCache.operatorName || targetOperator,
-          operatorCode: planCache.operatorCode || targetOperator,
-          mobileNumber: rawPhone,
-          validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
-          expiryDate: expDate ? expDate.toISOString() : null,
-          daysRemaining: daysRem,
-          data: {
-            cardType: 'PLAN_STATUS',
-            title,
-            mobileNumber: rawPhone,
-            operatorName: planCache.operatorName || targetOperator,
-            operatorCode: planCache.operatorCode || targetOperator,
-            validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
-            expiryDate: expDate ? expDate.toISOString() : null,
-            daysRemaining: daysRem,
-            colorState,
-          },
-        });
-      }
-    }
-
-    if (hasActivePlanData) {
-      console.log('[PERSONAL PLAN]', JSON.stringify({
-        userId,
-        operator: targetOperator,
-        transactionFound: !!mostRecentTxn,
-        lastRechargeFound: !!latestSuccessTxn,
-        planFound: true,
-        planSource: 'planapi',
-        expiryAvailable: true,
-      }));
-
-      return res.status(200).json({
-        success: true,
-        hasActivePlan: true,
-        hasLastRecharge: !!latestSuccessTxn,
-        source: 'planapi',
-        operator: (latestSuccessTxn && latestSuccessTxn.internalOperatorName) || targetOperator,
-        operatorCode: targetOperator,
-        mobileNumber: targetMobile,
-        amount: planApiData ? (Number(planApiData.amount) || (latestSuccessTxn ? latestSuccessTxn.amount : 0)) : (latestSuccessTxn ? latestSuccessTxn.amount : 0),
-        rechargeDate: planApiData ? planApiData.rechargeDate : (latestSuccessTxn ? latestSuccessTxn.createdAt : null),
-        validity: planExpiryData ? `Outgoing: ${planExpiryData.outgoing}` : 'Active',
-        expiryDate: planExpiryData ? planExpiryData.outgoing : null,
-        outgoing: planExpiryData ? planExpiryData.outgoing : null,
-        incoming: planExpiryData ? planExpiryData.incoming : null,
-        data: {
-          cardType: 'PLAN_STATUS',
-          title: 'Your Plan',
-          mobileNumber: targetMobile,
-          operatorName: (latestSuccessTxn && latestSuccessTxn.internalOperatorName) || targetOperator,
-          operatorCode: targetOperator,
-          amount: (latestSuccessTxn && latestSuccessTxn.amount) || 0,
-          validity: planExpiryData ? `Valid until ${planExpiryData.outgoing}` : 'Active Plan',
-          expiryDate: planExpiryData ? planExpiryData.outgoing : null,
-          outgoing: planExpiryData ? planExpiryData.outgoing : null,
-          incoming: planExpiryData ? planExpiryData.incoming : null,
-          colorState: 'GREEN',
-        },
-      });
-    }
-
-    // CASE 2 & CASE 4: Successful recent recharge exists (fallback to A1 Recharge history for unsupported operators or missing expiry)
-    if (latestSuccessTxn) {
-      console.log('[PERSONAL PLAN]', JSON.stringify({
-        userId,
-        operator: latestSuccessTxn.internalOperatorName || latestSuccessTxn.operatorCode,
-        transactionFound: true,
-        lastRechargeFound: true,
-        planFound: false,
-        planSource: 'a1_recharge',
-        expiryAvailable: false,
-      }));
-
-      return res.status(200).json({
-        success: true,
-        hasActivePlan: false,
-        hasLastRecharge: true,
-        source: 'a1_recharge',
-        lastRecharge: {
-          id: latestSuccessTxn._id,
-          orderId: latestSuccessTxn.orderId,
-          operator: latestSuccessTxn.internalOperatorName || latestSuccessTxn.operatorCode,
-          operatorCode: latestSuccessTxn.operatorCode,
-          mobileNumber: latestSuccessTxn.mobileNumber,
-          amount: latestSuccessTxn.amount,
-          payableAmount: latestSuccessTxn.payableAmount || latestSuccessTxn.amount,
-          savingsAmount: latestSuccessTxn.commissionAmount || 0,
-          status: 'SUCCESS',
-          date: latestSuccessTxn.createdAt,
-        },
-        data: {
-          cardType: 'SUCCESS',
-          title: 'Your Last Recharge',
-          id: latestSuccessTxn._id,
-          orderId: latestSuccessTxn.orderId,
-          mobileNumber: latestSuccessTxn.mobileNumber,
-          operatorName: latestSuccessTxn.internalOperatorName || latestSuccessTxn.operatorCode,
-          operatorCode: latestSuccessTxn.operatorCode,
-          circleCode: latestSuccessTxn.circleCode,
-          amount: latestSuccessTxn.amount,
-          payableAmount: latestSuccessTxn.payableAmount || latestSuccessTxn.amount,
-          savingsAmount: latestSuccessTxn.commissionAmount || 0,
-          status: 'SUCCESS',
-          createdAt: latestSuccessTxn.createdAt,
-        },
-      });
-    }
-
-    // CASE 5: User has never completed a recharge -> "No active plan yet"
-    console.log('[PERSONAL PLAN]', JSON.stringify({
-      userId,
-      operator: 'none',
-      transactionFound: false,
-      lastRechargeFound: false,
-      planFound: false,
-      planSource: 'none',
-      expiryAvailable: false,
-    }));
 
     return res.status(200).json({
       success: true,
-      hasActivePlan: false,
-      hasLastRecharge: false,
+      hasLastRecharge: true,
       data: {
-        cardType: 'NO_PLAN',
-        title: 'Your Plan',
-        statusText: 'No active plan yet',
+        cardType: 'SUCCESS',
+        title: 'Your Last Recharge',
+        id: latestSuccessTxn._id,
+        orderId: latestSuccessTxn.orderId,
+        mobileNumber: latestSuccessTxn.mobileNumber,
+        operatorName: latestSuccessTxn.internalOperatorName || latestSuccessTxn.operatorCode,
+        operatorCode: latestSuccessTxn.operatorCode,
+        circleCode: latestSuccessTxn.circleCode,
+        amount: latestSuccessTxn.amount,
+        payableAmount: latestSuccessTxn.payableAmount || latestSuccessTxn.amount,
+        savingsAmount: latestSuccessTxn.commissionAmount || 0,
+        rechargeType,
+        status: 'SUCCESS',
+        createdAt: latestSuccessTxn.createdAt,
       },
     });
   } catch (error) {
     console.error('[getLastRecharge Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/personal/pending-recharge
+ * Returns any in-flight pending or processing recharge transaction for the user.
+ */
+const getPendingRecharge = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const userIds = [userId];
+    if (userId && typeof userId.toString === 'function') {
+      userIds.push(userId.toString());
+    }
+
+    const pendingTxn = await RechargeTransaction.findOne({
+      userId: { $in: userIds },
+      status: { $in: ['PENDING', 'pending', 'PROCESSING', 'processing', 'RECHARGE_PROCESSING', 'recharge_processing', 'INITIATED', 'initiated'] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!pendingTxn) {
+      return res.status(200).json({
+        success: true,
+        hasPending: false,
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      hasPending: true,
+      data: {
+        cardType: 'PENDING',
+        title: 'Recharge in Progress',
+        id: pendingTxn._id,
+        orderId: pendingTxn.orderId,
+        mobileNumber: pendingTxn.mobileNumber,
+        operatorName: pendingTxn.internalOperatorName || pendingTxn.operatorCode,
+        operatorCode: pendingTxn.operatorCode,
+        amount: pendingTxn.amount,
+        payableAmount: pendingTxn.payableAmount || pendingTxn.amount,
+        status: pendingTxn.status,
+        createdAt: pendingTxn.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error('[getPendingRecharge Error]:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -801,7 +534,16 @@ const getCurrentPlan = async (req, res) => {
     if (rawPhone) {
       const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
       let planCache = await UserPlanCache.findOne({ userId: { $in: userIds }, mobileNumber: rawPhone });
-      const isCacheValid = planCache && (Date.now() - new Date(planCache.fetchedAt).getTime() < TWENTY_FOUR_HOURS_MS);
+
+      // Helper to find latest monthly/yearly plan transaction amount
+      const latestMonthlyTxn = await RechargeTransaction.findOne({
+        userId: { $in: userIds },
+        status: { $in: ['SUCCESS', 'success'] },
+        amount: { $gte: 100 },
+      }).sort({ createdAt: -1 }).lean();
+
+      const planAmount = (planCache && planCache.amount) || (latestMonthlyTxn ? latestMonthlyTxn.amount : 0);
+      const isCacheValid = planCache && (Date.now() - new Date(planCache.fetchedAt).getTime() < TWENTY_FOUR_HOURS_MS) && Boolean(planCache.amount && planCache.amount > 0);
 
       if (planCache && isCacheValid && (planCache.expiryDate || planCache.validity)) {
         const expDate = planCache.expiryDate ? new Date(planCache.expiryDate) : null;
@@ -823,6 +565,12 @@ const getCurrentPlan = async (req, res) => {
           }
         }
 
+        let displayOp = planCache.operatorName || 'Airtel';
+        if (displayOp === '2' || displayOp === 'AT') displayOp = 'Airtel';
+        else if (displayOp === '11' || displayOp === 'JO') displayOp = 'Jio';
+        else if (displayOp === '23' || displayOp === '6' || displayOp === 'VI') displayOp = 'VI';
+        else if (displayOp === '4' || displayOp === '5' || displayOp === 'BT') displayOp = 'BSNL';
+
         return res.status(200).json({
           success: true,
           hasActivePlan: true,
@@ -830,8 +578,9 @@ const getCurrentPlan = async (req, res) => {
           data: {
             title,
             mobileNumber: rawPhone,
-            operatorName: planCache.operatorName || 'Operator',
+            operatorName: displayOp,
             operatorCode: planCache.operatorCode || '',
+            amount: planAmount,
             validity: planCache.validity || (expDate ? `${daysRem} days remaining` : 'Active Plan'),
             expiryDate: expDate ? expDate.toISOString() : null,
             daysRemaining: daysRem,
@@ -840,43 +589,64 @@ const getCurrentPlan = async (req, res) => {
         });
       }
 
-      // Query live Plans API for recharge expiry date
+      // Query live Plans API for recharge expiry date and last recharge plan amount
       try {
         const planApiService = require('../services/planapi.service');
         const opRes = await planApiService.detectMobileOperator(rawPhone);
         const rawOpName = opRes.success && opRes.data ? (opRes.data.Operator || opRes.data.operator || 'Airtel') : 'Airtel';
         const opCode = opRes.success && opRes.data ? (opRes.data.OpCode || opRes.data.OperatorCode || opRes.data.operator_code || '2') : '2';
 
-        const expRes = await planApiService.checkRechargeExpiry(rawPhone, opCode);
-        if (expRes.supported && expRes.success && expRes.data && expRes.data.outgoing) {
-          const expDate = new Date(expRes.data.outgoing);
-          const daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const [lastRecRes, expRes] = await Promise.all([
+          planApiService.checkLastRecharge(rawPhone, opCode).catch(() => ({ success: false })),
+          planApiService.checkRechargeExpiry(rawPhone, opCode).catch(() => ({ success: false })),
+        ]);
+
+        console.log('[CURRENT_PLAN_DEBUG] Plans API response:', JSON.stringify({
+          mobile: rawPhone,
+          operator: rawOpName,
+          lastRechargeResponse: lastRecRes,
+          expiryResponse: expRes,
+        }, null, 2));
+
+        const liveAmount = Number(lastRecRes?.data?.amount || lastRecRes?.data?.raw?.Amount || 0) || planAmount;
+
+        if ((expRes.supported && expRes.success && expRes.data && expRes.data.outgoing) || liveAmount > 0) {
+          const expDate = (expRes.data && expRes.data.outgoing) ? new Date(expRes.data.outgoing) : null;
+          let daysRem = null;
+          if (expDate && !isNaN(expDate.getTime())) {
+            daysRem = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          }
 
           let colorState = 'GREEN';
           let title = 'Your Current Plan';
-          if (daysRem < 0) {
-            colorState = 'EXPIRED';
-            title = 'Plan Expired';
-          } else if (daysRem <= 2) {
-            colorState = 'RED';
-          } else if (daysRem <= 7) {
-            colorState = 'AMBER';
+          if (daysRem !== null && daysRem !== undefined) {
+            if (daysRem < 0) {
+              colorState = 'EXPIRED';
+              title = 'Plan Expired';
+            } else if (daysRem <= 2) {
+              colorState = 'RED';
+            } else if (daysRem <= 7) {
+              colorState = 'AMBER';
+            }
           }
+
+          const validityText = daysRem !== null ? `${daysRem} days remaining` : 'Active Plan';
 
           await UserPlanCache.findOneAndUpdate(
             { userId: userId, mobileNumber: rawPhone },
             {
               userId: userId,
               mobileNumber: rawPhone,
-              operatorName: opCode,
+              operatorName: rawOpName,
               operatorCode: opCode,
-              validity: `${daysRem} days remaining`,
+              amount: liveAmount,
+              validity: validityText,
               expiryDate: expDate,
               daysRemaining: daysRem,
               colorState,
               fetchedAt: new Date(),
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
           );
 
           return res.status(200).json({
@@ -886,10 +656,11 @@ const getCurrentPlan = async (req, res) => {
             data: {
               title,
               mobileNumber: rawPhone,
-              operatorName: opCode,
+              operatorName: rawOpName,
               operatorCode: opCode,
-              validity: `${daysRem} days remaining`,
-              expiryDate: expDate.toISOString(),
+              amount: liveAmount,
+              validity: validityText,
+              expiryDate: expDate ? expDate.toISOString() : null,
               daysRemaining: daysRem,
               colorState,
             },
@@ -933,12 +704,136 @@ const getCurrentPlan = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/personal/transactions
+ * GET /api/personal/history
+ * GET /api/personal/recent-transactions
+ * Retrieve full transaction history for Personal Account
+ */
+const getPersonalTransactions = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, type, days } = req.query;
+    const userId = req.user._id;
+    const userIds = [userId];
+    if (userId && typeof userId.toString === 'function') {
+      userIds.push(userId.toString());
+    }
+
+    const baseQuery = { userId: { $in: userIds } };
+
+    if (days && !isNaN(Number(days))) {
+      const daysNum = Number(days);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysNum);
+      baseQuery.createdAt = { $gte: startDate };
+    }
+
+    const txQuery = { ...baseQuery };
+
+    const globalTransactions = await Transaction.find(txQuery)
+      .sort({ createdAt: -1 })
+      .lean()
+      .maxTimeMS(3000);
+
+    const formattedGlobal = globalTransactions.map(t => {
+      const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
+      const refNo = t.referenceNumber || t.referenceId || t.orderId || (t.metadata && t.metadata.orderId) || '';
+      const mobile = t.mobileNumber || t.customerIdentifier || t.recipientName || (t.metadata && t.metadata.customerNumber) || '';
+      const opName = t.operatorName || (t.metadata && t.metadata.operator) || (t.operatorId ? t.operatorId : 'Operator');
+
+      return {
+        id: String(t._id),
+        type: isCred ? 'credit' : 'debit',
+        serviceType: t.serviceType || t.service || 'mobile_recharge',
+        operatorName: opName,
+        operatorId: t.operatorId || null,
+        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : (t.service === 'dth' ? 'DTH Recharge' : 'Mobile Recharge'),
+        customerIdentifier: mobile,
+        amount: t.amountPaise || Math.round((t.amount || 0) * 100),
+        commission: t.commissionEarnedPaise || Math.round((t.commission || 0) * 100),
+        status: String(t.status || 'pending').toLowerCase(),
+        createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
+        completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
+        updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
+        paymentMethod: t.paymentMethod || 'wallet',
+        referenceNumber: refNo,
+        clientOrderId: refNo,
+        apiReference: t.apiReference || t.providerTransactionId || '',
+        providerTransactionId: t.providerTransactionId || t.apiReference || null,
+        failureReason: t.failureReason || null,
+        providerMessage: t.providerMessage || null,
+        description: t.description || `Transaction for ${mobile || 'account'}`,
+      };
+    });
+
+    const rechargeTxns = await RechargeTransaction.find(baseQuery)
+      .sort({ createdAt: -1 })
+      .lean()
+      .maxTimeMS(3000);
+
+    const existingRefIds = new Set(formattedGlobal.map(t => t.referenceNumber).filter(Boolean));
+    const existingIds = new Set(formattedGlobal.map(t => t.id));
+
+    const formattedRecharges = rechargeTxns
+      .filter(r => !existingRefIds.has(r.orderId) && !existingIds.has(String(r._id)))
+      .map(r => {
+        const serviceType = r.serviceType === 'dth' ? 'dth' : 'mobile_recharge';
+        return {
+          id: String(r._id),
+          type: 'debit',
+          serviceType,
+          operatorName: r.internalOperatorName || r.operatorCode || 'Operator',
+          operatorId: r.operatorCode || null,
+          transactionTitle: serviceType === 'dth' ? 'DTH Recharge' : 'Mobile Recharge',
+          customerIdentifier: r.mobileNumber || '',
+          amount: Math.round((r.amount || 0) * 100),
+          commission: Math.round((r.commissionAmount || 0) * 100),
+          status: String(r.status || 'pending').toLowerCase(),
+          createdAt: (r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt)).toISOString(),
+          completedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
+          updatedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
+          paymentMethod: r.paymentMethod || 'RAZORPAY_UPI',
+          referenceNumber: r.orderId || '',
+          clientOrderId: r.orderId || '',
+          apiReference: r.providerTransactionId || '',
+          providerTransactionId: r.providerTransactionId || null,
+          failureReason: r.failureReason || null,
+          providerMessage: r.providerMessage || null,
+          description: `Recharge for ${r.mobileNumber}`,
+        };
+      });
+
+    const merged = [...formattedGlobal, ...formattedRecharges];
+    merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const startIndex = (pageNum - 1) * limitNum;
+    const paginated = merged.slice(startIndex, startIndex + limitNum);
+
+    console.log(`[PERSONAL HISTORY DEBUG] userId=${userId} totalMatched=${merged.length} returning=${paginated.length}`);
+
+    return res.status(200).json({
+      success: true,
+      data: paginated,
+      totalCount: merged.length,
+      page: pageNum,
+      limit: limitNum,
+    });
+  } catch (error) {
+    console.error('[getPersonalTransactions Error]:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getSavings,
   getBenefits,
   getCurrentPlan,
   getLastRecharge,
+  getPendingRecharge,
   getLastSuccessfulRecharge,
+  getPersonalTransactions,
   getRecentTransactions,
   getFrequentNumbers,
 };

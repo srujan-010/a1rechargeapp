@@ -354,6 +354,36 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
   void setAmount(int amountPaise) {
     state = state.copyWith(customAmountPaise: amountPaise, clearPlan: true);
   }
+
+  void setupRechargeAgain({
+    required String phoneNumber,
+    required Operator operator,
+    required Circle circle,
+    required int amountPaise,
+    String? rechargeType,
+    String? providerOperatorCode,
+  }) {
+    final catName = rechargeType ?? '';
+    String planType = 'TOPUP';
+    final catUpper = catName.toUpperCase();
+    if (catUpper.contains('STV') || catUpper.contains('DATA') || catUpper.contains('MONTH') || catUpper.contains('YEAR') || catUpper.contains('PLAN')) {
+      planType = 'STV';
+    } else if (catUpper.contains('TOPUP') || catUpper.contains('TALKTIME')) {
+      planType = 'TOPUP';
+    } else {
+      planType = catName.isNotEmpty ? catName : 'TOPUP';
+    }
+
+    state = RechargeState(
+      phoneNumber: phoneNumber,
+      autoOperator: operator,
+      autoCircle: circle,
+      customAmountPaise: amountPaise,
+      selectedPlanCategory: catName,
+      selectedPlanType: planType,
+      providerOperatorCode: providerOperatorCode ?? operator.shortCode ?? operator.code,
+    );
+  }
   
   void reset() {
     state = const RechargeState();

@@ -106,39 +106,42 @@ const getStatement = async (req, res, next) => {
     }
 
     const globalTransactions = await Transaction.find(txQuery)
-      .select('_id service type operatorName operatorId mobileNumber recipientName amountPaise commissionEarnedPaise status createdAt updatedAt paymentMethod referenceId apiReference providerTransactionId failureReason providerMessage description')
       .sort({ createdAt: -1 })
       .lean()
       .maxTimeMS(3000);
 
     const formattedGlobal = globalTransactions.map(t => {
       const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
+      const refNo = t.referenceNumber || t.referenceId || t.orderId || (t.metadata && t.metadata.orderId) || '';
+      const mobile = t.mobileNumber || t.customerIdentifier || t.recipientName || (t.metadata && t.metadata.customerNumber) || '';
+      const opName = t.operatorName || (t.metadata && t.metadata.operator) || (t.operatorId ? t.operatorId : 'Operator');
+
       return {
         id: String(t._id),
         type: isCred ? 'credit' : 'debit',
-        serviceType: t.service || 'mobile_recharge',
-        operatorName: t.operatorName || '',
+        serviceType: t.serviceType || t.service || 'mobile_recharge',
+        operatorName: opName,
         operatorId: t.operatorId || null,
-        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service || 'mobile_recharge', t.operatorName),
-        customerIdentifier: t.mobileNumber || t.recipientName || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
-        amount: t.amountPaise,
-        commission: t.commissionEarnedPaise || 0,
+        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service || 'mobile_recharge', opName),
+        customerIdentifier: mobile,
+        amount: t.amountPaise || Math.round((t.amount || 0) * 100),
+        commission: t.commissionEarnedPaise || Math.round((t.commission || 0) * 100),
         status: String(t.status || 'pending').toLowerCase(),
         createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
         completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
         updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
         paymentMethod: t.paymentMethod || 'wallet',
-        referenceNumber: t.referenceId,
-        clientOrderId: t.referenceId,
-        apiReference: t.apiReference || '',
+        referenceNumber: refNo,
+        clientOrderId: refNo,
+        apiReference: t.apiReference || t.providerTransactionId || '',
         providerTransactionId: t.providerTransactionId || t.apiReference || null,
         failureReason: t.failureReason || null,
         providerMessage: t.providerMessage || null,
-        description: t.description || (t.service === 'admin_credit' ? 'Wallet credited by administrator' : ''),
+        description: t.description || `Transaction for ${mobile || 'account'}`,
       };
     });
 
-    // Also query RechargeTransaction collection to ensure any recharge records are merged if missing
+    // Also query RechargeTransaction collection to ensure all recharge records are present
     let formattedRecharges = [];
     if (!type || type === 'all' || type === 'debits' || type === 'debit') {
       const rechargeTxns = await RechargeTransaction.find(baseQuery)
@@ -147,9 +150,10 @@ const getStatement = async (req, res, next) => {
         .maxTimeMS(3000);
 
       const existingRefIds = new Set(formattedGlobal.map(t => t.referenceNumber).filter(Boolean));
+      const existingIds = new Set(formattedGlobal.map(t => t.id));
 
       formattedRecharges = rechargeTxns
-        .filter(r => !existingRefIds.has(r.orderId) && !existingRefIds.has(String(r._id)))
+        .filter(r => !existingRefIds.has(r.orderId) && !existingIds.has(String(r._id)))
         .map(r => {
           const serviceType = r.serviceType === 'dth' ? 'dth' : 'mobile_recharge';
           return {
@@ -167,8 +171,8 @@ const getStatement = async (req, res, next) => {
             completedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
             updatedAt: ((r.updatedAt || r.createdAt) instanceof Date ? (r.updatedAt || r.createdAt) : new Date(r.updatedAt || r.createdAt)).toISOString(),
             paymentMethod: r.paymentMethod || 'RAZORPAY_UPI',
-            referenceNumber: r.orderId,
-            clientOrderId: r.orderId,
+            referenceNumber: r.orderId || '',
+            clientOrderId: r.orderId || '',
             apiReference: r.providerTransactionId || '',
             providerTransactionId: r.providerTransactionId || null,
             failureReason: r.failureReason || null,
