@@ -50,16 +50,44 @@ exports.getOperators = async (req, res) => {
       }));
     }
 
-    const formattedOperators = dbOperators.map(op => ({
-      id: (op._id || op.name).toString(),
-      name: op.name,
-      serviceType: op.serviceType,
-      code: op.a1TopupCode || op.code,
-      a1TopupCode: op.a1TopupCode || op.code,
-      plansApiCode: op.plansApiCode || op.plansInfoCode || '',
-      shortCode: String(op.a1TopupCode || op.code),
-      status: op.status,
-    }));
+    const formattedOperators = dbOperators.map(op => {
+      let displayName = op.name;
+      let a1Code = op.a1TopupCode || op.code;
+      let plansCode = op.plansApiCode || op.plansInfoCode || '';
+
+      const codeUpper = String(op.code || op.a1TopupCode || '').toUpperCase().trim();
+      const nameUpper = String(op.name || '').toUpperCase().trim();
+
+      if (codeUpper === 'BT' || nameUpper === 'BSNL TOPUP' || (nameUpper === 'BSNL' && codeUpper === 'BT')) {
+        displayName = 'BSNL TOPUP';
+        a1Code = 'BT';
+        plansCode = '4';
+      } else if (codeUpper === 'BR' || nameUpper === 'BSNL SPECIAL' || (nameUpper === 'BSNL' && codeUpper === 'BR')) {
+        displayName = 'BSNL SPECIAL';
+        a1Code = 'BR';
+        plansCode = '5';
+      } else if (codeUpper === 'A' || nameUpper.includes('AIRTEL')) {
+        a1Code = 'A';
+        plansCode = '2';
+      } else if (codeUpper === 'V' || codeUpper === 'VI' || nameUpper.includes('VODAFONE') || nameUpper.includes('VI')) {
+        a1Code = 'V';
+        plansCode = '23';
+      } else if (codeUpper === 'RC' || codeUpper === 'RJ' || nameUpper.includes('JIO')) {
+        a1Code = 'RC';
+        plansCode = '11';
+      }
+
+      return {
+        id: (op._id || op.name).toString(),
+        name: displayName,
+        serviceType: op.serviceType,
+        code: a1Code,
+        a1TopupCode: a1Code,
+        plansApiCode: plansCode,
+        shortCode: String(a1Code),
+        status: op.status,
+      };
+    });
 
     return res.json({
       success: true,

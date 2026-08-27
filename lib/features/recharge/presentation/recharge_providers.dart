@@ -97,25 +97,11 @@ final circlesProvider = FutureProvider<List<Circle>>((ref) async {
 
 // A provider to fetch plans based on operatorId, circle, and serviceType with cache
 final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operatorId, String circle, String serviceType})>((ref, params) async {
-  final cache = LocalCacheService.instance;
-  final cacheKey = 'plans_${params.operatorId}_${params.circle}_${params.serviceType}';
-
-  // 1. Check cached plans
-  final cachedList = cache.get<List<dynamic>>(cache.plansBox, cacheKey);
-  List<PlanCategory>? cachedCategories;
-  if (cachedList != null) {
-    try {
-      cachedCategories = cachedList
-          .map((e) => PlanCategory.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } catch (_) {}
-  }
-
   try {
     // Convert Operator Name/ID to PlanAPI Numeric Code
     String operatorCode = params.operatorId;
     final ops = ref.read(operatorsProvider(params.serviceType)).valueOrNull ?? [];
-    final op = ops.where((o) => o.id == params.operatorId || o.shortCode == params.operatorId).firstOrNull;
+    final op = ops.where((o) => o.id == params.operatorId || o.shortCode == params.operatorId || o.name == params.operatorId).firstOrNull;
     
     if (op != null) {
        if (op.plansApiCode != null && op.plansApiCode!.isNotEmpty) {
@@ -177,6 +163,29 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
       circleCode = params.circle;
     }
 
+    final cache = LocalCacheService.instance;
+    final cacheKey = 'mobile_${operatorCode}_$circleCode';
+
+    // 1. Check cached plans
+    final cachedList = cache.get<List<dynamic>>(cache.plansBox, cacheKey);
+    List<PlanCategory>? cachedCategories;
+    if (cachedList != null) {
+      try {
+        cachedCategories = cachedList
+            .map((e) => PlanCategory.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      } catch (_) {}
+    }
+
+    debugPrint('\n====================================================');
+    debugPrint('[PLAN API REQUEST AFTER MANUAL OPERATOR CHANGE]');
+    debugPrint('====================================================');
+    debugPrint('operator: ${op?.name ?? params.operatorId}');
+    debugPrint('operatorId: ${params.operatorId}');
+    debugPrint('plansApiOperatorCode: $operatorCode');
+    debugPrint('circleCode: $circleCode');
+    debugPrint('====================================================\n');
+
     final repo = ref.watch(mobilePlanRepositoryProvider);
     final result = await repo.fetchMobilePlans(operatorCode, circleCode).timeout(const Duration(seconds: 4));
     final freshCategories = result.valueOrNull;
@@ -185,11 +194,13 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
       cache.put(cache.plansBox, cacheKey, freshCategories.map((c) => c.toJson()).toList());
       return freshCategories;
     }
+
+    return cachedCategories ?? <PlanCategory>[];
   } catch (e) {
     AppLogger.warning('Plans network fetch fallback to cache: $e', tag: 'PlansProvider');
   }
 
-  return cachedCategories ?? <PlanCategory>[];
+  return <PlanCategory>[];
 });
 
 // A provider to fetch DTH packs based on operatorId

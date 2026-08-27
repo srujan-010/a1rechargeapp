@@ -381,6 +381,22 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
                 ),
                 trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.primaryBlue) : null,
                 onTap: () {
+                  final prevOp = state.operator;
+                  debugPrint('\n====================================================');
+                  debugPrint('[MANUAL OPERATOR CHANGE]');
+                  debugPrint('====================================================');
+                  debugPrint('previousOperator: ${prevOp?.name ?? "None"}');
+                  debugPrint('previousOperatorId: ${prevOp?.id ?? "None"}');
+                  debugPrint('');
+                  debugPrint('newOperator: ${op.name}');
+                  debugPrint('newOperatorId: ${op.id}');
+                  debugPrint('');
+                  debugPrint('serviceType: ${op.type.name}');
+                  debugPrint('');
+                  debugPrint('PlansAPI operator code: ${op.plansApiCode ?? op.code}');
+                  debugPrint('A1Topup operator code: ${op.a1TopupCode ?? op.code}');
+                  debugPrint('====================================================\n');
+
                   ref.read(rechargeFlowProvider.notifier).setOperator(op);
                   Navigator.pop(context);
                 },

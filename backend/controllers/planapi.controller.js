@@ -33,6 +33,8 @@ const detectMobileOperator = async (req, res, next) => {
   }
 };
 
+const mongoose = require('mongoose');
+const ProviderOperator = require('../models/ProviderOperator');
 const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
 
 // @desc    Fetch Mobile Plans
@@ -40,30 +42,61 @@ const { resolvePlansApiOperatorCode } = require('../utils/operatorMapper');
 // @access  Private
 const fetchMobilePlans = async (req, res, next) => {
   try {
-    const { operatorcode, circle, mobile } = req.query;
+    const { operatorcode, circle, mobile, planType, rechargeType } = req.query;
     if (!operatorcode || !circle) return res.status(400).json({ success: false, message: 'operatorcode and circle are required' });
 
-    const plansApiOpCode = resolvePlansApiOperatorCode(operatorcode);
+    const selectedPlanType = (planType || rechargeType || '').toString().toUpperCase().trim();
+    let targetOp = operatorcode;
 
-    console.log('\n[PLAN API]');
-    console.log(`Mobile: ${mobile || 'N/A'}`);
-    console.log(`Input Operator: ${operatorcode}`);
-    console.log(`PlanAPI Operator Code: ${plansApiOpCode}`);
-    console.log(`Circle Code: ${circle}`);
+    // Check if operatorcode is a MongoDB ObjectId or operator ID
+    if (mongoose.Types.ObjectId.isValid(operatorcode)) {
+      const dbOp = await ProviderOperator.findById(operatorcode);
+      if (dbOp) {
+        targetOp = dbOp;
+      }
+    } else if (typeof operatorcode === 'string' && operatorcode.trim() !== '') {
+      const dbOp = await ProviderOperator.findOne({
+        $or: [
+          { code: String(operatorcode).trim().toUpperCase() },
+          { name: new RegExp(`^${operatorcode.trim()}$`, 'i') }
+        ]
+      });
+      if (dbOp) {
+        targetOp = dbOp;
+      }
+    }
 
-    console.log('\n[PLAN API OUTBOUND]');
-    console.log(`operatorcode: ${plansApiOpCode}`);
-    console.log(`cricle: ${circle}`);
+    const plansApiOpCode = resolvePlansApiOperatorCode(targetOp, selectedPlanType);
+    const opDisplayName = typeof targetOp === 'object' ? targetOp.name : operatorcode;
+
+    console.log('\n====================================================');
+    console.log('[PLAN API OPERATOR MAPPING]');
+    console.log(`displayName=${opDisplayName}`);
+    console.log(`planType=${selectedPlanType || 'TOPUP'}`);
+    console.log(`plansApiOperatorCode=${plansApiOpCode}`);
+    console.log('====================================================\n');
+
+    console.log('\n====================================================');
+    console.log('[PLAN API REQUEST]');
+    console.log(`operatorName=${opDisplayName}`);
+    console.log(`planType=${selectedPlanType || 'TOPUP'}`);
+    console.log(`plansApiOperatorCode=${plansApiOpCode}`);
+    console.log(`circleCode=${circle}`);
+    console.log(`mobile=${mobile || 'N/A'}`);
+    console.log('====================================================\n');
 
     const result = await planApiService.fetchMobilePlans(plansApiOpCode, circle);
 
-    console.log('\n[PLAN API RESPONSE]');
+    console.log('\n====================================================');
+    console.log('[PLAN API RESPONSE]');
     if (result && result.data) {
-      console.log(`ERROR: ${result.data.ERROR}`);
-      console.log(`STATUS: ${result.data.STATUS}`);
-      console.log(`MESSAGE: ${result.data.Message || result.data.MESSAGE || 'N/A'}`);
-      console.log(`RDATA: ${result.data.RDATA ? (Array.isArray(result.data.RDATA) ? `${result.data.RDATA.length} plans` : 'populated') : 'null'}`);
+      console.log(`httpStatus=200`);
+      console.log(`ERROR=${result.data.ERROR}`);
+      console.log(`STATUS=${result.data.STATUS}`);
+      console.log(`MESSAGE=${result.data.Message || result.data.MESSAGE || 'N/A'}`);
+      console.log(`RDATA=${result.data.RDATA ? (Array.isArray(result.data.RDATA) ? `${result.data.RDATA.length} plans` : (typeof result.data.RDATA === 'object' ? Object.keys(result.data.RDATA).length + ' categories' : 'populated')) : 'null'}`);
     }
+    console.log('====================================================\n');
 
     res.status(200).json(result);
   } catch (error) {

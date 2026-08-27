@@ -15,7 +15,7 @@ function getA1TopupOperatorCode(operator) {
     throw new Error('INVALID_OPERATOR: Operator document is null or undefined.');
   }
 
-  const code = String(operator.a1TopupCode || (operator.provider === 'A1Topup' ? operator.code : null) || '').trim();
+  const code = String(operator.a1TopupCode || (operator.provider === 'A1Topup' ? operator.code : null) || operator.code || '').trim();
 
   if (!code) {
     throw new Error(`MISSING_A1TOPUP_CODE: No A1Topup operator code configured for operator '${operator.name || 'Unknown'}'.`);
