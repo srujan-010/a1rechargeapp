@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/core_providers.dart';
@@ -118,22 +119,45 @@ final recentTransactionsProvider = AsyncNotifierProvider<RecentTransactionsNotif
   RecentTransactionsNotifier.new,
 );
 
-/// Non-Blocking Stale-While-Revalidate Earnings Summary Provider
+/// Async Earnings Summary Provider
 class EarningsSummaryNotifier extends AsyncNotifier<Map<String, dynamic>> {
   @override
-  FutureOr<Map<String, dynamic>> build() {
+  Future<Map<String, dynamic>> build() async {
+    return await _fetchSummary();
+  }
+
+  Future<Map<String, dynamic>> _fetchSummary() async {
+    try {
+      final repo = ref.read(walletRepositoryProvider);
+      final result = await repo.getEarningsSummary().timeout(const Duration(seconds: 10));
+      final freshSummary = result.valueOrNull;
+      if (freshSummary != null) {
+        debugPrint('\n====================================================');
+        debugPrint('[SUMMARY-11] state recharge: ${freshSummary['todayRechargeAmountPaise']} paise');
+        debugPrint('[SUMMARY-12] state commission: ${freshSummary['todayCommissionPaise']} paise');
+        debugPrint('[SUMMARY-13] state transaction count: ${freshSummary['todayTransactions']}');
+        debugPrint('====================================================\n');
+
+        LocalCacheService.instance.put(
+          LocalCacheService.instance.dashboardBox,
+          'cached_summary',
+          freshSummary,
+        );
+        return freshSummary;
+      }
+    } catch (e) {
+      AppLogger.warning('Earnings summary background fetch error: $e', tag: 'DashboardProviders');
+    }
+
     final cache = LocalCacheService.instance;
     final cachedMap = cache.get<Map<dynamic, dynamic>>(cache.dashboardBox, 'cached_summary');
-    Map<String, dynamic>? cachedSummary;
     if (cachedMap != null) {
       try {
-        cachedSummary = Map<String, dynamic>.from(cachedMap);
+        return Map<String, dynamic>.from(cachedMap);
       } catch (_) {}
     }
 
-    _refreshInBackground();
-
-    return cachedSummary ?? {
+    return {
       'todayRechargeAmountPaise': 0,
       'todayTransactions': 0,
       'todayCommissionPaise': 0,
@@ -141,24 +165,6 @@ class EarningsSummaryNotifier extends AsyncNotifier<Map<String, dynamic>> {
       'failedTransactions': 0,
       'pendingTransactions': 0,
     };
-  }
-
-  Future<void> _refreshInBackground() async {
-    try {
-      final repo = ref.read(walletRepositoryProvider);
-      final result = await repo.getEarningsSummary().timeout(const Duration(seconds: 3));
-      final freshSummary = result.valueOrNull;
-      if (freshSummary != null) {
-        LocalCacheService.instance.put(
-          LocalCacheService.instance.dashboardBox,
-          'cached_summary',
-          freshSummary,
-        );
-        state = AsyncData(freshSummary);
-      }
-    } catch (e) {
-      AppLogger.warning('Earnings summary background refresh error: $e', tag: 'DashboardProviders');
-    }
   }
 }
 

@@ -70,6 +70,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     await Future.wait([
       ref.read(walletBalanceProvider.future).catchError((Object error) => throw error),
       ref.read(recentTransactionsProvider.future).catchError((Object error) => throw error),
+      ref.read(earningsSummaryProvider.future).catchError((_) => <String, dynamic>{}),
       ref.read(activeCommissionSlabsProvider.future).catchError((Object error) => <CommissionSlab>[]),
     ]).catchError((Object error) => <Object>[]);
   }
@@ -802,24 +803,38 @@ class _TodayStatsRow extends ConsumerWidget {
         );
       },
       data: (earnings) {
+        final rawRecharge = earnings['todayRechargeAmountPaise'] ?? earnings['todayRechargeAmount'];
+        final rawComm = earnings['todayCommissionPaise'] ?? earnings['todayCommission'];
+        final rawTx = earnings['todayTransactions'] ?? earnings['successfulTransactions'];
+
+        final rechargePaise = (rawRecharge is num) ? rawRecharge.round() : 0;
+        final commPaise = (rawComm is num) ? rawComm.round() : 0;
+        final txCount = (rawTx is num) ? rawTx.toInt() : 0;
+
+        debugPrint('\n====================================================');
+        debugPrint('[SUMMARY-14] widget received recharge: $rechargePaise paise (${CurrencyFormatter.fromPaise(rechargePaise)})');
+        debugPrint('[SUMMARY-15] widget received commission: $commPaise paise (${CurrencyFormatter.fromPaise(commPaise)})');
+        debugPrint('[SUMMARY-16] widget received transaction count: $txCount');
+        debugPrint('====================================================\n');
+
         final stats = [
           _StatData(
             label: "Today's Recharge",
-            value: CurrencyFormatter.fromPaise(earnings['todayRechargeAmountPaise'] as int? ?? earnings['todayRechargeAmount'] as int? ?? 0),
+            value: CurrencyFormatter.fromPaise(rechargePaise),
             icon: Icons.bolt,
             color: AppColors.primaryBlue,
             bgColor: AppColors.primaryBlueLight,
           ),
           _StatData(
             label: 'Commission',
-            value: CurrencyFormatter.fromPaise(earnings['todayCommissionPaise'] as int? ?? earnings['todayCommission'] as int? ?? 0),
+            value: CurrencyFormatter.fromPaise(commPaise),
             icon: Icons.percent,
             color: AppColors.success,
             bgColor: AppColors.successLight,
           ),
           _StatData(
             label: 'Transactions',
-            value: '${earnings['todayTransactions'] ?? 0}',
+            value: '$txCount',
             icon: Icons.receipt_long,
             color: AppColors.warning,
             bgColor: AppColors.warningLight,

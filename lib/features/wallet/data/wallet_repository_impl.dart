@@ -1,4 +1,5 @@
 // lib/features/wallet/data/wallet_repository_impl.dart
+import 'package:flutter/foundation.dart';
 import '../../../core/models/app_exception.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/utils/logger.dart';
@@ -120,13 +121,36 @@ class WalletRepositoryImpl implements WalletRepository {
       }
       
       final data = response.data!;
+      num rawRechargePaise = 0;
+      if (data['todayRechargeAmountPaise'] != null) {
+        rawRechargePaise = data['todayRechargeAmountPaise'] as num;
+      } else if (data['todayRechargeAmount'] != null) {
+        rawRechargePaise = (data['todayRechargeAmount'] as num) * 100;
+      }
+
+      num rawCommPaise = 0;
+      if (data['todayCommissionPaise'] != null) {
+        rawCommPaise = data['todayCommissionPaise'] as num;
+      } else if (data['todayCommission'] != null) {
+        rawCommPaise = (data['todayCommission'] as num) * 100;
+      }
+
+      final txCount = (data['todayTransactions'] as num?)?.toInt() ?? (data['successfulTransactions'] as num?)?.toInt() ?? 0;
+
+      debugPrint('\n====================================================');
+      debugPrint('[SUMMARY-7] raw API response: ${response.data}');
+      debugPrint('[SUMMARY-8] parsed recharge: ${rawRechargePaise.round()} paise');
+      debugPrint('[SUMMARY-9] parsed commission: ${rawCommPaise.round()} paise');
+      debugPrint('[SUMMARY-10] parsed transaction count: $txCount');
+      debugPrint('====================================================\n');
+
       return Success({
-        'todayRechargeAmountPaise': data['todayRechargeAmount'] as int? ?? 0,
-        'todayTransactions': data['todayTransactions'] as int? ?? 0,
-        'todayCommissionPaise': data['todayCommission'] as int? ?? 0,
-        'successfulTransactions': data['successfulTransactions'] as int? ?? 0,
-        'failedTransactions': data['failedTransactions'] as int? ?? 0,
-        'pendingTransactions': data['pendingTransactions'] as int? ?? 0,
+        'todayRechargeAmountPaise': rawRechargePaise.round(),
+        'todayTransactions': txCount,
+        'todayCommissionPaise': rawCommPaise.round(),
+        'successfulTransactions': txCount,
+        'failedTransactions': (data['failedTransactions'] as num?)?.toInt() ?? 0,
+        'pendingTransactions': (data['pendingTransactions'] as num?)?.toInt() ?? 0,
       });
     } catch (e, st) {
       AppLogger.error('getEarningsSummary failed', tag: 'WalletRepo', error: e, stackTrace: st);

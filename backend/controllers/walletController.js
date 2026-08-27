@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const Transaction = require('../models/Transaction');
 const RechargeTransaction = require('../models/RechargeTransaction');
@@ -306,74 +307,83 @@ const getDashboardSummary = async (req, res, next) => {
     const { start: todayStart, end: todayEnd } = getISTDateBounds(0);
     const userObjectId = new mongoose.Types.ObjectId(req.user._id);
 
-    // MongoDB Aggregation on RechargeTransaction (Primary source for Wallet & UPI recharges + commissions)
-    // Filter test transactions BEFORE aggregation ($sum, $count)
-    const rechargeAgg = await RechargeTransaction.aggregate([
-      {
-        $match: {
-          userId: userObjectId,
-          status: { $in: ['SUCCESS', 'PAYMENT_SUCCESS'] },
-          isTest: { $ne: true },
-          orderId: { $not: /^TEST/i },
-          createdAt: { $gte: todayStart, $lte: todayEnd }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalRechargeAmountRupees: { $sum: '$amount' },
-          totalCommissionRupees: { $sum: { $ifNull: ['$commissionAmount', 0] } },
-          totalTransactionsCount: { $sum: 1 }
-        }
-      }
-    ]);
+    const rechargeTxList = await RechargeTransaction.find({
+      userId: userObjectId,
+      status: { $in: ['SUCCESS', 'PAYMENT_SUCCESS', 'completed', 'success', 'SUCCESSFUL'] },
+      isTest: { $ne: true },
+      orderId: { $not: /^TEST/i },
+      $or: [
+        { createdAt: { $gte: todayStart, $lte: todayEnd } },
+        { completedAt: { $gte: todayStart, $lte: todayEnd } }
+      ]
+    }).lean();
 
-    // Fallback/Complement aggregation on Transaction model for legacy debit transactions
-    const txAgg = await Transaction.aggregate([
-      {
-        $match: {
-          userId: userObjectId,
-          status: 'success',
-          type: 'debit',
-          isTest: { $ne: true },
-          referenceId: { $not: /^TEST/i },
-          service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] },
-          createdAt: { $gte: todayStart, $lte: todayEnd }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalRechargeAmountPaise: { $sum: '$amountPaise' },
-          totalCommissionPaise: { $sum: { $ifNull: ['$commissionEarnedPaise', 0] } },
-          totalTransactionsCount: { $sum: 1 }
-        }
-      }
-    ]);
+    let totalRechargeAmountRupees = 0;
+    let totalCommissionRupees = 0;
+    let totalTransactionsCount = rechargeTxList.length;
+    const includedTxIds = [];
 
-    let todayRechargeAmountPaise = 0;
-    let todayCommissionPaise = 0;
-    let todayTransactions = 0;
+    rechargeTxList.forEach(tx => {
+      const amt = Number(tx.amount) || 0;
+      const comm = Number(tx.commissionAmount) || 0;
+      totalRechargeAmountRupees += amt;
+      totalCommissionRupees += comm;
+      includedTxIds.push(tx.orderId || tx._id.toString());
 
-    if (rechargeAgg.length > 0 && rechargeAgg[0].totalTransactionsCount > 0) {
-      todayRechargeAmountPaise = Math.round((rechargeAgg[0].totalRechargeAmountRupees || 0) * 100);
-      todayCommissionPaise = Math.round((rechargeAgg[0].totalCommissionRupees || 0) * 100);
-      todayTransactions = rechargeAgg[0].totalTransactionsCount || 0;
-    } else if (txAgg.length > 0) {
-      todayRechargeAmountPaise = txAgg[0].totalRechargeAmountPaise || 0;
-      todayCommissionPaise = txAgg[0].totalCommissionPaise || 0;
-      todayTransactions = txAgg[0].totalTransactionsCount || 0;
+      console.log('\n[RETAILER DASHBOARD TRANSACTION INCLUDED]');
+      console.log(`orderId: ${tx.orderId || tx._id}`);
+      console.log(`retailerId: ${tx.userId}`);
+      console.log(`amount: ₹${amt}`);
+      console.log(`commissionAmount: ₹${comm}`);
+      console.log(`status: ${tx.status}`);
+      console.log(`paymentStatus: ${tx.paymentMethod || 'PAID'}`);
+      console.log(`transactionDate: ${tx.completedAt || tx.createdAt}`);
+    });
+
+    // Fallback complement query on Transaction model
+    if (totalTransactionsCount === 0) {
+      const legacyTxList = await Transaction.find({
+        userId: userObjectId,
+        status: { $in: ['success', 'SUCCESS', 'completed'] },
+        type: { $in: ['debit', 'recharge', 'payment'] },
+        isTest: { $ne: true },
+        referenceId: { $not: /^TEST/i },
+        service: { $nin: ['wallet_topup', 'commission', 'admin_credit'] },
+        createdAt: { $gte: todayStart, $lte: todayEnd }
+      }).lean();
+
+      totalTransactionsCount = legacyTxList.length;
+      legacyTxList.forEach(tx => {
+        const amtRupees = (Number(tx.amountPaise) || 0) / 100 || Number(tx.amount) || 0;
+        const commRupees = (Number(tx.commissionEarnedPaise) || 0) / 100 || Number(tx.commissionAmount) || 0;
+        totalRechargeAmountRupees += amtRupees;
+        totalCommissionRupees += commRupees;
+        includedTxIds.push(tx.referenceId || tx._id.toString());
+      });
     }
+
+    const todayRechargeAmountPaise = Math.round(totalRechargeAmountRupees * 100);
+    const todayCommissionPaise = Math.round(totalCommissionRupees * 100);
+
+    console.log('\n====================================================');
+    console.log('[RETAILER DASHBOARD SUMMARY]');
+    console.log(`[SUMMARY-1] authenticated retailer: ${userObjectId.toString()}`);
+    console.log(`[SUMMARY-2] DB matched transactions: ${rechargeTxList.length}`);
+    console.log(`[SUMMARY-3] calculated recharge paise: ${todayRechargeAmountPaise}`);
+    console.log(`[SUMMARY-4] calculated commission paise: ${todayCommissionPaise}`);
+    console.log(`[SUMMARY-5] calculated transaction count: ${totalTransactionsCount}`);
+    console.log(`[SUMMARY-6] JSON response: ${JSON.stringify({ todayRechargeAmountPaise, todayCommissionPaise, todayTransactions: totalTransactionsCount })}`);
+    console.log('====================================================\n');
 
     res.status(200).json({
       success: true,
       data: {
-        todayRechargeAmount: todayRechargeAmountPaise,
+        todayRechargeAmount: totalRechargeAmountRupees,
         todayRechargeAmountPaise: todayRechargeAmountPaise,
-        todayCommission: todayCommissionPaise,
+        todayCommission: totalCommissionRupees,
         todayCommissionPaise: todayCommissionPaise,
-        todayTransactions: todayTransactions,
-        successfulTransactions: todayTransactions,
+        todayTransactions: totalTransactionsCount,
+        successfulTransactions: totalTransactionsCount,
         failedTransactions: 0,
         pendingTransactions: 0
       }
