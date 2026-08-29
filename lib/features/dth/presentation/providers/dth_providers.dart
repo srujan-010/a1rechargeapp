@@ -72,6 +72,8 @@ class DthFlowState extends Equatable {
   final int? customAmountPaise;
   final bool isLoading;
   final bool isDetecting;
+  final bool isFetchingCustomerInfo;
+  final String? customerInfoError;
   final String? error;
   final DthCustomerInfo? customerInfo;
 
@@ -83,6 +85,8 @@ class DthFlowState extends Equatable {
     this.customAmountPaise,
     this.isLoading = false,
     this.isDetecting = false,
+    this.isFetchingCustomerInfo = false,
+    this.customerInfoError,
     this.error,
     this.customerInfo,
   });
@@ -95,6 +99,9 @@ class DthFlowState extends Equatable {
     int? customAmountPaise,
     bool? isLoading,
     bool? isDetecting,
+    bool? isFetchingCustomerInfo,
+    String? customerInfoError,
+    bool clearCustomerInfoError = false,
     String? error,
     DthCustomerInfo? customerInfo,
     bool clearCustomerInfo = false,
@@ -107,13 +114,15 @@ class DthFlowState extends Equatable {
       customAmountPaise: customAmountPaise ?? this.customAmountPaise,
       isLoading: isLoading ?? this.isLoading,
       isDetecting: isDetecting ?? this.isDetecting,
+      isFetchingCustomerInfo: isFetchingCustomerInfo ?? this.isFetchingCustomerInfo,
+      customerInfoError: clearCustomerInfoError ? null : (customerInfoError ?? this.customerInfoError),
       error: error,
       customerInfo: clearCustomerInfo ? null : (customerInfo ?? this.customerInfo),
     );
   }
 
   @override
-  List<Object?> get props => [selectedOperator, subscriberId, selectedPack, selectedPlan, customAmountPaise, isLoading, isDetecting, error, customerInfo];
+  List<Object?> get props => [selectedOperator, subscriberId, selectedPack, selectedPlan, customAmountPaise, isLoading, isDetecting, isFetchingCustomerInfo, customerInfoError, error, customerInfo];
 }
 
 // DTH Flow Notifier
@@ -125,7 +134,7 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
   DthFlowNotifier(this._repository, this._planRepository, this._ref) : super(const DthFlowState());
 
   void setOperator(Operator operator) {
-    state = state.copyWith(selectedOperator: operator, clearCustomerInfo: true);
+    state = state.copyWith(selectedOperator: operator, clearCustomerInfo: true, clearCustomerInfoError: true);
     if (state.subscriberId != null && state.subscriberId!.length >= 4) {
       _fetchCustomerInfo(state.subscriberId!, operator);
     }
@@ -164,6 +173,7 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
             selectedOperator: op, 
             isDetecting: false,
             clearCustomerInfo: true,
+            clearCustomerInfoError: true,
             error: null,
           );
           _fetchCustomerInfo(subscriberId, op);
@@ -176,14 +186,22 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
     }
   }
 
+  void retryCustomerInfo() {
+    if (state.subscriberId != null && state.selectedOperator != null) {
+      _fetchCustomerInfo(state.subscriberId!, state.selectedOperator!);
+    }
+  }
+
   Future<void> _fetchCustomerInfo(String subscriberId, Operator operator) async {
     final planApiCode = operator.planApiCode;
     
     if (planApiCode == null || planApiCode.isEmpty) {
-      state = state.copyWith(clearCustomerInfo: true);
+      state = state.copyWith(clearCustomerInfo: true, clearCustomerInfoError: true, isFetchingCustomerInfo: false);
       return;
     }
     
+    state = state.copyWith(isFetchingCustomerInfo: true, clearCustomerInfoError: true);
+
     print('==================================================');
     print('Operator: ${operator.name}');
     print('Mongo ID: ${operator.id}');
@@ -195,10 +213,18 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
     final result = await _planRepository.fetchDthBasicDetails(subscriberId, planApiCode);
     
     if (result is Success) {
-      state = state.copyWith(customerInfo: (result as Success).value);
+      state = state.copyWith(
+        customerInfo: (result as Success).value,
+        isFetchingCustomerInfo: false,
+        clearCustomerInfoError: true,
+      );
     } else {
-      // We don't throw, we just don't populate info
-      state = state.copyWith(clearCustomerInfo: true);
+      final err = result is Failure ? (result as Failure).error.message : 'Unable to fetch customer information';
+      state = state.copyWith(
+        isFetchingCustomerInfo: false,
+        clearCustomerInfo: true,
+        customerInfoError: err.isNotEmpty ? err : 'Unable to fetch customer information',
+      );
     }
   }
 

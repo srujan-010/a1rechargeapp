@@ -131,99 +131,296 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
   }
 
   Widget _buildCustomerInfoCard(DthCustomerInfo info, String? subscriberId, String? operatorName) {
-    final status = info.status?.toLowerCase() ?? 'unknown';
-    final isActive = status == 'active';
-    
+    final effectiveSubscriberId = info.vcNumber ?? subscriberId ?? '';
+    final effectiveOperator = operatorName ?? 'DTH';
+
+    final gridItems = <MapEntry<String, String>>[];
+
+    if (info.balance != null && info.balance!.isNotEmpty) {
+      final bal = info.balance!.startsWith('₹') ? info.balance! : '₹${info.balance}';
+      gridItems.add(MapEntry('Balance', bal));
+    }
+    if (info.monthlyPack != null && info.monthlyPack!.isNotEmpty) {
+      final pack = info.monthlyPack!.startsWith('₹') ? info.monthlyPack! : '₹${info.monthlyPack}';
+      gridItems.add(MapEntry('Monthly Recharge', pack));
+    }
+    if (info.nextRechargeDate != null && info.nextRechargeDate!.isNotEmpty) {
+      gridItems.add(MapEntry('Next Recharge', info.nextRechargeDate!));
+    }
+    if (info.currentPlan != null && info.currentPlan!.isNotEmpty) {
+      gridItems.add(MapEntry('Current Plan', info.currentPlan!));
+    }
+    if (info.lastRechargeDate != null && info.lastRechargeDate!.isNotEmpty) {
+      gridItems.add(MapEntry('Last Recharge', info.lastRechargeDate!));
+    }
+    if (info.rmn != null && info.rmn!.isNotEmpty) {
+      gridItems.add(MapEntry('RMN', info.rmn!));
+    }
+
+    final locationParts = [info.address, info.city, info.district, info.state, info.pincode]
+        .where((p) => p != null && p.trim().isNotEmpty)
+        .join(', ');
+
     return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Container(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            colors: [Color(0xFFF4F7FF), Colors.white],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderLight),
         ),
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Header Row ──
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const CircleAvatar(
-                  backgroundColor: AppColors.primaryBlueLight,
-                  radius: 22,
-                  child: Icon(Icons.person, color: AppColors.primaryBlue, size: 24),
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline, size: 18, color: AppColors.primaryBlue),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Customer Details',
+                      style: AppTextTheme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle, size: 12, color: AppColors.success),
+                      SizedBox(width: 4),
+                      Text(
+                        'Verified',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: AppColors.borderLight),
+            const SizedBox(height: 10),
+
+            // ── Customer Name (Primary Focal Info) ──
+            if (info.customerName != null && info.customerName!.isNotEmpty) ...[
+              const Text(
+                'Customer Name',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                info.customerName!,
+                style: AppTextTheme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            // ── Subscriber ID (with Copy) & Operator ──
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Subscriber ID',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              effectiveSubscriberId,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (effectiveSubscriberId.isNotEmpty)
+                            InkWell(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: effectiveSubscriberId));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Subscriber ID copied to clipboard'),
+                                    duration: Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4.0),
+                                child: Icon(Icons.copy, size: 14, color: AppColors.primaryBlue),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        info.customerName?.isNotEmpty == true ? info.customerName! : 'Customer Details', 
-                        style: AppTextTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+                      const Text(
+                        'Operator',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
                       ),
-                      if (subscriberId != null) 
-                        Text('Subscriber ID: $subscriberId', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const SizedBox(height: 2),
+                      Text(
+                        effectiveOperator,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
-                if (info.status != null && info.status!.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isActive ? AppColors.success.withValues(alpha: 0.1) : AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isActive ? AppColors.success.withValues(alpha: 0.3) : AppColors.error.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
+              ],
+            ),
+
+            // ── Additional Fields Grid ──
+            if (gridItems.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: AppColors.borderLight),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
+                children: gridItems.map((item) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  final itemWidth = (screenWidth - (AppSpacing.pagePadding * 2) - (AppSpacing.md * 2) - 12) / 2;
+                  return SizedBox(
+                    width: itemWidth > 120 ? itemWidth : 130,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(isActive ? Icons.check_circle : Icons.error, size: 14, color: isActive ? AppColors.success : AppColors.error),
-                        const SizedBox(width: 4),
                         Text(
-                          isActive ? 'Active' : 'Inactive',
+                          item.key,
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          item.value,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isActive ? AppColors.success : AppColors.error,
+                            color: item.key.contains('Balance')
+                                ? AppColors.success
+                                : AppColors.textPrimary,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: Colors.black12),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildInfoColumn('Operator', operatorName ?? 'Unknown'),
-                if (info.balance != null && info.balance!.isNotEmpty)
-                  _buildInfoColumn('Balance', '₹${info.balance}'),
-                if (info.monthlyPack != null && info.monthlyPack!.isNotEmpty)
-                  _buildInfoColumn('Monthly Pack', '₹${info.monthlyPack}'),
-                if (info.nextRechargeDate != null && info.nextRechargeDate!.isNotEmpty)
-                  _buildInfoColumn('Next Recharge', info.nextRechargeDate!),
-              ],
-            ),
+                  );
+                }).toList(),
+              ),
+            ],
+
+            if (locationParts.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text('Address', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const SizedBox(height: 2),
+              Text(
+                locationParts,
+                style: const TextStyle(fontSize: 11, color: AppColors.textPrimary),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoColumn(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-      ],
+  Widget _buildCustomerInfoLoadingSkeleton() {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 10),
+            Text('Fetching customer details...', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCustomerInfoErrorCard(String errorMessage) {
+    return AppCard(
+      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderLight),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.info_outline, size: 18, color: AppColors.warning),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Unable to fetch customer information',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                ref.read(dthFlowProvider.notifier).retryCustomerInfo();
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Retry', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -318,8 +515,12 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                   const SizedBox(height: AppSpacing.lg),
 
                   // ── Customer Info ──
-                  if (state.customerInfo != null)
-                    _buildCustomerInfoCard(state.customerInfo!, state.subscriberId, state.selectedOperator?.name),
+                  if (state.isFetchingCustomerInfo)
+                    _buildCustomerInfoLoadingSkeleton()
+                  else if (state.customerInfo != null)
+                    _buildCustomerInfoCard(state.customerInfo!, state.subscriberId, state.selectedOperator?.name)
+                  else if (state.customerInfoError != null && hasSubscriberId && hasOperator)
+                    _buildCustomerInfoErrorCard(state.customerInfoError!),
 
                   if (hasOperator) ...[
                     // ── Amount ──
