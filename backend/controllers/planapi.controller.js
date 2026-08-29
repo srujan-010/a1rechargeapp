@@ -142,7 +142,49 @@ const fetchDthPlans = async (req, res, next) => {
   try {
     const { operatorcode } = req.query;
     if (!operatorcode) return res.status(400).json({ success: false, message: 'operatorcode is required' });
-    const result = await planApiService.fetchDthPlans(operatorcode);
+
+    let targetOp = null;
+    if (mongoose.Types.ObjectId.isValid(operatorcode)) {
+      targetOp = await ProviderOperator.findById(operatorcode);
+    } else {
+      targetOp = await ProviderOperator.findOne({
+        $or: [
+          { plansApiCode: String(operatorcode).trim() },
+          { plansInfoCode: String(operatorcode).trim() },
+          { code: String(operatorcode).trim().toUpperCase() },
+          { name: new RegExp(`^${operatorcode.trim()}$`, 'i') }
+        ]
+      });
+    }
+
+    const plansApiOpCode = resolvePlansApiOperatorCode(targetOp || operatorcode);
+    const opName = targetOp ? targetOp.name : (
+      operatorcode === '24' ? 'AIRTEL DTH' :
+      operatorcode === '25' ? 'DISH TV' :
+      operatorcode === '26' ? 'RELIANCE BIGTV' :
+      operatorcode === '27' ? 'SUN DIRECT' :
+      operatorcode === '28' ? 'TATA SKY' :
+      operatorcode === '29' ? 'VIDEOCON D2H' : operatorcode
+    );
+    const opId = targetOp ? (targetOp._id || targetOp.id).toString() : 'N/A';
+    const rechargeCode = targetOp ? (targetOp.a1TopupCode || targetOp.code) : 'N/A';
+
+    console.log('\n====================================================');
+    console.log('[PLAN API OPERATOR RESOLUTION]');
+    console.log(`operatorId=${opId}`);
+    console.log(`operatorName=${opName}`);
+    console.log(`rechargeCode=${rechargeCode}`);
+    console.log(`plansApiCode=${plansApiOpCode}`);
+    console.log(`serviceType=DTH`);
+    console.log('====================================================\n');
+
+    console.log('\n====================================================');
+    console.log('[PLAN API REQUEST]');
+    console.log(`operatorcode=${plansApiOpCode}`);
+    console.log(`circle=N/A`);
+    console.log('====================================================\n');
+
+    const result = await planApiService.fetchDthPlans(plansApiOpCode);
     res.status(200).json(result);
   } catch (error) {
     console.error('[PlanAPI Proxy Error]', error.message);

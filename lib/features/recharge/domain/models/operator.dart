@@ -29,17 +29,25 @@ class Operator extends Equatable {
   String? get code => a1TopupCode ?? shortCode;
   String? get planApiCode => plansApiCode;
 
-  factory Operator.fromJson(Map<String, dynamic> json) => Operator(
-        id: json['id'] as String? ?? json['_id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        logoUrl: json['logoUrl'] as String? ?? '',
-        type: _parseType((json['type'] ?? json['serviceType']) as String?),
-        circle: json['circle'] as String?,
-        shortCode: json['shortCode'] as String? ?? json['code'] as String?,
-        a1TopupCode: json['a1TopupCode'] as String? ?? json['shortCode'] as String? ?? json['code'] as String?,
-        plansApiCode: json['plansApiCode'] as String? ?? json['plansInfoCode'] as String?,
-        isActive: json['isActive'] as bool? ?? json['status'] as bool? ?? true,
-      );
+  factory Operator.fromJson(Map<String, dynamic> json) {
+    final rawApiCode = json['plansApiCode'] as String?;
+    final rawInfoCode = json['plansInfoCode'] as String?;
+    final cleanApiCode = (rawApiCode != null && rawApiCode.trim().isNotEmpty)
+        ? rawApiCode.trim()
+        : ((rawInfoCode != null && rawInfoCode.trim().isNotEmpty) ? rawInfoCode.trim() : null);
+
+    return Operator(
+      id: json['id'] as String? ?? json['_id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? '',
+      type: _parseType((json['type'] ?? json['serviceType']) as String?),
+      circle: json['circle'] as String?,
+      shortCode: json['shortCode'] as String? ?? json['code'] as String?,
+      a1TopupCode: json['a1TopupCode'] as String? ?? json['shortCode'] as String? ?? json['code'] as String?,
+      plansApiCode: cleanApiCode,
+      isActive: json['isActive'] as bool? ?? json['status'] as bool? ?? true,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,

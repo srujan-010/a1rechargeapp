@@ -55,16 +55,19 @@ class OperatorFormatter {
 
     // ── BSNL ──
     if (cleaned == 'BT' ||
-        cleaned == 'BR' ||
-        cleaned == 'BSNL' ||
-        cleaned == 'BSNL TOPUP' ||
-        cleaned == 'BSNL STV' ||
-        cleaned == 'BSNL SPECIAL' ||
-        cleaned == 'BSNL_TOPUP' ||
-        cleaned == 'BSNL_STV' ||
-        cleaned.startsWith('BSNL') ||
         cleaned == '4' ||
-        cleaned == '5') {
+        cleaned == 'BSNL TOPUP' ||
+        cleaned == 'BSNL_TOPUP') {
+      return 'BSNL TOPUP';
+    }
+    if (cleaned == 'BR' ||
+        cleaned == '5' ||
+        cleaned == 'BSNL SPECIAL' ||
+        cleaned == 'BSNL STV' ||
+        cleaned == 'BSNL_STV') {
+      return 'BSNL SPECIAL';
+    }
+    if (cleaned == 'BSNL' || cleaned.startsWith('BSNL')) {
       return 'BSNL';
     }
 

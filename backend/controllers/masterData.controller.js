@@ -57,24 +57,56 @@ exports.getOperators = async (req, res) => {
 
       const codeUpper = String(op.code || op.a1TopupCode || '').toUpperCase().trim();
       const nameUpper = String(op.name || '').toUpperCase().trim();
+      const serviceUpper = String(op.serviceType || '').toUpperCase().trim();
 
-      if (codeUpper === 'BT' || nameUpper === 'BSNL TOPUP' || (nameUpper === 'BSNL' && codeUpper === 'BT')) {
-        displayName = 'BSNL TOPUP';
-        a1Code = 'BT';
-        plansCode = '4';
-      } else if (codeUpper === 'BR' || nameUpper === 'BSNL SPECIAL' || (nameUpper === 'BSNL' && codeUpper === 'BR')) {
-        displayName = 'BSNL SPECIAL';
-        a1Code = 'BR';
-        plansCode = '5';
-      } else if (codeUpper === 'A' || nameUpper.includes('AIRTEL')) {
-        a1Code = 'A';
-        plansCode = '2';
-      } else if (codeUpper === 'V' || codeUpper === 'VI' || nameUpper.includes('VODAFONE') || nameUpper.includes('VI')) {
-        a1Code = 'V';
-        plansCode = '23';
-      } else if (codeUpper === 'RC' || codeUpper === 'RJ' || nameUpper.includes('JIO')) {
-        a1Code = 'RC';
-        plansCode = '11';
+      if (serviceUpper === 'DTH') {
+        if (codeUpper === 'ATV' || nameUpper.includes('AIRTEL')) {
+          displayName = 'AIRTEL DTH';
+          a1Code = 'ATV';
+          plansCode = '24';
+        } else if (codeUpper === 'DTV' || nameUpper.includes('DISH')) {
+          displayName = 'DISH TV';
+          a1Code = 'DTV';
+          plansCode = '25';
+        } else if (codeUpper === 'RBTV' || nameUpper.includes('RELIANCE')) {
+          displayName = 'RELIANCE BIGTV';
+          a1Code = 'RBTV';
+          plansCode = '26';
+        } else if (codeUpper === 'STV' || nameUpper.includes('SUN')) {
+          displayName = 'SUN DIRECT';
+          a1Code = 'STV';
+          plansCode = '27';
+        } else if (codeUpper === 'TTV' || nameUpper.includes('TATA')) {
+          displayName = 'TATA SKY';
+          a1Code = 'TTV';
+          plansCode = '28';
+        } else if (codeUpper === 'VTV' || nameUpper.includes('VIDEOCON') || nameUpper.includes('D2H')) {
+          displayName = 'VIDEOCON D2H';
+          a1Code = 'VTV';
+          plansCode = '29';
+        }
+      } else {
+        if (codeUpper === 'BT' || nameUpper === 'BSNL TOPUP' || (nameUpper === 'BSNL' && codeUpper === 'BT')) {
+          displayName = 'BSNL TOPUP';
+          a1Code = 'BT';
+          plansCode = '4';
+        } else if (codeUpper === 'BR' || nameUpper === 'BSNL SPECIAL' || (nameUpper === 'BSNL' && codeUpper === 'BR')) {
+          displayName = 'BSNL SPECIAL';
+          a1Code = 'BR';
+          plansCode = '5';
+        } else if (codeUpper === 'A' || nameUpper === 'AIRTEL') {
+          displayName = 'Airtel';
+          a1Code = 'A';
+          plansCode = '2';
+        } else if (codeUpper === 'V' || codeUpper === 'VI' || nameUpper === 'VODAFONE' || nameUpper === 'VI') {
+          displayName = 'Vodafone';
+          a1Code = 'V';
+          plansCode = '23';
+        } else if (codeUpper === 'RC' || codeUpper === 'RJ' || nameUpper.includes('JIO')) {
+          displayName = 'RELIANCE - JIO';
+          a1Code = 'RC';
+          plansCode = '11';
+        }
       }
 
       return {
@@ -84,6 +116,7 @@ exports.getOperators = async (req, res) => {
         code: a1Code,
         a1TopupCode: a1Code,
         plansApiCode: plansCode,
+        plansInfoCode: plansCode,
         shortCode: String(a1Code),
         status: op.status,
       };

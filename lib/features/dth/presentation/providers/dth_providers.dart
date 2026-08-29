@@ -160,18 +160,11 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
           print('Operator Detection returned: $detectedCode');
           print('Operator Registry PlanAPI Code: $registryCode');
           
-          if (detectedCode.isNotEmpty && registryCode.isNotEmpty && detectedCode != registryCode) {
-            state = state.copyWith(
-              isDetecting: false,
-              error: 'Operator mismatch: API returned $detectedCode but registry has $registryCode',
-            );
-            return;
-          }
-          
           state = state.copyWith(
             selectedOperator: op, 
             isDetecting: false,
             clearCustomerInfo: true,
+            error: null,
           );
           _fetchCustomerInfo(subscriberId, op);
           return;

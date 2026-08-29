@@ -29,15 +29,15 @@ void main() {
       expect(OperatorFormatter.getDisplayOperatorName('6'), equals('Vi'));
     });
 
-    test('BSNL aliases resolve to BSNL', () {
-      expect(OperatorFormatter.getDisplayOperatorName('BT'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('BR'), equals('BSNL'));
+    test('BSNL aliases resolve to distinct BSNL TOPUP and BSNL SPECIAL labels', () {
+      expect(OperatorFormatter.getDisplayOperatorName('BT'), equals('BSNL TOPUP'));
+      expect(OperatorFormatter.getDisplayOperatorName('BR'), equals('BSNL SPECIAL'));
       expect(OperatorFormatter.getDisplayOperatorName('BSNL'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('BSNL TOPUP'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('BSNL STV'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('BSNL SPECIAL'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('4'), equals('BSNL'));
-      expect(OperatorFormatter.getDisplayOperatorName('5'), equals('BSNL'));
+      expect(OperatorFormatter.getDisplayOperatorName('BSNL TOPUP'), equals('BSNL TOPUP'));
+      expect(OperatorFormatter.getDisplayOperatorName('BSNL STV'), equals('BSNL SPECIAL'));
+      expect(OperatorFormatter.getDisplayOperatorName('BSNL SPECIAL'), equals('BSNL SPECIAL'));
+      expect(OperatorFormatter.getDisplayOperatorName('4'), equals('BSNL TOPUP'));
+      expect(OperatorFormatter.getDisplayOperatorName('5'), equals('BSNL SPECIAL'));
     });
 
     test('DTH operators resolve cleanly', () {

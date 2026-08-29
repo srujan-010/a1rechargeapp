@@ -241,15 +241,63 @@ const getDthHistory = async (req, res, next) => {
 const getDthOperators = async (req, res, next) => {
   try {
     console.log(`[DTH] Controller Entered: getDthOperators`);
-    const operators = await ProviderOperator.find({
+    const dbOperators = await ProviderOperator.find({
       serviceType: /^DTH$/i,
       status: true
-    }).sort({ displayOrder: 1, name: 1 });
+    }).sort({ displayOrder: 1, name: 1 }).lean();
+
+    const formattedOperators = dbOperators.map(op => {
+      let displayName = op.name;
+      let a1Code = op.a1TopupCode || op.code;
+      let plansCode = op.plansApiCode || op.plansInfoCode || '';
+
+      const codeUpper = String(op.code || op.a1TopupCode || '').toUpperCase().trim();
+      const nameUpper = String(op.name || '').toUpperCase().trim();
+
+      if (codeUpper === 'ATV' || nameUpper.includes('AIRTEL')) {
+        displayName = 'AIRTEL DTH';
+        a1Code = 'ATV';
+        plansCode = '24';
+      } else if (codeUpper === 'DTV' || nameUpper.includes('DISH')) {
+        displayName = 'DISH TV';
+        a1Code = 'DTV';
+        plansCode = '25';
+      } else if (codeUpper === 'RBTV' || nameUpper.includes('RELIANCE')) {
+        displayName = 'RELIANCE BIGTV';
+        a1Code = 'RBTV';
+        plansCode = '26';
+      } else if (codeUpper === 'STV' || nameUpper.includes('SUN')) {
+        displayName = 'SUN DIRECT';
+        a1Code = 'STV';
+        plansCode = '27';
+      } else if (codeUpper === 'TTV' || nameUpper.includes('TATA')) {
+        displayName = 'TATA SKY';
+        a1Code = 'TTV';
+        plansCode = '28';
+      } else if (codeUpper === 'VTV' || nameUpper.includes('VIDEOCON') || nameUpper.includes('D2H')) {
+        displayName = 'VIDEOCON D2H';
+        a1Code = 'VTV';
+        plansCode = '29';
+      }
+
+      return {
+        id: (op._id || op.name).toString(),
+        _id: (op._id || op.name).toString(),
+        name: displayName,
+        serviceType: op.serviceType || 'DTH',
+        code: a1Code,
+        a1TopupCode: a1Code,
+        plansApiCode: plansCode,
+        plansInfoCode: plansCode,
+        shortCode: String(a1Code),
+        status: op.status,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      count: operators.length,
-      data: operators
+      count: formattedOperators.length,
+      data: formattedOperators
     });
   } catch (error) {
     next(error);
