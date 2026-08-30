@@ -5,6 +5,7 @@ const dthMappingService = require('./dthMapping.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
 const notificationService = require('./notification.service');
+const { processSuccessCommission } = require('../controllers/recharge.controller');
 
 /**
  * Independent Service for DTH Recharge Execution
@@ -121,7 +122,7 @@ class DthRechargeService {
 
     // 5. Update Global Transaction in MongoDB
     const globalTxnStatus = isSuccess ? 'success' : (isFailed ? 'failed' : 'pending');
-    await Transaction.findOneAndUpdate(
+    const updatedGlobalTxn = await Transaction.findOneAndUpdate(
       { referenceId: orderId, service: 'dth' },
       {
         $set: {
@@ -130,7 +131,8 @@ class DthRechargeService {
           commissionEarnedPaise,
           ...(isSuccess || isFailed ? { completedAt: now } : {}),
         }
-      }
+      },
+      { new: true }
     );
 
     console.log(`[DTH] Mongo update after provider response: Order ${orderId} updated to status '${providerStatus}'`);
@@ -142,6 +144,19 @@ class DthRechargeService {
       const walletBefore = await walletService.getWalletBalance(userId);
 
       console.log(`[DTH ACCOUNTING] grossAmountPaise=${Math.round(amount * 100)}, commissionPaise=${commissionEarnedPaise}, netDebitPaise=${netDebitPaise}, walletBalanceBefore=${walletBefore.toFixed(2)}`);
+
+      // Record CommissionHistory & Ledger Credit via processSuccessCommission
+      await processSuccessCommission({
+        transaction: updatedRechargeTxn || { _id: orderId, orderId, status: 'SUCCESS' },
+        globalTransaction: updatedGlobalTxn,
+        userId,
+        orderId,
+        mobileNumber: subscriberId,
+        operator,
+        operatorCode: operator ? operator.code : 'UNKNOWN',
+        amount,
+        serviceType: 'dth',
+      }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
 
       // Commit held balance & credit commission (deducts netDebitRupees)
       await walletService.commitReservation(userId, amount, commissionEarnedPaise);

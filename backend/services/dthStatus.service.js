@@ -4,6 +4,7 @@ const a1TopupProvider = require('./providers/a1topup/provider.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
 const notificationService = require('./notification.service');
+const { processSuccessCommission } = require('../controllers/recharge.controller');
 
 /**
  * Independent Status Service for DTH Orders
@@ -104,7 +105,7 @@ class DthStatusService {
 
     // Update global Transaction model
     const globalStatus = isSuccess ? 'success' : (isFailed ? 'failed' : 'pending');
-    await Transaction.findOneAndUpdate(
+    const updatedGlobalTxn = await Transaction.findOneAndUpdate(
       { referenceId: orderId, service: 'dth' },
       {
         $set: {
@@ -113,11 +114,25 @@ class DthStatusService {
           commissionEarnedPaise,
           ...(isSuccess || isFailed ? { completedAt: now } : {}),
         }
-      }
+      },
+      { new: true }
     );
 
     // Ledger / Wallet settlement & Notifications
     if (isSuccess) {
+      // Record CommissionHistory & Ledger Credit via processSuccessCommission
+      await processSuccessCommission({
+        transaction: updatedTxn || txn,
+        globalTransaction: updatedGlobalTxn,
+        userId: txn.userId,
+        orderId,
+        mobileNumber: txn.mobileNumber,
+        operator: { name: txn.internalOperatorName || 'DTH' },
+        operatorCode: txn.operatorCode || 'UNKNOWN',
+        amount: txn.amount,
+        serviceType: 'dth',
+      }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
+
       await walletService.commitReservation(txn.userId, txn.amount, commissionEarnedPaise);
       console.log(`[DTH] Polling Complete: Order ${orderId} transitioned to SUCCESS`);
 

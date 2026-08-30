@@ -48,8 +48,10 @@ class _DthReceiptScreenState extends ConsumerState<DthReceiptScreen> {
 
   void _startStatusPolling() {
     _statusPoller?.cancel();
+    print('[DTH_STATUS_FLOW] Polling started for orderId=${_currentReceipt.transactionId}');
     _statusPoller = Timer.periodic(const Duration(seconds: 3), (timer) async {
       _pollCount++;
+      print('[DTH_STATUS_FLOW] pollAttempt=$_pollCount');
       if (_pollCount > 10) { // Stop after 30 seconds
         timer.cancel();
         return;
@@ -59,6 +61,7 @@ class _DthReceiptScreenState extends ConsumerState<DthReceiptScreen> {
       final result = await repo.checkDthStatus(_currentReceipt.transactionId);
 
       result.onSuccess((updatedReceipt) {
+        print('[DTH_STATUS_FLOW] backendStatus=${updatedReceipt.status.name}');
         if (mounted) {
           setState(() {
             _currentReceipt = updatedReceipt.copyWith(
@@ -69,6 +72,8 @@ class _DthReceiptScreenState extends ConsumerState<DthReceiptScreen> {
           if (updatedReceipt.status == RechargeStatus.success ||
               updatedReceipt.status == RechargeStatus.failed) {
             timer.cancel();
+            print('[DTH_STATUS_FLOW] finalStatus=${updatedReceipt.status.name}');
+            print('[DTH_STATUS_FLOW] navigation=${updatedReceipt.status.name.toUpperCase()}');
             
             // Invalidate wallet and history providers to refresh app UI state
             ref.invalidate(walletBalanceProvider);

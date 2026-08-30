@@ -47,11 +47,31 @@ class _DthConfirmationScreenState extends ConsumerState<DthConfirmationScreen> {
     });
 
     try {
+      final state = ref.read(dthFlowProvider);
       final receipt = await ref.read(dthFlowProvider.notifier).processDthRecharge(mpin: pin, paymentMode: 'wallet');
+
+      print('[DTH_STATUS_FLOW] orderId=${receipt.transactionId}');
+      print('[DTH_STATUS_FLOW] paymentMethod=WALLET');
+      print('[DTH_STATUS_FLOW] grossAmount=${state.customAmountPaise != null ? (state.customAmountPaise! / 100) : 0}');
+      print('[DTH_STATUS_FLOW] rechargeInitiationStatus=${receipt.status.name}');
+      print('[DTH_STATUS_FLOW] operatorRef=${receipt.operatorRef ?? "N/A"}');
+
       if (!mounted) return;
-      
-      context.go(RouteNames.dashboard);
-      context.push(RouteNames.dthReceipt.replaceFirst(':txnId', receipt.transactionId), extra: receipt);
+
+      context.pushReplacement(
+        RouteNames.rechargeProcessing,
+        extra: {
+          'orderId': receipt.transactionId,
+          'receipt': receipt,
+          'paymentMode': 'wallet',
+          'phoneNumber': state.subscriberId,
+          'operatorId': state.selectedOperator?.id,
+          'operatorCode': state.selectedOperator?.code,
+          'operatorName': state.selectedOperator?.name,
+          'amountPaise': state.customAmountPaise,
+          'circle': 'DTH',
+        },
+      );
     } catch (e) {
       if (mounted) {
         String errorMsg = e.toString();

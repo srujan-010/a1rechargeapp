@@ -96,19 +96,34 @@ const executeDthRecharge = async (req, res, next) => {
 
     console.log(`[DTH] Operator resolved: name=${operator.name}, code=${operator.code}`);
 
-    // 5. Reserve Wallet Funds
-    try {
-      await walletService.reserveAmount(userId, amount);
-      walletReserved = true;
-      amountForRollback = amount;
-      console.log(`[DTH] Wallet Reserved: ₹${amount}`);
-    } catch (wErr) {
-      console.log(`[DTH] Wallet Reservation Failed: ${wErr.message}`);
-      return res.status(400).json({
-        success: false,
-        step: "Wallet Reservation",
-        error: wErr.message || "Insufficient wallet balance"
-      });
+    // 5. Calculate Payable Amount & Retailer Commission
+    const payableDetails = await calculateRechargePayableHelper({
+      serviceType: 'dth',
+      operatorCode: operator.code,
+      operatorName: operator.name,
+      amount,
+      userId,
+      accountType: req.user?.accountType || 'BUSINESS',
+    });
+
+    const commissionAmount = payableDetails.commissionAmount;
+    const payableAmount = payableDetails.payableAmount; // Net wallet debit (e.g. 266.06 for 275 recharge)
+
+    // Reserve Net Amount in Wallet
+    if (paymentMode === 'wallet') {
+      try {
+        await walletService.reserveAmount(userId, payableAmount);
+        walletReserved = true;
+        amountForRollback = payableAmount;
+        console.log(`[DTH] Net Wallet Reserved: ₹${payableAmount} (Gross: ₹${amount}, Commission: ₹${commissionAmount})`);
+      } catch (wErr) {
+        console.log(`[DTH] Wallet Reservation Failed: ${wErr.message}`);
+        return res.status(400).json({
+          success: false,
+          step: "Wallet Reservation",
+          error: wErr.message || "Insufficient wallet balance"
+        });
+      }
     }
 
     // 6. Create Mongo Pending Documents
@@ -118,19 +133,30 @@ const executeDthRecharge = async (req, res, next) => {
       orderId,
       userId,
       providerName: 'A1Topup',
-      mobileNumber: subscriberId, // subscriberId stored in mobileNumber field for schema compatibility
+      mobileNumber: subscriberId,
       amount,
+      accountType: payableDetails.accountType,
+      commissionRecordId: payableDetails.commissionRecordId,
+      commissionPercent: payableDetails.commissionPercentage,
+      commissionAmount,
+      payableAmount,
       operatorCode: operator.code,
-      circleCode: '4', // DTH doesn't depend on circle; defaulting to 4
+      circleCode: '4',
       serviceType: 'dth',
       status: 'PENDING',
-      reservedAmount: amount,
+      reservedAmount: payableAmount,
+      paymentMethod: paymentMode,
+      internalOperatorName: operator.name,
     });
 
     await Transaction.create({
       userId,
       type: 'debit',
       amountPaise: Math.round(amount * 100),
+      payableAmountPaise: Math.round(payableAmount * 100),
+      accountType: payableDetails.accountType,
+      commissionRecordId: payableDetails.commissionRecordId,
+      commissionEarnedPaise: Math.round(commissionAmount * 100),
       status: 'pending',
       service: 'dth',
       referenceId: orderId,

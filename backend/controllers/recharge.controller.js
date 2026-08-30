@@ -1594,6 +1594,7 @@ module.exports = {
   getPlans,
   calculateRechargePayableHelper,
   calculateRechargePayable,
+  processSuccessCommission,
   createRazorpayRechargeOrder,
   verifyRazorpayRechargePayment,
   dispatchA1TopupRecharge,
