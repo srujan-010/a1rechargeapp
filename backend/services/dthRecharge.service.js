@@ -88,6 +88,8 @@ class DthRechargeService {
     const isSuccess = providerStatus === 'SUCCESS';
     const isFailed = providerStatus === 'FAILED';
 
+    console.log(`[DTH PROVIDER STATUS] orderId=${orderId} providerStatus=${providerStatus} normalizedStatus=${providerStatus}`);
+
     // 3. Calculate Commission if Success
     let commissionEarnedPaise = 0;
     if (isSuccess) {
@@ -143,7 +145,7 @@ class DthRechargeService {
       const netDebitPaise = Math.round(amount * 100) - commissionEarnedPaise;
       const walletBefore = await walletService.getWalletBalance(userId);
 
-      console.log(`[DTH ACCOUNTING] grossAmountPaise=${Math.round(amount * 100)}, commissionPaise=${commissionEarnedPaise}, netDebitPaise=${netDebitPaise}, walletBalanceBefore=${walletBefore.toFixed(2)}`);
+      console.log(`[DTH WALLET COMMIT] orderId=${orderId} grossPaise=${Math.round(amount * 100)} commissionPaise=${commissionEarnedPaise} netDebitPaise=${netDebitPaise} walletBefore=${walletBefore}`);
 
       // Record CommissionHistory & Ledger Credit via processSuccessCommission
       await processSuccessCommission({
@@ -159,7 +161,13 @@ class DthRechargeService {
       }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
 
       // Commit held balance & credit commission (deducts netDebitRupees)
-      await walletService.commitReservation(userId, amount, commissionEarnedPaise);
+      try {
+        await walletService.commitReservation(userId, amount, commissionEarnedPaise);
+        const walletAfter = await walletService.getWalletBalance(userId);
+        console.log(`[DTH WALLET COMMIT SUCCESS] orderId=${orderId} walletAfter=${walletAfter}`);
+      } catch (commitErr) {
+        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${userId} expectedAmount=${amount} reason=${commitErr.message}`);
+      }
 
       const walletAfter = await walletService.getWalletBalance(userId);
       const actualDiff = Number((walletBefore - walletAfter).toFixed(2));

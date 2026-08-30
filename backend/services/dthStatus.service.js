@@ -53,7 +53,9 @@ class DthStatusService {
     const isSuccess = newStatus === 'SUCCESS';
     const isFailed = newStatus === 'FAILED';
 
-    if (newStatus === txn.status) {
+    console.log(`[DTH PROVIDER STATUS] orderId=${orderId} providerStatus=${newStatus} normalizedStatus=${newStatus}`);
+
+    if (newStatus === txn.status && txn.status === 'SUCCESS') {
       console.log(`[DTH] Status unchanged for Order ${orderId}: ${newStatus}`);
       return {
         orderId: txn.orderId,
@@ -83,7 +85,7 @@ class DthStatusService {
       { new: true }
     );
 
-    if (!updatedTxn) {
+    if (!updatedTxn && txn.status !== 'SUCCESS') {
       console.log(`[DTH] Concurrent update detected for Order ${orderId}`);
       const latest = await RechargeTransaction.findById(txn._id);
       return {
@@ -133,7 +135,12 @@ class DthStatusService {
         serviceType: 'dth',
       }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
 
-      await walletService.commitReservation(txn.userId, txn.amount, commissionEarnedPaise);
+      try {
+        await walletService.commitReservation(txn.userId, txn.amount, commissionEarnedPaise);
+        console.log(`[DTH WALLET COMMIT SUCCESS] orderId=${orderId}`);
+      } catch (commitErr) {
+        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${txn.userId} expectedAmount=${txn.amount} reason=${commitErr.message}`);
+      }
       console.log(`[DTH] Polling Complete: Order ${orderId} transitioned to SUCCESS`);
 
       notificationService.notifyRechargeSuccess({

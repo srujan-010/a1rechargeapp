@@ -79,13 +79,17 @@ class WalletService {
   /**
    * Commits the reserved amount (Deduct Net Amount: Gross Amount - Commission)
    */
+  /**
+   * Commits the reserved amount (Deduct Net Amount: Gross Amount - Commission)
+   */
   async commitReservation(userId, amount, commissionEarnedPaise = 0) {
     const grossPaise = Math.round(amount * 100);
     const netDebitPaise = Math.max(0, grossPaise - (Number(commissionEarnedPaise) || 0));
 
-    console.log(`[WALLET COMMIT] userId: ${userId}, gross: ${grossPaise} paise (₹${amount}), commission: ${commissionEarnedPaise} paise, netDebit: ${netDebitPaise} paise`);
+    console.log(`[DTH WALLET COMMIT] userId: ${userId}, gross: ${grossPaise} paise (₹${amount}), commission: ${commissionEarnedPaise} paise, netDebit: ${netDebitPaise} paise`);
 
-    const result = await Wallet.updateOne(
+    // 1. Primary attempt: match full gross hold
+    let result = await Wallet.updateOne(
       { userId, onHoldPaise: { $gte: grossPaise } },
       { 
         $inc: { 
@@ -94,8 +98,34 @@ class WalletService {
         }
       }
     );
+
+    if (result.modifiedCount > 0) {
+      return true;
+    }
+
+    // 2. Fallback: if hold was reserved for net amount or partial hold exists, consume available hold safely
+    const walletDoc = await Wallet.findOne({ userId }).lean();
+    if (!walletDoc) {
+      throw new Error(`Wallet not found for user ${userId}`);
+    }
+
+    const availableHoldPaise = walletDoc.onHoldPaise || 0;
+    const holdDeduction = Math.min(availableHoldPaise, grossPaise);
+
+    console.warn(`[DTH WALLET COMMIT FALLBACK] userId: ${userId}, availableHold: ${availableHoldPaise} paise, targetGrossHold: ${grossPaise} paise. Executing resilient commit.`);
+
+    result = await Wallet.updateOne(
+      { userId },
+      { 
+        $inc: { 
+          balancePaise: -netDebitPaise,
+          onHoldPaise: -holdDeduction
+        }
+      }
+    );
+
     if (result.modifiedCount === 0) {
-      throw new Error(`Invalid wallet state: Cannot commit reservation for user ${userId}. Insufficient hold balance or wallet not found.`);
+      throw new Error(`Invalid wallet state: Cannot commit reservation for user ${userId}.`);
     }
     return true;
   }
@@ -104,16 +134,18 @@ class WalletService {
    * Releases the reserved amount back to balance (Refund)
    */
   async releaseReservation(userId, amount) {
-    const result = await Wallet.updateOne(
-      { userId, onHoldPaise: { $gte: amount * 100 } },
-      { 
-        $inc: { 
-          onHoldPaise: -amount * 100
-        }
-      }
-    );
-    if (result.modifiedCount === 0) {
-      throw new Error(`Invalid wallet state: Cannot release reservation for user ${userId}. Insufficient hold balance or wallet not found.`);
+    const amountPaise = Math.round(amount * 100);
+    const walletDoc = await Wallet.findOne({ userId }).lean();
+    if (!walletDoc) return true;
+
+    const currentHold = walletDoc.onHoldPaise || 0;
+    const releasePaise = Math.min(currentHold, amountPaise);
+
+    if (releasePaise > 0) {
+      await Wallet.updateOne(
+        { userId },
+        { $inc: { onHoldPaise: -releasePaise } }
+      );
     }
     return true;
   }

@@ -110,13 +110,13 @@ const executeDthRecharge = async (req, res, next) => {
     const commissionAmount = payableDetails.commissionAmount;
     const payableAmount = payableDetails.payableAmount; // Net wallet debit (e.g. 266.06 for 275 recharge)
 
-    // Reserve Net Amount in Wallet
+    // Reserve Gross Amount in Wallet (Hold)
     if (paymentMode === 'wallet') {
       try {
-        await walletService.reserveAmount(userId, payableAmount);
+        await walletService.reserveAmount(userId, amount);
         walletReserved = true;
-        amountForRollback = payableAmount;
-        console.log(`[DTH] Net Wallet Reserved: ₹${payableAmount} (Gross: ₹${amount}, Commission: ₹${commissionAmount})`);
+        amountForRollback = amount;
+        console.log(`[DTH] Wallet Reserved: ₹${amount} (Gross: ₹${amount}, Expected Commission: ₹${commissionAmount}, Net Debit: ₹${payableAmount})`);
       } catch (wErr) {
         console.log(`[DTH] Wallet Reservation Failed: ${wErr.message}`);
         return res.status(400).json({
@@ -129,6 +129,8 @@ const executeDthRecharge = async (req, res, next) => {
 
     // 6. Create Mongo Pending Documents
     orderId = `A1DTH${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    console.log(`[DTH RESERVATION CREATED] orderId=${orderId} retailerId=${userId} grossPaise=${Math.round(amount * 100)} reservedPaise=${Math.round(amount * 100)} status=ACTIVE`);
 
     await RechargeTransaction.create({
       orderId,
