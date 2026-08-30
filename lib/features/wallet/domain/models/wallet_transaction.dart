@@ -5,6 +5,7 @@ import '../../../../core/utils/operator_formatter.dart';
 
 enum TransactionType { credit, debit }
 enum TransactionStatus { success, pending, processing, failed, reversed }
+enum TransactionCategory { recharge, walletCredit, walletDebit, commission, bills, other }
 
 class WalletTransaction extends Equatable {
   const WalletTransaction({
@@ -45,36 +46,82 @@ class WalletTransaction extends Equatable {
 
   String get displayOperatorName => OperatorFormatter.getDisplayOperatorName(operatorName);
 
-  bool get isCredit => type == 'credit' || serviceType == 'wallet_topup' || serviceType == 'commission' || serviceType == 'admin_credit';
+  bool get isCredit {
+    final tLower = (type ?? '').toLowerCase();
+    final sLower = serviceType.toLowerCase();
+    if (tLower == 'debit' || sLower.contains('debit')) return false;
+    if (tLower == 'credit' || sLower.contains('credit') || sLower.contains('topup')) return true;
+    return false;
+  }
   bool get isDebit => !isCredit;
 
+  TransactionCategory get category {
+    final sLower = serviceType.toLowerCase();
+    final tLower = (type ?? '').toLowerCase();
+
+    if (sLower == 'mobile_recharge' || sLower == 'mobile' || sLower == 'dth') {
+      return TransactionCategory.recharge;
+    }
+    if (sLower == 'commission') {
+      return TransactionCategory.commission;
+    }
+    if (sLower == 'bbps' || sLower == 'electricity' || sLower == 'water' || sLower == 'gas' || sLower == 'fastag' || sLower == 'broadband') {
+      return TransactionCategory.bills;
+    }
+    if (isCredit) {
+      return TransactionCategory.walletCredit;
+    }
+    if (tLower == 'debit' || sLower.contains('debit')) {
+      return TransactionCategory.walletDebit;
+    }
+    return TransactionCategory.other;
+  }
+
+  static String? _asString(dynamic val) {
+    if (val == null) return null;
+    return val.toString();
+  }
+
+  static int? _asInt(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toInt();
+    if (val is String) {
+      final n = num.tryParse(val);
+      if (n != null) return n.toInt();
+    }
+    return null;
+  }
+
   factory WalletTransaction.fromJson(Map<String, dynamic> json) {
-    // Parse UTC and convert directly to IST (+5:30)
-    DateTime parseToIST(String? isoString) {
-      if (isoString == null) return DateTime.now();
-      final utc = DateTime.parse(isoString).toUtc();
-      return utc.add(const Duration(hours: 5, minutes: 30));
+    DateTime parseTimestamp(dynamic val) {
+      if (val == null) return DateTime.now();
+      final str = val.toString();
+      final dt = DateTime.tryParse(str);
+      if (dt == null) return DateTime.now();
+      return dt.toLocal();
     }
 
-    final rawOp = json['operatorName'] as String? ?? json['operator'] as String? ?? json['operatorCode'] as String? ?? '';
+    final rawOp = _asString(json['operatorName'] ?? json['operator'] ?? json['operatorCode']) ?? '';
+    final rawType = _asString(json['type']);
+    final rawService = _asString(json['serviceType'] ?? json['service']) ?? 'unknown';
 
     return WalletTransaction(
-      id: json['id'] as String? ?? json['_id'] as String? ?? '',
-      serviceType: json['serviceType'] as String? ?? json['service'] as String? ?? 'unknown',
+      id: _asString(json['id'] ?? json['_id']) ?? '',
+      serviceType: rawService,
       operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
-      transactionTitle: json['transactionTitle'] as String? ?? 'Transaction',
-      customerIdentifier: json['customerIdentifier'] as String? ?? json['mobileNumber'] as String? ?? '',
-      amountPaise: (json['amount'] as num?)?.toInt() ?? (json['amountPaise'] as num?)?.toInt() ?? 0,
-      commissionEarnedPaise: (json['commission'] as num?)?.toInt() ?? (json['commissionEarnedPaise'] as num?)?.toInt() ?? 0,
-      status: _parseStatus(json['status'] as String?),
-      createdAt: parseToIST(json['createdAt'] as String? ?? json['timestamp'] as String?),
-      completedAt: parseToIST(json['completedAt'] as String? ?? json['timestamp'] as String?),
-      paymentMethod: json['paymentMethod'] as String? ?? 'wallet',
-      referenceId: json['referenceNumber'] as String? ?? json['referenceId'] as String? ?? '',
-      apiReference: json['apiReference'] as String?,
-      description: json['description'] as String?,
-      closingBalancePaise: (json['closingBalancePaise'] as num?)?.toInt(),
-      type: json['type'] as String?,
+      transactionTitle: _asString(json['transactionTitle']) ?? (rawService == 'admin_credit' ? 'ADMIN CREDIT' : (rawService == 'admin_debit' ? 'ADMIN DEBIT' : 'Transaction')),
+      customerIdentifier: _asString(json['customerIdentifier'] ?? json['mobileNumber']) ?? '',
+      amountPaise: _asInt(json['amount']) ?? _asInt(json['amountPaise']) ?? 0,
+      commissionEarnedPaise: _asInt(json['commission']) ?? _asInt(json['commissionEarnedPaise']) ?? _asInt(json['commissionAmountPaise']) ?? 0,
+      status: _parseStatus(_asString(json['status'])),
+      createdAt: parseTimestamp(json['createdAt'] ?? json['timestamp']),
+      completedAt: parseTimestamp(json['completedAt'] ?? json['timestamp']),
+      paymentMethod: _asString(json['paymentMethod']) ?? 'wallet',
+      referenceId: _asString(json['referenceNumber'] ?? json['referenceId'] ?? json['orderId'] ?? json['clientOrderId']) ?? '',
+      apiReference: _asString(json['apiReference'] ?? json['providerTransactionId']),
+      description: _asString(json['description']),
+      closingBalancePaise: _asInt(json['closingBalancePaise'] ?? json['closingBalance']),
+      type: rawType,
     );
   }
 

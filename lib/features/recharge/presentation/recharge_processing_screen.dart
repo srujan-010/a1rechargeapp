@@ -140,26 +140,40 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
       _activeReceipt = receipt;
       final orderId = receipt.transactionId;
-      AppLogger.info('[Recharge Status Evaluated] Order ID: $orderId, Status: ${receipt.status.name}', tag: 'RechargeProcessing');
+      AppLogger.info('[RECHARGE] Order ID: $orderId, Status: ${receipt.status.name}', tag: 'RechargeProcessing');
 
       if (!mounted) return;
 
       if (receipt.isSuccess) {
-        AppLogger.info('[Status Changed: SUCCESS]', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Provider response received: status=SUCCESS, orderId=$orderId', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Provider status: SUCCESS', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] FINAL STATUS: SUCCESS', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Navigating to SUCCESS', tag: 'RechargeProcessing');
         _handleSuccess(receipt);
       } else if (receipt.status == RechargeStatus.failed) {
-        AppLogger.info('[Status Changed: FAILED]', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Provider status: FAILED', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] FINAL STATUS: FAILED', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Navigating to FAILURE', tag: 'RechargeProcessing');
         _handleFailure(receipt);
       } else {
         // Status is PENDING or PROCESSING.
-        // Start 20-second timeout window & poll every 2 seconds
         _startPendingPolling(orderId);
       }
     } catch (e) {
       final errorMsg = (e is AppException) ? e.message : e.toString().replaceAll('Exception: ', '');
       AppLogger.error('Recharge initiation exception: $errorMsg', tag: 'RechargeProcessing');
       if (!mounted) return;
-      _handleError(errorMsg);
+
+      // TERMINAL STATE PROTECTION:
+      // If we already have a finalized SUCCESS receipt, NEVER navigate to failure screen!
+      if (_activeReceipt != null && _activeReceipt!.isSuccess) {
+        AppLogger.warning('[RECHARGE] POST-PROCESSING ERROR: $errorMsg', tag: 'RechargeProcessing');
+        AppLogger.info('[RECHARGE] Recharge already finalized SUCCESS - NOT changing recharge status to FAILED', tag: 'RechargeProcessing');
+        _handleSuccess(_activeReceipt!);
+        return;
+      }
+
+      _handleError(errorMsg, orderId: widget.data['orderId'] as String? ?? widget.data['receipt']?.transactionId);
     }
   }
 
@@ -168,11 +182,10 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     const pollIntervalSeconds = 2;
     final startTime = DateTime.now();
 
-    AppLogger.info('[Polling Started]', tag: 'RechargeProcessing');
-    AppLogger.info('[Polling Order ID: $orderId]', tag: 'RechargeProcessing');
+    AppLogger.info('[Polling Started for Order ID: $orderId]', tag: 'RechargeProcessing');
 
     _pollingTimer = Timer.periodic(const Duration(seconds: pollIntervalSeconds), (timer) async {
-      if (_isNavigated || !mounted) {
+      if (_isNavigated || !mounted || _isSuccess) {
         _cancelTimers();
         return;
       }
@@ -186,16 +199,20 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
         final latestReceipt = result.valueOrNull;
 
         if (latestReceipt != null) {
-          AppLogger.info('[Polling Response: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
-          AppLogger.info('[Current Status: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
+          AppLogger.info('[Polling Status Response: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
 
           if (latestReceipt.isSuccess) {
-            AppLogger.info('[Status Changed: SUCCESS]', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] Provider status: SUCCESS', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] Order ID: ${latestReceipt.transactionId}', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] FINAL STATUS: SUCCESS', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] Navigating to SUCCESS', tag: 'RechargeProcessing');
             _cancelTimers();
             _handleSuccess(latestReceipt);
             return;
           } else if (latestReceipt.status == RechargeStatus.failed) {
-            AppLogger.info('[Status Changed: FAILED]', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] Provider status: FAILED', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] FINAL STATUS: FAILED', tag: 'RechargeProcessing');
+            AppLogger.info('[RECHARGE] Navigating to FAILURE', tag: 'RechargeProcessing');
             _cancelTimers();
             _handleFailure(latestReceipt);
             return;
@@ -215,7 +232,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     });
 
     _timeoutTimer = Timer(const Duration(seconds: timeoutSeconds), () {
-      if (!_isNavigated && mounted) {
+      if (!_isNavigated && mounted && !_isSuccess) {
         _cancelTimers();
         _handleTimeoutPending();
       }
@@ -226,9 +243,6 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     if (_isNavigated) return;
     _isNavigated = true;
 
-    AppLogger.info('[Navigation Triggered] -> Success Screen', tag: 'RechargeProcessing');
-    _cancelTimers();
-
     final finalReceipt = (_activeReceipt != null)
         ? _activeReceipt!.copyWith(
             status: RechargeStatus.success,
@@ -236,20 +250,33 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
           )
         : receipt;
 
+    _activeReceipt = finalReceipt;
+
+    AppLogger.info('[RECHARGE] Navigating to SUCCESS screen (Order ID: ${finalReceipt.transactionId})', tag: 'RechargeProcessing');
+    _cancelTimers();
+
     setState(() {
       _isSuccess = true;
       _currentStep = 3;
     });
 
-    await _successController.forward();
-    await Future.delayed(const Duration(milliseconds: 300));
+    try {
+      await _successController.forward();
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      AppLogger.warning('Success animation exception: $e', tag: 'RechargeProcessing');
+    }
 
     if (!mounted) return;
 
-    AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
-    ref.invalidate(walletBalanceProvider);
-    ref.invalidate(recentTransactionsProvider);
-    ref.invalidate(earningsSummaryProvider);
+    try {
+      AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
+      ref.invalidate(walletBalanceProvider);
+      ref.invalidate(recentTransactionsProvider);
+      ref.invalidate(earningsSummaryProvider);
+    } catch (e) {
+      AppLogger.warning('Riverpod invalidation exception: $e', tag: 'RechargeProcessing');
+    }
 
     context.go(RouteNames.dashboard);
     context.push(
@@ -259,11 +286,17 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   }
 
   void _handleFailure(RechargeReceipt receipt) {
+    // TERMINAL STATE PROTECTION: If already success, ignore failure calls!
+    if (_isSuccess || (_activeReceipt != null && _activeReceipt!.isSuccess)) {
+      AppLogger.warning('[RECHARGE] Attempted _handleFailure but recharge was already finalized as SUCCESS. Ignoring.', tag: 'RechargeProcessing');
+      return;
+    }
     if (_isNavigated) return;
     _isNavigated = true;
 
     final failureReason = receipt.failureReason ?? _activeReceipt?.failureReason ?? 'Operator rejected the recharge.';
-    AppLogger.info('[Navigation Triggered] -> Failure Screen. Reason: $failureReason', tag: 'RechargeProcessing');
+    AppLogger.info('[RECHARGE] Provider status: FAILED. Reason: $failureReason', tag: 'RechargeProcessing');
+    AppLogger.info('[RECHARGE] Navigating to FAILURE', tag: 'RechargeProcessing');
     _cancelTimers();
 
     final finalReceipt = (_activeReceipt != null)
@@ -275,23 +308,36 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
-      ref.invalidate(walletBalanceProvider);
+      try {
+        AppLogger.info('[Riverpod State Invalidated]', tag: 'RechargeProcessing');
+        ref.invalidate(walletBalanceProvider);
+      } catch (_) {}
 
       context.go(RouteNames.rechargeFailed, extra: finalReceipt);
     });
   }
 
-  void _handleError(String errorMsg) {
+  void _handleError(String errorMsg, {String? orderId}) {
+    // TERMINAL STATE PROTECTION: If already success, ignore error calls!
+    if (_isSuccess || (_activeReceipt != null && _activeReceipt!.isSuccess)) {
+      AppLogger.warning('[RECHARGE] POST-PROCESSING ERROR: $errorMsg', tag: 'RechargeProcessing');
+      AppLogger.info('[RECHARGE] Recharge already finalized SUCCESS - NOT changing recharge status to FAILED', tag: 'RechargeProcessing');
+      if (_activeReceipt != null) {
+        _handleSuccess(_activeReceipt!);
+      }
+      return;
+    }
     if (_isNavigated) return;
     _isNavigated = true;
 
-    AppLogger.info('[Navigation Triggered] -> Error Failure Screen. Reason: $errorMsg', tag: 'RechargeProcessing');
+    AppLogger.info('[RECHARGE] Error Failure Triggered. Reason: $errorMsg', tag: 'RechargeProcessing');
     _cancelTimers();
 
+    final actualOrderId = _activeReceipt?.transactionId ?? orderId ?? 'TXN${DateTime.now().millisecondsSinceEpoch}';
+
     final fallbackReceipt = RechargeReceipt(
-      transactionId: 'TXN${DateTime.now().millisecondsSinceEpoch}',
-      referenceId: 'REF${DateTime.now().millisecondsSinceEpoch}',
+      transactionId: actualOrderId,
+      referenceId: actualOrderId,
       operatorRef: 'N/A',
       status: RechargeStatus.failed,
       amountPaise: widget.data['amountPaise'] as int? ?? 0,
@@ -308,16 +354,26 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
   }
 
   void _handleTimeoutPending() {
+    // TERMINAL STATE PROTECTION: If already success, ignore pending timeout calls!
+    if (_isSuccess || (_activeReceipt != null && _activeReceipt!.isSuccess)) {
+      AppLogger.warning('[RECHARGE] Timeout reached but recharge is already SUCCESS. Ignoring pending transition.', tag: 'RechargeProcessing');
+      if (_activeReceipt != null) {
+        _handleSuccess(_activeReceipt!);
+      }
+      return;
+    }
     if (_isNavigated) return;
     _isNavigated = true;
 
     AppLogger.info('[Navigation Triggered] -> Pending Screen after 20s timeout', tag: 'RechargeProcessing');
     _cancelTimers();
 
+    final actualOrderId = _activeReceipt?.transactionId ?? 'TXN${DateTime.now().millisecondsSinceEpoch}';
+
     final receipt = _activeReceipt ??
         RechargeReceipt(
-          transactionId: 'TXN${DateTime.now().millisecondsSinceEpoch}',
-          referenceId: 'REF${DateTime.now().millisecondsSinceEpoch}',
+          transactionId: actualOrderId,
+          referenceId: actualOrderId,
           operatorRef: 'Processing...',
           status: RechargeStatus.pending,
           amountPaise: widget.data['amountPaise'] as int? ?? 0,

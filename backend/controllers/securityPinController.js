@@ -87,7 +87,7 @@ const verifySecurityPin = async (req, res, next) => {
     const isMatch = await user.matchSecurityPin(inputPin);
 
     if (!isMatch) {
-      res.status(401);
+      res.status(400);
       const attemptsLeft = 5 - (user.failedSecurityPinAttempts || 0);
       throw new Error(
         attemptsLeft > 0

@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/models/app_exception.dart';
 import '../../../../core/providers/core_providers.dart';
-import '../../../../core/services/api_client.dart';
 import '../../../../core/utils/result.dart';
 import '../../../recharge/domain/models/operator.dart';
 import '../../../../models/mobile_plan.dart';
@@ -12,9 +12,7 @@ import '../../domain/dth_repository.dart';
 import '../../domain/dth_plan_repository.dart';
 import '../../domain/models/dth_customer_info.dart';
 import '../../../../models/plan_category.dart';
-import '../../../../core/constants/operator_registry.dart';
 import '../../../recharge/presentation/recharge_providers.dart';
-import '../../../../core/utils/result.dart';
 
 // DTH Repository Provider
 final dthRepositoryProvider = Provider<DthRepository>((ref) {
@@ -144,20 +142,25 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
     if (state.subscriberId == subscriberId) return;
     state = state.copyWith(subscriberId: subscriberId);
 
-    // Auto-detect when length is sufficient
-    if (subscriberId.length >= 6) {
+    // Auto-detect when length is sufficient (minimum 10 digits for DTH Subscriber ID / VC Number)
+    if (subscriberId.length >= 10) {
       _autoDetectOperator(subscriberId);
     }
   }
 
   Future<void> _autoDetectOperator(String subscriberId) async {
     state = state.copyWith(isDetecting: true);
+    print('[DTH_FIRST_FETCH] consumerNumber=$subscriberId');
+
     final result = await _planRepository.fetchDthOperator(subscriberId);
     
     if (result is Success) {
       final response = (result as Success).value;
       if (response.operatorName != null) {
-        final ops = _ref.read(dthOperatorsProvider).valueOrNull ?? [];
+        // Fix race condition: await future to guarantee operators list is loaded on first attempt
+        final ops = await _ref.read(dthOperatorsProvider.future);
+        print('[DTH_FIRST_FETCH] operatorsReady=true (count=${ops.length})');
+
         final normalized = response.operatorName!.toLowerCase().replaceAll(' ', '');
         
         final op = ops.where((o) => o.name.toLowerCase().replaceAll(' ', '').contains(normalized)).firstOrNull;
@@ -166,8 +169,8 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
           final detectedCode = response.operatorCode ?? '';
           final registryCode = op.planApiCode ?? '';
           
-          print('Operator Detection returned: $detectedCode');
-          print('Operator Registry PlanAPI Code: $registryCode');
+          print('[DTH_FIRST_FETCH] resolvedOperator=${op.name}');
+          print('[DTH_FIRST_FETCH] resolvedOperatorCode=$registryCode');
           
           state = state.copyWith(
             selectedOperator: op, 
@@ -178,10 +181,13 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
           );
           _fetchCustomerInfo(subscriberId, op);
           return;
+        } else {
+          print('[DTH_FIRST_FETCH] ERROR: Could not match "${response.operatorName}" in registry of ${ops.length} operators');
         }
       }
       state = state.copyWith(isDetecting: false);
     } else {
+      print('[DTH_FIRST_FETCH] ERROR: fetchDthOperator failed: $result');
       state = state.copyWith(isDetecting: false);
     }
   }
@@ -196,34 +202,33 @@ class DthFlowNotifier extends StateNotifier<DthFlowState> {
     final planApiCode = operator.planApiCode;
     
     if (planApiCode == null || planApiCode.isEmpty) {
+      print('[DTH_FIRST_FETCH] ERROR: operator.planApiCode is null or empty for ${operator.name}');
       state = state.copyWith(clearCustomerInfo: true, clearCustomerInfoError: true, isFetchingCustomerInfo: false);
       return;
     }
     
     state = state.copyWith(isFetchingCustomerInfo: true, clearCustomerInfoError: true);
 
-    print('==================================================');
-    print('Operator: ${operator.name}');
-    print('Mongo ID: ${operator.id}');
-    print('PlanAPI Code: $planApiCode');
-    print('A1 Code: ${operator.shortCode}');
-    print('Basic Details Request: Opcode=$planApiCode');
-    print('==================================================');
+    print('[DTH_FIRST_FETCH] startingCustomerInfoRequest=true (subscriberId=$subscriberId, operatorCode=$planApiCode)');
 
     final result = await _planRepository.fetchDthBasicDetails(subscriberId, planApiCode);
     
     if (result is Success) {
+      print('[DTH_FIRST_FETCH] customerInfoResponse=SUCCESS');
+      print('[DTH_FIRST_FETCH] customerInfoDisplayed=true');
       state = state.copyWith(
         customerInfo: (result as Success).value,
         isFetchingCustomerInfo: false,
         clearCustomerInfoError: true,
       );
     } else {
-      final err = result is Failure ? (result as Failure).error.message : 'Unable to fetch customer information';
+      final failureErr = result is Failure ? (result as Failure).error : null;
+      final errStr = failureErr is AppException ? failureErr.message : (failureErr?.toString() ?? '');
+      print('[DTH_FIRST_FETCH] customerInfoResponse=FAILURE error=$errStr');
       state = state.copyWith(
         isFetchingCustomerInfo: false,
         clearCustomerInfo: true,
-        customerInfoError: err.isNotEmpty ? err : 'Unable to fetch customer information',
+        customerInfoError: errStr.isNotEmpty ? errStr : 'Unable to fetch customer information',
       );
     }
   }

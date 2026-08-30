@@ -71,13 +71,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       // 1. Apply Type Filter
       bool matchesType = true;
       if (_selectedFilter == 'Recharge' || _selectedFilter == 'Recharges') {
-        matchesType = txn.serviceType == 'mobile_recharge' || txn.serviceType == 'mobile' || txn.serviceType == 'dth';
+        matchesType = txn.category == TransactionCategory.recharge;
       } else if (_selectedFilter == 'Wallet' || _selectedFilter == 'Top-ups') {
-        matchesType = txn.serviceType == 'wallet_topup' || txn.serviceType == 'admin_credit';
+        matchesType = txn.category == TransactionCategory.walletCredit || txn.category == TransactionCategory.walletDebit;
       } else if (_selectedFilter == 'Commission') {
-        matchesType = txn.serviceType == 'commission';
+        matchesType = txn.category == TransactionCategory.commission || txn.commissionEarnedPaise > 0;
       } else if (_selectedFilter == 'Bills') {
-        matchesType = txn.serviceType == 'bbps' || txn.serviceType == 'electricity' || txn.serviceType == 'gas' || txn.serviceType == 'fastag';
+        matchesType = txn.category == TransactionCategory.bills;
       } else if (_selectedFilter == 'Failed') {
         matchesType = txn.status == TransactionStatus.failed || txn.status == TransactionStatus.reversed;
       } else if (_selectedFilter == 'Pending') {
@@ -101,7 +101,6 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
     AppLogger.info(
       '[HISTORY DEBUG]\n'
-      'Account Type: PERSONAL\n'
       'Selected Tab: $_selectedFilter\n'
       'Parsed Transactions: ${txns.length}\n'
       'Filtered Transactions: ${filtered.length}',
@@ -301,7 +300,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 ),
               ),
               data: (txns) {
-                final filteredTxns = _filterTransactions(txns);
+                final seenKeys = <String>{};
+                final uniqueTxns = <WalletTransaction>[];
+                for (var t in txns) {
+                  final key = t.id.isNotEmpty ? t.id : t.referenceId;
+                  if (key.isNotEmpty && seenKeys.contains(key)) continue;
+                  if (key.isNotEmpty) seenKeys.add(key);
+                  uniqueTxns.add(t);
+                }
+
+                final filteredTxns = _filterTransactions(uniqueTxns);
 
                 if (filteredTxns.isEmpty) {
                   return SliverToBoxAdapter(
@@ -351,10 +359,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                 }
 
                 final groupedTxns = _groupTransactions(filteredTxns);
-                final todayTxns = txns.where((t) {
-                  final tDate = DateTime(t.completedAt.year, t.completedAt.month, t.completedAt.day);
-                  final today = DateTime.now();
-                  return tDate == DateTime(today.year, today.month, today.day);
+                final nowLocal = DateTime.now().toLocal();
+                final todayLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+                final todayTxns = uniqueTxns.where((t) {
+                  final tLocal = t.completedAt.toLocal();
+                  return DateTime(tLocal.year, tLocal.month, tLocal.day) == todayLocal;
                 }).toList();
 
                 return MultiSliverList(
@@ -465,11 +474,20 @@ class _AnalyticsSummary extends StatelessWidget {
 
     for (var txn in todayTxns) {
       if (txn.status != TransactionStatus.success) continue;
-      if (txn.serviceType == 'mobile_recharge' || txn.serviceType == 'mobile' || txn.serviceType == 'dth') {
+
+      // 1. Recharges volume: sum of successful recharge amounts
+      if (txn.category == TransactionCategory.recharge) {
         rechargeVol += txn.amountPaise;
-      } else if (txn.serviceType == 'commission') {
+      }
+
+      // 2. Commission volume: sum of commission earned on recharges + explicit commission credits
+      commissionVol += txn.commissionEarnedPaise;
+      if (txn.category == TransactionCategory.commission) {
         commissionVol += txn.amountPaise;
-      } else if (txn.serviceType == 'wallet_topup') {
+      }
+
+      // 3. Wallet Top-up volume: sum of all successful wallet credit transactions today
+      if (txn.category == TransactionCategory.walletCredit) {
         topupVol += txn.amountPaise;
       }
     }

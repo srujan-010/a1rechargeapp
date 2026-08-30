@@ -9,12 +9,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_theme.dart';
 import '../../../core/utils/currency_formatter.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/loading_skeleton.dart';
 import '../../../models/mobile_plan.dart';
-import '../../../models/plan_category.dart';
-import '../../recharge/domain/models/operator.dart';
 import '../domain/models/dth_customer_info.dart';
 
 import 'providers/dth_providers.dart';
@@ -41,6 +38,9 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Pre-warm DTH operators provider immediately on screen load
+      ref.read(dthOperatorsProvider);
+
       final session = ref.read(rechargeSessionProvider);
       if (session.sessionId == null || session.serviceType != 'DTH') {
         ref.read(rechargeSessionProvider.notifier).startNewSession('DTH');
@@ -130,36 +130,53 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
     );
   }
 
-  Widget _buildCustomerInfoCard(DthCustomerInfo info, String? subscriberId, String? operatorName) {
-    final effectiveSubscriberId = info.vcNumber ?? subscriberId ?? '';
-    final effectiveOperator = operatorName ?? 'DTH';
+  String _formatDueDate(String? rawDate) {
+    if (rawDate == null || rawDate.trim().isEmpty) return '';
+    final s = rawDate.trim();
+    try {
+      final parsed = DateTime.tryParse(s);
+      if (parsed != null) {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
+      }
+    } catch (_) {}
+    return s;
+  }
 
-    final gridItems = <MapEntry<String, String>>[];
+  Widget _buildCustomerInfoCard(DthCustomerInfo info, String? selectedOperatorName) {
+    final isVerified = info.isVerified;
 
+    // Customer Name (Highest Priority)
+    final displayName = info.customerName != null && info.customerName!.isNotEmpty
+        ? info.customerName!
+        : 'Customer';
+
+    // Balance (Highest Priority)
+    String? formattedBalance;
     if (info.balance != null && info.balance!.isNotEmpty) {
-      final bal = info.balance!.startsWith('₹') ? info.balance! : '₹${info.balance}';
-      gridItems.add(MapEntry('Balance', bal));
-    }
-    if (info.monthlyPack != null && info.monthlyPack!.isNotEmpty) {
-      final pack = info.monthlyPack!.startsWith('₹') ? info.monthlyPack! : '₹${info.monthlyPack}';
-      gridItems.add(MapEntry('Monthly Recharge', pack));
-    }
-    if (info.nextRechargeDate != null && info.nextRechargeDate!.isNotEmpty) {
-      gridItems.add(MapEntry('Next Recharge', info.nextRechargeDate!));
-    }
-    if (info.currentPlan != null && info.currentPlan!.isNotEmpty) {
-      gridItems.add(MapEntry('Current Plan', info.currentPlan!));
-    }
-    if (info.lastRechargeDate != null && info.lastRechargeDate!.isNotEmpty) {
-      gridItems.add(MapEntry('Last Recharge', info.lastRechargeDate!));
-    }
-    if (info.rmn != null && info.rmn!.isNotEmpty) {
-      gridItems.add(MapEntry('RMN', info.rmn!));
+      final balStr = info.balance!.trim();
+      formattedBalance = balStr.startsWith('₹') ? balStr : '₹$balStr';
     }
 
-    final locationParts = [info.address, info.city, info.district, info.state, info.pincode]
-        .where((p) => p != null && p.trim().isNotEmpty)
-        .join(', ');
+    // Monthly
+    String? formattedMonthly;
+    if (info.monthlyPack != null && info.monthlyPack!.isNotEmpty) {
+      final mStr = info.monthlyPack!.trim();
+      final val = mStr.startsWith('₹') ? mStr : '₹$mStr';
+      formattedMonthly = val.contains('/ month') ? val : '$val / month';
+    }
+
+    // Due Date
+    String? formattedDueDate;
+    if (info.nextRechargeDate != null && info.nextRechargeDate!.isNotEmpty) {
+      formattedDueDate = _formatDueDate(info.nextRechargeDate);
+    }
+
+    // Operator
+    final opName = info.operatorName ?? selectedOperatorName;
+
+    // Address
+    final addr = info.formattedAddress;
 
     return AppCard(
       margin: const EdgeInsets.only(bottom: AppSpacing.lg),
@@ -167,13 +184,13 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderLight),
+          border: Border.all(color: AppColors.border),
         ),
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header Row ──
+            // ── Header Row (Title & Verified Badge if error == "0") ──
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -182,32 +199,70 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                     const Icon(Icons.person_outline, size: 18, color: AppColors.primaryBlue),
                     const SizedBox(width: 6),
                     Text(
-                      'Customer Details',
+                      'CUSTOMER DETAILS',
                       style: AppTextTheme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
                         color: AppColors.textPrimary,
                       ),
                     ),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.check_circle, size: 12, color: AppColors.success),
-                      SizedBox(width: 4),
-                      Text(
-                        'Verified',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.success,
+                if (isVerified)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 12, color: AppColors.success),
+                        SizedBox(width: 4),
+                        Text(
+                          'VERIFIED',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                            color: AppColors.success,
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: AppColors.border),
+            const SizedBox(height: 10),
+
+            // ── Customer Name (Highest Priority) ──
+            Row(
+              children: [
+                const CircleAvatar(
+                  backgroundColor: AppColors.primaryBlueLight,
+                  radius: 16,
+                  child: Icon(Icons.person, size: 18, color: AppColors.primaryBlue),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: AppTextTheme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const Text(
+                        'Customer Name',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
                       ),
                     ],
                   ),
@@ -215,60 +270,41 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
               ],
             ),
 
-            const SizedBox(height: 10),
-            const Divider(height: 1, color: AppColors.borderLight),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
-            // ── Customer Name (Primary Focal Info) ──
-            if (info.customerName != null && info.customerName!.isNotEmpty) ...[
-              const Text(
-                'Customer Name',
-                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                info.customerName!,
-                style: AppTextTheme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            // ── Subscriber ID (with Copy) & Operator ──
+            // ── 2-Column Grid (DTH Customer No & Mobile No with Copy Buttons) ──
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Subscriber ID',
-                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              effectiveSubscriberId,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
+                if (info.vcNumber != null && info.vcNumber!.isNotEmpty)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'DTH Customer No',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                info.vcNumber!,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          if (effectiveSubscriberId.isNotEmpty)
                             InkWell(
                               onTap: () {
-                                Clipboard.setData(ClipboardData(text: effectiveSubscriberId));
+                                Clipboard.setData(ClipboardData(text: info.vcNumber!));
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Subscriber ID copied to clipboard'),
+                                    content: Text('Copied to clipboard'),
                                     duration: Duration(seconds: 2),
                                     behavior: SnackBarBehavior.floating,
                                   ),
@@ -280,84 +316,205 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                                 child: Icon(Icons.copy, size: 14, color: AppColors.primaryBlue),
                               ),
                             ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Operator',
-                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        effectiveOperator,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            // ── Additional Fields Grid ──
-            if (gridItems.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Divider(height: 1, color: AppColors.borderLight),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 12,
-                runSpacing: 10,
-                children: gridItems.map((item) {
-                  final screenWidth = MediaQuery.of(context).size.width;
-                  final itemWidth = (screenWidth - (AppSpacing.pagePadding * 2) - (AppSpacing.md * 2) - 12) / 2;
-                  return SizedBox(
-                    width: itemWidth > 120 ? itemWidth : 130,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.key,
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          item.value,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: item.key.contains('Balance')
-                                ? AppColors.success
-                                : AppColors.textPrimary,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+                          ],
                         ),
                       ],
                     ),
-                  );
-                }).toList(),
+                  ),
+
+                if (info.vcNumber != null && info.vcNumber!.isNotEmpty && info.rmn != null && info.rmn!.isNotEmpty)
+                  const SizedBox(width: 12),
+
+                if (info.rmn != null && info.rmn!.isNotEmpty)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Mobile No',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                info.rmn!,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: info.rmn!));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Copied to clipboard'),
+                                    duration: Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4.0),
+                                child: Icon(Icons.copy, size: 14, color: AppColors.primaryBlue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+
+            // ── 2-Column Grid (Balance & Monthly) ──
+            if (formattedBalance != null || formattedMonthly != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (formattedBalance != null)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Balance',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formattedBalance,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (formattedBalance != null && formattedMonthly != null)
+                    const SizedBox(width: 12),
+                  if (formattedMonthly != null)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Monthly',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formattedMonthly,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ],
 
-            if (locationParts.isNotEmpty) ...[
+            // ── 2-Column Grid (Due Date & Operator) ──
+            if (formattedDueDate != null || (opName != null && opName.isNotEmpty)) ...[
               const SizedBox(height: 10),
-              const Text('Address', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (formattedDueDate != null)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Due Date',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formattedDueDate,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (formattedDueDate != null && opName != null && opName.isNotEmpty)
+                    const SizedBox(width: 12),
+                  if (opName != null && opName.isNotEmpty)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Operator',
+                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            opName,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+
+            // ── Current Plan (Full Width) ──
+            if (info.currentPlan != null && info.currentPlan!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 8),
+              const Text(
+                'Current Plan',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
               const SizedBox(height: 2),
               Text(
-                locationParts,
+                info.currentPlan!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+
+            // ── Address (Full Width) ──
+            if (addr != null && addr.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 8),
+              const Text(
+                'Address',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                addr,
                 style: const TextStyle(fontSize: 11, color: AppColors.textPrimary),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],
@@ -374,7 +531,7 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderLight),
+          border: Border.all(color: AppColors.border),
         ),
         child: const Row(
           children: [
@@ -395,7 +552,7 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
         decoration: BoxDecoration(
           color: AppColors.surfaceVariant.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderLight),
+          border: Border.all(color: AppColors.border),
         ),
         child: Row(
           children: [
@@ -518,7 +675,7 @@ class _DthRechargeScreenState extends ConsumerState<DthRechargeScreen> {
                   if (state.isFetchingCustomerInfo)
                     _buildCustomerInfoLoadingSkeleton()
                   else if (state.customerInfo != null)
-                    _buildCustomerInfoCard(state.customerInfo!, state.subscriberId, state.selectedOperator?.name)
+                    _buildCustomerInfoCard(state.customerInfo!, state.selectedOperator?.name)
                   else if (state.customerInfoError != null && hasSubscriberId && hasOperator)
                     _buildCustomerInfoErrorCard(state.customerInfoError!),
 

@@ -110,8 +110,17 @@ class ApiClient {
             AppLogger.error('===============================================', tag: 'HTTP');
 
             if (error.response?.statusCode == 401) {
-              AppLogger.warning('Token expired or invalid (HTTP 401) — clearing session', tag: 'Auth');
-              await secureStorage.clearSession();
+              final reqPath = error.requestOptions.path.toLowerCase();
+              final isPinOrAuthEndpoint = reqPath.contains('security-pin') || 
+                                          reqPath.contains('mpin') || 
+                                          reqPath.contains('auth/login') ||
+                                          reqPath.contains('auth/verify');
+              if (!isPinOrAuthEndpoint) {
+                AppLogger.warning('Token expired or invalid (HTTP 401) — clearing session for path: $reqPath', tag: 'Auth');
+                await secureStorage.clearSession();
+              } else {
+                AppLogger.warning('401 received on authentication/PIN endpoint ($reqPath) — preserving session', tag: 'Auth');
+              }
             }
 
             final isColdStartError = 

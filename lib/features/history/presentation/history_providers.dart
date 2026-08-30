@@ -28,12 +28,26 @@ class HistoryTransactionsNotifier extends AsyncNotifier<List<WalletTransaction>>
       );
 
       if (freshTxns != null) {
+        final seen = <String>{};
+        final deduplicated = <WalletTransaction>[];
+        for (var t in freshTxns) {
+          final key = t.id.isNotEmpty ? t.id : t.referenceId;
+          if (key.isNotEmpty && seen.contains(key)) continue;
+          if (key.isNotEmpty) seen.add(key);
+          deduplicated.add(t);
+
+          AppLogger.info(
+            '[NORMALIZED TRANSACTION] id: ${t.id}, service: ${t.serviceType}, category: ${t.category.name}, amountPaise: ${t.amountPaise}, isCredit: ${t.isCredit}, status: ${t.status.name}, completedAt: ${t.completedAt.toIso8601String()}',
+            tag: 'HISTORY_DEBUG',
+          );
+        }
+
         LocalCacheService.instance.put(
           LocalCacheService.instance.historyBox,
           'cached_statement',
-          freshTxns.map((t) => t.toJson()).toList(),
+          deduplicated.map((t) => t.toJson()).toList(),
         );
-        return freshTxns;
+        return deduplicated;
       }
     } catch (e) {
       AppLogger.warning('History statement fetch error: $e', tag: 'HistoryProviders');

@@ -16,7 +16,8 @@ import '../../payment/providers/payment_session_provider.dart';
 import '../../../core/services/razorpay_service.dart';
 
 class WalletTopupScreen extends ConsumerStatefulWidget {
-  const WalletTopupScreen({super.key});
+  final double? initialAmount;
+  const WalletTopupScreen({super.key, this.initialAmount});
 
   @override
   ConsumerState<WalletTopupScreen> createState() => _WalletTopupScreenState();
@@ -39,6 +40,12 @@ class _WalletTopupScreenState extends ConsumerState<WalletTopupScreen> with Sing
   void initState() {
     super.initState();
     _shakeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+
+    if (widget.initialAmount != null && widget.initialAmount! > 0) {
+      final rounded = widget.initialAmount!.ceil();
+      _amount = rounded;
+      _amountController.text = rounded.toString();
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();

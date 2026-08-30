@@ -110,6 +110,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
     String? providerOperatorCode,
   }) async {
     try {
+      AppLogger.info('[RECHARGE] Calling POST /services/recharge/initiate for $phoneNumber (Amount: ${amountPaise / 100})', tag: 'RechargeRepo');
       final response = await apiClient.post<RechargeReceipt>(
         '/services/recharge/initiate',
         data: {
@@ -127,7 +128,12 @@ class RechargeRepositoryImpl implements RechargeRepository {
           if (selectedCategory != null) 'selectedCategory': selectedCategory,
           if (providerOperatorCode != null) 'providerOperatorCode': providerOperatorCode,
         },
-        fromJson: (json) => RechargeReceipt.fromJson(json is Map ? Map<String, dynamic>.from(json) : {}),
+        fromJson: (json) {
+          final dataMap = json is Map ? Map<String, dynamic>.from(json) : <String, dynamic>{};
+          final receipt = RechargeReceipt.fromJson(dataMap);
+          AppLogger.info('[RECHARGE] Deserialized RechargeReceipt: OrderID=${receipt.transactionId}, Status=${receipt.status.name}, OperatorRef=${receipt.operatorRef}', tag: 'RechargeRepo');
+          return receipt;
+        },
       );
       if (!response.success || response.data == null) {
         return Failure(ServerException(message: response.message));
@@ -265,6 +271,7 @@ class RechargeRepositoryImpl implements RechargeRepository {
   @override
   Future<Result<RechargeReceipt, AppException>> checkRechargeStatus(String orderId) async {
     try {
+      AppLogger.info('[RECHARGE] Checking status for Order ID: $orderId', tag: 'RechargeRepo');
       final response = await apiClient.get<Map<String, dynamic>>(
         '/provider/a1topup/status/$orderId',
         fromJson: (json) => json as Map<String, dynamic>,
@@ -277,27 +284,15 @@ class RechargeRepositoryImpl implements RechargeRepository {
           ? rawObj['data'] as Map<String, dynamic>
           : rawObj;
 
-      final rawStatus = (data['status'] ?? data['Status'] ?? data['providerStatus'] ?? 'PENDING').toString().toUpperCase().trim();
-      final isSuccess = rawStatus == 'SUCCESS' || rawStatus == 'COMPLETED';
-      final isFailed = rawStatus == 'FAILED' || rawStatus == 'FAILURE' || rawStatus == 'ERROR';
-      final isPending = !isSuccess && !isFailed;
+      final receipt = RechargeReceipt.fromJson({
+        'orderId': orderId,
+        'transactionId': orderId,
+        ...data,
+      });
 
-      final rawFailureReason = data['message'] ?? data['failureReason'] ?? data['error'] ?? data['details']?['failureReason'];
-      final String? failureReason = rawFailureReason?.toString();
-
-      final receipt = RechargeReceipt(
-        transactionId: (data['orderId'] as String?) ?? orderId,
-        referenceId: (data['orderId'] as String?) ?? orderId,
-        operatorRef: (data['operatorReference'] as String?) ?? (data['providerTransactionId'] as String?),
-        status: isSuccess
-            ? RechargeStatus.success
-            : (isFailed ? RechargeStatus.failed : RechargeStatus.pending),
-        amountPaise: (data['amountPaise'] as num?)?.toInt() ?? 0,
-        mobileNumber: (data['mobileNumber'] as String?) ?? '',
-        operatorName: (data['operatorName'] as String?) ?? '',
-        timestamp: DateTime.now(),
-        failureReason: failureReason,
-      );
+      AppLogger.info('[RECHARGE] Provider response received', tag: 'RechargeRepo');
+      AppLogger.info('[RECHARGE] Provider status: ${receipt.status.name.toUpperCase()}', tag: 'RechargeRepo');
+      AppLogger.info('[RECHARGE] Order ID: ${receipt.transactionId}', tag: 'RechargeRepo');
 
       return Success(receipt);
     } on AppException catch (e) {

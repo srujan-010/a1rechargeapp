@@ -137,9 +137,27 @@ class DthRechargeService {
 
     // 6. Handle Wallet State Transition & Notifications
     if (isSuccess) {
-      // Commit held balance & credit commission
+      const netDebitRupees = Number((amount - (commissionEarnedPaise / 100)).toFixed(2));
+      const netDebitPaise = Math.round(amount * 100) - commissionEarnedPaise;
+      const walletBefore = await walletService.getWalletBalance(userId);
+
+      console.log(`[DTH ACCOUNTING] grossAmountPaise=${Math.round(amount * 100)}, commissionPaise=${commissionEarnedPaise}, netDebitPaise=${netDebitPaise}, walletBalanceBefore=${walletBefore.toFixed(2)}`);
+
+      // Commit held balance & credit commission (deducts netDebitRupees)
       await walletService.commitReservation(userId, amount, commissionEarnedPaise);
-      console.log(`[DTH] Wallet Settlement: Order ${orderId} committed (SUCCESS)`);
+
+      const walletAfter = await walletService.getWalletBalance(userId);
+      const actualDiff = Number((walletBefore - walletAfter).toFixed(2));
+
+      console.log(`\n[DTH TEST]`);
+      console.log(`Gross Recharge: ₹${amount.toFixed(2)}`);
+      console.log(`Commission: ₹${(commissionEarnedPaise / 100).toFixed(2)}`);
+      console.log(`Net Wallet Debit: ₹${netDebitRupees.toFixed(2)}`);
+      console.log(`Wallet Before: ₹${walletBefore.toFixed(2)}`);
+      console.log(`Provider Amount: ₹${amount.toFixed(2)}`);
+      console.log(`Provider Result: ${providerStatus}`);
+      console.log(`Wallet After: ₹${walletAfter.toFixed(2)}`);
+      console.log(`Actual Wallet Difference: ₹${actualDiff.toFixed(2)}\n`);
 
       notificationService.notifyRechargeSuccess({
         userId,

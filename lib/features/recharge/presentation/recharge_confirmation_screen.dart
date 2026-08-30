@@ -152,7 +152,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
       tag: 'RechargeConfirmation',
     );
 
-    context.push(
+    context.pushReplacement(
       RouteNames.rechargeProcessing,
       extra: {
         'mpin': pin,
@@ -321,7 +321,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
         ref.read(paymentSessionProvider.notifier).clearSession();
 
         if (mounted && receipt != null) {
-          context.push(
+          context.pushReplacement(
             RouteNames.rechargeProcessing,
             extra: {
               'orderId': next.internalTransactionId,
@@ -576,11 +576,15 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         if (activeMethod == PaymentMethod.wallet) ...[
                           const Divider(),
                           const SizedBox(height: 8),
+                          _PaymentBreakdownRow(label: 'Available Balance', amount: availableWalletPaise),
+                          const SizedBox(height: 6),
                           _PaymentBreakdownRow(label: 'Recharge Amount', amount: rechargeAmountPaise),
                           const SizedBox(height: 6),
-                          _PaymentBreakdownRow(label: 'Commission', amount: commissionAmountPaise, isDeduction: true),
+                          _PaymentBreakdownRow(label: 'Commission / You Earn', amount: commissionAmountPaise, isCredit: true),
                           const SizedBox(height: 6),
-                          _PaymentBreakdownRow(label: 'You Pay', amount: payableAmountPaise, isHighlight: true),
+                          _PaymentBreakdownRow(label: 'Wallet Debit', amount: payableAmountPaise, isHighlight: true),
+                          const SizedBox(height: 6),
+                          _PaymentBreakdownRow(label: 'Balance After Recharge', amount: (availableWalletPaise - payableAmountPaise).clamp(0, 999999999)),
                           const SizedBox(height: 12),
                           const Text('Commission is adjusted instantly.', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
                         ]
@@ -642,7 +646,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                           _PaymentBreakdownRow(
                             label: isPersonal ? 'Savings / Discount' : 'Commission',
                             amount: commissionAmountPaise,
-                            isDeduction: true,
+                            isCredit: true,
                           ),
                           const SizedBox(height: 6),
                         ] else ...[
@@ -655,10 +659,10 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                           ),
                           const SizedBox(height: 6),
                         ],
-                        _PaymentBreakdownRow(label: 'Amount Payable', amount: payableAmountPaise, isHighlight: true),
+                        _PaymentBreakdownRow(label: 'Amount Payable', amount: rechargeAmountPaise, isHighlight: true),
                         const SizedBox(height: 12),
                         Text(
-                          'Secure payment powered by Razorpay. Payment of ${CurrencyFormatter.fromPaise(payableAmountPaise)} will be requested.',
+                          'Secure payment powered by Razorpay. Payment of ${CurrencyFormatter.fromPaise(rechargeAmountPaise)} will be requested.',
                           style: const TextStyle(color: AppColors.textHint, fontSize: 12, height: 1.3),
                         ),
                       ]
@@ -718,7 +722,17 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                       SizedBox(
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: () => context.push(RouteNames.walletTopup),
+                          onPressed: () async {
+                            await context.push(
+                              RouteNames.walletTopup,
+                              extra: {'suggestedAmountPaise': shortfallPaise},
+                            );
+                            if (mounted) {
+                              ref.invalidate(walletBalanceProvider);
+                              await ref.read(walletBalanceProvider.future);
+                              setState(() {});
+                            }
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFF57C00),
                             foregroundColor: Colors.white,
@@ -737,7 +751,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                             foregroundColor: const Color(0xFFF57C00),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: const Text('Continue with UPI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          child: Text('Pay ${CurrencyFormatter.fromPaise(rechargeAmountPaise)} via UPI', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                         ),
                       ),
                     ],
@@ -745,9 +759,18 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                 ),
               ] else if (activeMethod == PaymentMethod.wallet) ...[
                 Center(
-                  child: Text(
-                    'Enter 6-digit MPIN to pay via Wallet',
-                    style: AppTextTheme.textTheme.titleMedium,
+                  child: Column(
+                    children: [
+                      Text(
+                        'Pay ${CurrencyFormatter.fromPaise(payableAmountPaise)} via Wallet',
+                        style: AppTextTheme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Enter 6-digit MPIN to authorize payment',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -776,9 +799,7 @@ class _RechargeConfirmationScreenState extends ConsumerState<RechargeConfirmatio
                         elevation: 4,
                       ),
                       child: Text(
-                        isPersonal 
-                          ? 'Pay ${CurrencyFormatter.fromPaise(payableAmountPaise)} with Razorpay / UPI'
-                          : 'Continue to UPI',
+                        'Pay ${CurrencyFormatter.fromPaise(rechargeAmountPaise)} via UPI',
                         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                       ),
                     ),

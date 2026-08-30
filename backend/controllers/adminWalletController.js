@@ -338,8 +338,176 @@ const getFundingTransactions = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Deduct/debit retailer wallet manually (Admin Only)
+ * @route   POST /api/admin/wallet/debit
+ * @access  Private/Admin
+ */
+const debitRetailerWallet = async (req, res, next) => {
+  try {
+    const { retailerUserId, retailerId, phone, amountRupees, amountPaise, remark, referenceId } = req.body;
+
+    // 1. Calculate amount in paise
+    let parsedPaise = 0;
+    if (amountPaise && Number(amountPaise) > 0) {
+      parsedPaise = Math.round(Number(amountPaise));
+    } else if (amountRupees && Number(amountRupees) > 0) {
+      parsedPaise = Math.round(Number(amountRupees) * 100);
+    } else if (req.body.amount && Number(req.body.amount) > 0) {
+      parsedPaise = Math.round(Number(req.body.amount) * 100);
+    }
+
+    if (!parsedPaise || parsedPaise <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid debit amount',
+      });
+    }
+
+    // 2. Find retailer
+    let retailerUser = null;
+    if (retailerUserId) {
+      retailerUser = await User.findById(retailerUserId);
+    } else if (retailerId) {
+      retailerUser = await User.findOne({ retailerId });
+    } else if (phone) {
+      retailerUser = await User.findOne({ phone });
+    }
+
+    if (!retailerUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Retailer not found',
+      });
+    }
+
+    // 3. Idempotency Check
+    const effectiveRefId = referenceId || `ADM_DEBIT_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+    const existingAudit = await AdminAuditLog.findOne({ referenceId: effectiveRefId });
+    if (existingAudit) {
+      const wallet = await Wallet.findOne({ userId: retailerUser._id });
+      return res.status(200).json({
+        success: true,
+        message: 'Debit request already processed (idempotent response)',
+        data: {
+          isDuplicate: true,
+          referenceId: existingAudit.referenceId,
+          retailer: {
+            id: retailerUser._id,
+            retailerId: retailerUser.retailerId,
+            name: retailerUser.name,
+            phone: retailerUser.phone,
+          },
+          amountRupees: existingAudit.amountRupees,
+          previousBalanceRupees: existingAudit.previousBalanceRupees,
+          newBalanceRupees: existingAudit.newBalanceRupees,
+          currentBalanceRupees: wallet ? wallet.balancePaise / 100 : existingAudit.newBalanceRupees,
+          remark: existingAudit.remark,
+          createdAt: existingAudit.createdAt,
+        },
+      });
+    }
+
+    // 4. Get previous balance and update atomically
+    let wallet = await Wallet.findOne({ userId: retailerUser._id });
+    const previousBalancePaise = wallet ? wallet.balancePaise : 0;
+
+    if (previousBalancePaise < parsedPaise) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient wallet balance for debit. Available: ₹${(previousBalancePaise / 100).toFixed(2)}`,
+      });
+    }
+
+    const updatedWallet = await Wallet.findOneAndUpdate(
+      { userId: retailerUser._id },
+      { $inc: { balancePaise: -parsedPaise } },
+      { new: true, upsert: true }
+    );
+
+    const newBalancePaise = updatedWallet.balancePaise;
+    const amountRupeesVal = Number((parsedPaise / 100).toFixed(2));
+    const prevRupeesVal = Number((previousBalancePaise / 100).toFixed(2));
+    const newRupeesVal = Number((newBalancePaise / 100).toFixed(2));
+    const remarkText = remark && remark.trim().length > 0 ? remark.trim() : 'Wallet debited by administrator';
+
+    // 5. Create WalletLedger record
+    await WalletLedger.create({
+      userId: retailerUser._id,
+      adminId: req.user._id,
+      transactionType: 'DEBIT',
+      amount: amountRupeesVal,
+      previousBalance: prevRupeesVal,
+      balanceAfter: newRupeesVal,
+      referenceType: 'ADMIN_DEBIT',
+      referenceId: effectiveRefId,
+      remark: remarkText,
+      description: remarkText,
+    });
+
+    // 6. Create Transaction record (for retailer statement)
+    const transaction = await Transaction.create({
+      userId: retailerUser._id,
+      type: 'debit',
+      amountPaise: parsedPaise,
+      status: 'success',
+      service: 'admin_debit',
+      referenceId: effectiveRefId,
+      description: remarkText,
+      closingBalancePaise: newBalancePaise,
+      recipientName: retailerUser.name,
+      completedAt: new Date(),
+    });
+
+    // 7. Create AdminAuditLog entry
+    const auditLog = await AdminAuditLog.create({
+      adminId: req.user._id,
+      adminName: req.user.name,
+      adminPhone: req.user.phone,
+      retailerUserId: retailerUser._id,
+      retailerId: retailerUser.retailerId,
+      retailerName: retailerUser.name,
+      retailerPhone: retailerUser.phone,
+      amountRupees: amountRupeesVal,
+      amountPaise: parsedPaise,
+      previousBalanceRupees: prevRupeesVal,
+      previousBalancePaise,
+      newBalanceRupees: newRupeesVal,
+      newBalancePaise,
+      remark: remarkText,
+      referenceId: effectiveRefId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully debited ₹${amountRupeesVal.toFixed(2)} from ${retailerUser.name}`,
+      data: {
+        referenceId: effectiveRefId,
+        transactionId: transaction._id,
+        auditLogId: auditLog._id,
+        retailer: {
+          id: retailerUser._id,
+          retailerId: retailerUser.retailerId,
+          name: retailerUser.name,
+          phone: retailerUser.phone,
+        },
+        amountRupees: amountRupeesVal,
+        amountPaise: parsedPaise,
+        previousBalanceRupees: prevRupeesVal,
+        newBalanceRupees: newRupeesVal,
+        remark: remarkText,
+        createdAt: auditLog.createdAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   creditRetailerWallet,
+  debitRetailerWallet,
   searchRetailers,
   getAuditLogs,
   getFundingTransactions,

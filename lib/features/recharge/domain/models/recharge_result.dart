@@ -82,36 +82,65 @@ class RechargeReceipt extends Equatable {
   bool get isPending => status == RechargeStatus.pending || status == RechargeStatus.processing;
 
 
+  static String? _asString(dynamic val) {
+    if (val == null) return null;
+    return val.toString();
+  }
+
+  static int? _asInt(dynamic val) {
+    if (val == null) return null;
+    if (val is num) return val.toInt();
+    if (val is String) {
+      final n = num.tryParse(val);
+      if (n != null) return n.toInt();
+    }
+    return null;
+  }
+
   factory RechargeReceipt.fromJson(Map<String, dynamic> json) {
-    final rawOp = json['operatorName'] as String? ?? json['operator'] as String? ?? json['operatorCode'] as String? ?? '';
-    return RechargeReceipt(
-      transactionId: json['transactionId'] as String? ?? '',
-      referenceId: json['referenceId'] as String? ?? '',
-      mobileNumber: json['mobileNumber'] as String? ?? '',
-      operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
-        amountPaise: (json['amountPaise'] as num?)?.toInt() ?? (json['amount'] as num?)?.toInt() ?? 0,
-        status: _parseStatus(json['status'] as String?),
-        timestamp: json['timestamp'] != null
-            ? DateTime.parse(json['timestamp'] as String)
-            : DateTime.now(),
-        planDescription: json['planDescription'] as String?,
-        validity: json['validity'] as String?,
-        operatorRef: json['operatorRef'] as String?,
-        commission: (json['commissionEarnedPaise'] as num?)?.toInt() ?? (json['commission'] as num?)?.toInt(),
-        walletDebitedPaise: (json['walletDebitedPaise'] as num?)?.toInt(),
-        failureReason: json['failureReason'] as String?,
-        paymentMode: json['paymentMode'] as String? ?? 'Wallet',
-        circle: json['circle'] as String?,
-        walletBalancePaise: (json['walletBalanceAfterPaise'] as num?)?.toInt() ?? (json['walletBalancePaise'] as num?)?.toInt(),
-      );
+    final rawOp = _asString(json['operatorName'] ?? json['operator'] ?? json['operatorCode']) ?? '';
+    final rawTxnId = _asString(json['transactionId'] ?? json['orderId'] ?? json['referenceId']) ?? '';
+    final rawRefId = _asString(json['referenceId'] ?? json['orderId'] ?? json['transactionId']) ?? '';
+    final rawOpRef = _asString(json['operatorRef'] ?? json['operatorReference'] ?? json['providerTransactionId']);
+    final rawStatus = _asString(json['status'] ?? json['Status'] ?? json['providerStatus']);
+    final rawFailureReason = _asString(json['failureReason'] ?? json['message'] ?? json['error']);
+
+    DateTime parsedTimestamp = DateTime.now();
+    if (json['timestamp'] != null) {
+      final tsStr = json['timestamp'].toString();
+      parsedTimestamp = DateTime.tryParse(tsStr) ?? DateTime.now();
     }
 
-  static RechargeStatus _parseStatus(String? raw) => switch (raw) {
-        'success' => RechargeStatus.success,
-        'failed' => RechargeStatus.failed,
-        'processing' => RechargeStatus.processing,
-        _ => RechargeStatus.pending,
-      };
+    return RechargeReceipt(
+      transactionId: rawTxnId,
+      referenceId: rawRefId,
+      mobileNumber: _asString(json['mobileNumber'] ?? json['mobile'] ?? json['phoneNumber']) ?? '',
+      operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
+      amountPaise: _asInt(json['amountPaise']) ?? _asInt(json['amount']) ?? 0,
+      status: _parseStatus(rawStatus),
+      timestamp: parsedTimestamp,
+      planDescription: _asString(json['planDescription']),
+      validity: _asString(json['validity']),
+      operatorRef: rawOpRef,
+      commission: _asInt(json['commissionEarnedPaise'] ?? json['commissionAmountPaise'] ?? json['commission']),
+      walletDebitedPaise: _asInt(json['walletDebitedPaise'] ?? json['payableAmountPaise']),
+      failureReason: rawFailureReason,
+      paymentMode: _asString(json['paymentMode']) ?? 'Wallet',
+      circle: _asString(json['circle']),
+      walletBalancePaise: _asInt(json['walletBalanceAfterPaise'] ?? json['walletBalancePaise']),
+    );
+  }
+
+  static RechargeStatus _parseStatus(String? raw) {
+    if (raw == null) return RechargeStatus.pending;
+    final normalized = raw.toLowerCase().trim();
+    return switch (normalized) {
+      'success' || 'completed' || 'payment_success' || 'recharge_success' || 'successful' || 'success_paid' => RechargeStatus.success,
+      'failed' || 'failure' || 'rejected' || 'error' => RechargeStatus.failed,
+      'processing' || 'pending' || 'in_progress' => RechargeStatus.processing,
+      _ => RechargeStatus.pending,
+    };
+  }
 
   factory RechargeReceipt.fake({bool success = true}) => RechargeReceipt(
         transactionId: 'TXN${DateTime.now().millisecondsSinceEpoch}',

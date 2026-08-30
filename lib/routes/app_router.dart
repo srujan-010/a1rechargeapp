@@ -402,10 +402,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                     path: 'topup',
                     name: 'wallet-topup',
                     parentNavigatorKey: rootNavigatorKey,
-                    pageBuilder: (c, s) => _slideUpPage(
-                      state: s,
-                      child: const WalletTopupScreen(),
-                    ),
+                    pageBuilder: (c, s) {
+                      double? initialAmt;
+                      if (s.extra is num) {
+                        initialAmt = (s.extra as num).toDouble();
+                      } else if (s.extra is Map) {
+                        final map = s.extra as Map;
+                        if (map['initialAmount'] is num) {
+                          initialAmt = (map['initialAmount'] as num).toDouble();
+                        } else if (map['suggestedAmountPaise'] is num) {
+                          initialAmt = (map['suggestedAmountPaise'] as num).toDouble() / 100;
+                        }
+                      }
+                      return _slideUpPage(
+                        state: s,
+                        child: WalletTopupScreen(initialAmount: initialAmt),
+                      );
+                    },
                   ),
                 ],
               ),

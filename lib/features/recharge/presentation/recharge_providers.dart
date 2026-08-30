@@ -437,7 +437,7 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       String finalOperatorId = state.operator!.id;
       String finalOperatorName = state.operator!.name;
 
-      debugPrint('[FLOW] Recharge API Started');
+      AppLogger.info('[RECHARGE] Request started for ${state.phoneNumber}', tag: 'RechargeFlow');
       final result = await repo.processRecharge(
         phoneNumber: state.phoneNumber!,
         operatorId: finalOperatorId,
@@ -455,7 +455,9 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
       );
 
       final receipt = result.getOrElseCompute((e) => throw e);
-      debugPrint('[FLOW] Recharge API Success');
+      AppLogger.info('[RECHARGE] Provider response received: status=${receipt.status.name}, orderId=${receipt.transactionId}', tag: 'RechargeFlow');
+      AppLogger.info('[RECHARGE] Normalized status: ${receipt.status.name.toUpperCase()}', tag: 'RechargeFlow');
+      AppLogger.info('[RECHARGE] Order ID: ${receipt.transactionId}', tag: 'RechargeFlow');
 
       final walletAsync = ref.read(walletBalanceProvider);
       final finalReceipt = receipt.copyWith(
@@ -470,34 +472,45 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
         RechargeStatus.pending || RechargeStatus.processing => RechargeTransactionState.processing,
       };
 
-      debugPrint('[FLOW] Processing State');
       state = state.copyWith(
         isProcessing: receipt.status == RechargeStatus.pending || receipt.status == RechargeStatus.processing,
         transactionState: nextTxnState,
       );
 
-      // Save recent contact if successful
       if (finalReceipt.isSuccess) {
-        final contact = RecentContact(
-          phone: finalReceipt.mobileNumber,
-          operatorId: state.operator!.id,
-          circle: state.circle?.state ?? 'Unknown',
-          lastRechargeDate: DateTime.now(),
-          lastRechargeAmountPaise: finalReceipt.amountPaise,
-        );
-        await repo.saveRecentContact(contact);
+        AppLogger.info('[RECHARGE] FINAL STATUS: SUCCESS', tag: 'RechargeFlow');
+      } else if (finalReceipt.isFailed) {
+        AppLogger.info('[RECHARGE] FINAL STATUS: FAILED', tag: 'RechargeFlow');
       }
 
-      debugPrint('[FLOW] Provider Update');
-      // Invalidate dashboard wallet providers to trigger balance reload
-      ref.invalidate(walletBalanceProvider);
-      ref.invalidate(recentTransactionsProvider);
-      ref.invalidate(earningsSummaryProvider);
-      ref.invalidate(recentContactsProvider);
+      // ── NON-CRITICAL POST-PROCESSING ──
+      // Isolated in safe try-catch so post-processing errors never convert SUCCESS -> FAILED
+      try {
+        if (finalReceipt.isSuccess && state.operator != null) {
+          final contact = RecentContact(
+            phone: finalReceipt.mobileNumber,
+            operatorId: state.operator!.id,
+            circle: state.circle?.state ?? 'Unknown',
+            lastRechargeDate: DateTime.now(),
+            lastRechargeAmountPaise: finalReceipt.amountPaise,
+          );
+          await repo.saveRecentContact(contact);
+        }
+
+        ref.invalidate(walletBalanceProvider);
+        ref.invalidate(recentTransactionsProvider);
+        ref.invalidate(earningsSummaryProvider);
+        ref.invalidate(recentContactsProvider);
+      } catch (e) {
+        AppLogger.warning('[RECHARGE] POST-PROCESSING ERROR: $e', tag: 'RechargeFlow');
+        if (finalReceipt.isSuccess) {
+          AppLogger.info('[RECHARGE] Recharge already finalized as SUCCESS - NOT changing recharge status to FAILED', tag: 'RechargeFlow');
+        }
+      }
 
       return finalReceipt;
     } catch (e) {
-      debugPrint('[FLOW] Processing State');
+      AppLogger.error('[RECHARGE] Recharge execution exception: $e', tag: 'RechargeFlow');
       state = state.copyWith(
         isProcessing: false,
         transactionState: RechargeTransactionState.failed,

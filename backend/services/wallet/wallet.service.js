@@ -77,15 +77,20 @@ class WalletService {
   }
 
   /**
-   * Commits the reserved amount (Deduct)
+   * Commits the reserved amount (Deduct Net Amount: Gross Amount - Commission)
    */
-  async commitReservation(userId, amount) {
+  async commitReservation(userId, amount, commissionEarnedPaise = 0) {
+    const grossPaise = Math.round(amount * 100);
+    const netDebitPaise = Math.max(0, grossPaise - (Number(commissionEarnedPaise) || 0));
+
+    console.log(`[WALLET COMMIT] userId: ${userId}, gross: ${grossPaise} paise (₹${amount}), commission: ${commissionEarnedPaise} paise, netDebit: ${netDebitPaise} paise`);
+
     const result = await Wallet.updateOne(
-      { userId, onHoldPaise: { $gte: amount * 100 } },
+      { userId, onHoldPaise: { $gte: grossPaise } },
       { 
         $inc: { 
-          balancePaise: -amount * 100,
-          onHoldPaise: -amount * 100
+          balancePaise: -netDebitPaise,
+          onHoldPaise: -grossPaise
         }
       }
     );
