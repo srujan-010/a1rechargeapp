@@ -135,10 +135,15 @@ class RechargeRepositoryImpl implements RechargeRepository {
           return receipt;
         },
       );
-      if (!response.success || response.data == null) {
+      final receiptData = response.data;
+      if (receiptData == null) {
         return Failure(ServerException(message: response.message));
       }
-      return Success(response.data!);
+      final isProcessing = receiptData.status == RechargeStatus.processing || receiptData.status == RechargeStatus.pending;
+      if (!response.success && !isProcessing) {
+        return Failure(ServerException(message: response.message));
+      }
+      return Success(receiptData);
     } on AppException catch (e) {
       return Failure(e);
     } catch (e, st) {

@@ -1214,13 +1214,13 @@ const executeRecharge = async (req, res, next) => {
 
     const statusLower = transaction.status.toLowerCase();
     const isSuccess = statusLower === 'success';
-    const isPending = statusLower === 'pending';
+    const isProcessing = statusLower === 'processing' || statusLower === 'pending' || statusLower === 'initiated' || statusLower === 'queued';
 
     return res.status(200).json({
-      success: isSuccess || isPending,
+      success: isSuccess || isProcessing,
       message: isSuccess
         ? 'Recharge executed successfully'
-        : (isPending ? 'Recharge is currently processing' : (transaction.failureReason || 'Recharge failed at operator')),
+        : (isProcessing ? 'Recharge is currently processing' : (transaction.failureReason || 'Recharge failed at operator')),
       data: {
         transactionId: transaction.orderId,
         referenceId: transaction.orderId,
@@ -1232,7 +1232,7 @@ const executeRecharge = async (req, res, next) => {
         mobileNumber: transaction.mobileNumber,
         operatorName: transaction.internalOperatorName || 'Operator',
         timestamp: transaction.completedAt || new Date(),
-        failureReason: transaction.failureReason || null,
+        failureReason: isProcessing ? null : (transaction.failureReason || null),
       },
     });
 

@@ -140,17 +140,23 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
 
       _activeReceipt = receipt;
       final orderId = receipt.transactionId;
+      print('[RECHARGE_STATUS_FLOW] orderId=$orderId');
+      print('[RECHARGE_STATUS_FLOW] initialStatus=${receipt.status.name}');
+      print('[RECHARGE_STATUS_FLOW] operatorRef=${receipt.operatorRef ?? "N/A"}');
       AppLogger.info('[RECHARGE] Order ID: $orderId, Status: ${receipt.status.name}', tag: 'RechargeProcessing');
 
       if (!mounted) return;
 
       if (receipt.isSuccess) {
+        print('[RECHARGE_STATUS_FLOW] finalStatus=success');
+        print('[RECHARGE_STATUS_FLOW] Navigating to SUCCESS');
         AppLogger.info('[RECHARGE] Provider response received: status=SUCCESS, orderId=$orderId', tag: 'RechargeProcessing');
         AppLogger.info('[RECHARGE] Provider status: SUCCESS', tag: 'RechargeProcessing');
         AppLogger.info('[RECHARGE] FINAL STATUS: SUCCESS', tag: 'RechargeProcessing');
         AppLogger.info('[RECHARGE] Navigating to SUCCESS', tag: 'RechargeProcessing');
         _handleSuccess(receipt);
       } else if (receipt.status == RechargeStatus.failed) {
+        print('[RECHARGE_STATUS_FLOW] finalStatus=failed');
         AppLogger.info('[RECHARGE] Provider status: FAILED', tag: 'RechargeProcessing');
         AppLogger.info('[RECHARGE] FINAL STATUS: FAILED', tag: 'RechargeProcessing');
         AppLogger.info('[RECHARGE] Navigating to FAILURE', tag: 'RechargeProcessing');
@@ -182,6 +188,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
     const pollIntervalSeconds = 2;
     final startTime = DateTime.now();
 
+    print('[RECHARGE_STATUS_FLOW] Polling started for orderId=$orderId');
     AppLogger.info('[Polling Started for Order ID: $orderId]', tag: 'RechargeProcessing');
 
     _pollingTimer = Timer.periodic(const Duration(seconds: pollIntervalSeconds), (timer) async {
@@ -191,6 +198,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
       }
 
       _pollingAttempt++;
+      print('[RECHARGE_STATUS_FLOW] pollAttempt=$_pollingAttempt');
       AppLogger.info('[Polling Attempt #$_pollingAttempt]', tag: 'RechargeProcessing');
 
       try {
@@ -199,9 +207,12 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
         final latestReceipt = result.valueOrNull;
 
         if (latestReceipt != null) {
+          print('[RECHARGE_STATUS_FLOW] polledStatus=${latestReceipt.status.name}');
           AppLogger.info('[Polling Status Response: ${latestReceipt.status.name}]', tag: 'RechargeProcessing');
 
           if (latestReceipt.isSuccess) {
+            print('[RECHARGE_STATUS_FLOW] finalStatus=success');
+            print('[RECHARGE_STATUS_FLOW] Navigating to SUCCESS');
             AppLogger.info('[RECHARGE] Provider status: SUCCESS', tag: 'RechargeProcessing');
             AppLogger.info('[RECHARGE] Order ID: ${latestReceipt.transactionId}', tag: 'RechargeProcessing');
             AppLogger.info('[RECHARGE] FINAL STATUS: SUCCESS', tag: 'RechargeProcessing');
@@ -210,6 +221,7 @@ class _RechargeProcessingScreenState extends ConsumerState<RechargeProcessingScr
             _handleSuccess(latestReceipt);
             return;
           } else if (latestReceipt.status == RechargeStatus.failed) {
+            print('[RECHARGE_STATUS_FLOW] finalStatus=failed');
             AppLogger.info('[RECHARGE] Provider status: FAILED', tag: 'RechargeProcessing');
             AppLogger.info('[RECHARGE] FINAL STATUS: FAILED', tag: 'RechargeProcessing');
             AppLogger.info('[RECHARGE] Navigating to FAILURE', tag: 'RechargeProcessing');
