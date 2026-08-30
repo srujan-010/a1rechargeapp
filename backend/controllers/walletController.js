@@ -56,12 +56,18 @@ const getBalance = async (req, res, next) => {
       });
     }
 
+    const walletBalancePaise = Math.round(wallet.balancePaise || 0);
+    const holdAmountPaise = Math.round(wallet.onHoldPaise || 0);
+
     res.status(200).json({
       success: true,
       data: {
-        balancePaise: wallet.balancePaise || 0,
-        onHoldPaise: wallet.onHoldPaise || 0,
-        availablePaise: (wallet.balancePaise || 0) - (wallet.onHoldPaise || 0),
+        walletBalancePaise,
+        holdAmountPaise,
+        // Both balancePaise and availablePaise represent the ACTUAL WALLET BALANCE (Opening + Credits - Debits)
+        balancePaise: walletBalancePaise,
+        availablePaise: walletBalancePaise,
+        onHoldPaise: holdAmountPaise,
         currency: wallet.currency || 'INR',
         walletFundingMode: getWalletFundingMode(),
       }

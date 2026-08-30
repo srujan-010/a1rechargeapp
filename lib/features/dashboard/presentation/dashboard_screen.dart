@@ -571,7 +571,7 @@ class _WalletBalanceCardState extends ConsumerState<_WalletBalanceCard> {
 
   Widget _buildCard(dynamic balance) {
     final available = CurrencyFormatter.fromPaise(balance.availablePaise);
-    final hold = CurrencyFormatter.fromPaise(balance.onHoldPaise);
+    final hold = CurrencyFormatter.fromPaise((balance.onHoldPaise as num).abs().toInt());
     final isHidden = _hideBalance;
 
     return Container(
@@ -624,7 +624,7 @@ class _WalletBalanceCardState extends ConsumerState<_WalletBalanceCard> {
           ),
           const SizedBox(height: 8),
           
-          // Large Balance
+          // Large Balance (Actual Ledger Wallet Balance)
           Text(
             isHidden ? '••••••' : available,
             style: const TextStyle(

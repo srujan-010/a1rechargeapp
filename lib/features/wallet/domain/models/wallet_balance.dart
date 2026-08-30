@@ -26,25 +26,31 @@ class WalletBalance extends Equatable {
   bool get isAddMoneyEnabled =>
       walletFundingMode == 'RAZORPAY' || walletFundingMode == 'PAYMENT_GATEWAY' || walletFundingMode == 'BOTH';
 
-  factory WalletBalance.fromJson(Map<String, dynamic> json) => WalletBalance(
-        availablePaise: (json['availablePaise'] as num?)?.toInt() ??
-            (json['availableBalance'] as num?)?.toInt() ??
-            (json['balancePaise'] as num?)?.toInt() ??
-            0,
-        ledgerBalancePaise: (json['ledgerBalancePaise'] as num?)?.toInt() ??
-            (json['ledgerBalance'] as num?)?.toInt() ??
-            (json['balancePaise'] as num?)?.toInt() ??
-            0,
-        onHoldPaise: (json['onHoldPaise'] as num?)?.toInt() ??
-            (json['onHoldBalance'] as num?)?.toInt() ??
-            0,
-        pendingSettlementPaise: (json['pendingSettlementPaise'] as num?)?.toInt() ?? 0,
-        lastUpdated: json['lastUpdated'] != null
-            ? DateTime.parse(json['lastUpdated'] as String)
-            : DateTime.now(),
-        walletId: json['walletId'] as String? ?? '',
-        walletFundingMode: json['walletFundingMode'] as String? ?? 'ADMIN_ONLY',
-      );
+  factory WalletBalance.fromJson(Map<String, dynamic> json) {
+    final rawLedger = (json['walletBalancePaise'] as num?)?.toInt() ??
+        (json['balancePaise'] as num?)?.toInt() ??
+        (json['availablePaise'] as num?)?.toInt() ??
+        (json['availableBalance'] as num?)?.toInt() ??
+        (json['ledgerBalancePaise'] as num?)?.toInt() ??
+        (json['ledgerBalance'] as num?)?.toInt() ??
+        0;
+    final rawHold = (json['holdAmountPaise'] as num?)?.toInt() ??
+        (json['onHoldPaise'] as num?)?.toInt() ??
+        (json['onHoldBalance'] as num?)?.toInt() ??
+        0;
+
+    return WalletBalance(
+      ledgerBalancePaise: rawLedger,
+      onHoldPaise: rawHold,
+      availablePaise: rawLedger,
+      pendingSettlementPaise: (json['pendingSettlementPaise'] as num?)?.toInt() ?? 0,
+      lastUpdated: json['lastUpdated'] != null
+          ? DateTime.parse(json['lastUpdated'] as String)
+          : DateTime.now(),
+      walletId: json['walletId'] as String? ?? '',
+      walletFundingMode: json['walletFundingMode'] as String? ?? 'ADMIN_ONLY',
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'availableBalance': availablePaise,
