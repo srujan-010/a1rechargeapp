@@ -146,6 +146,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
   console.log(`[Wallet Funding] Mode: ${require('./config/walletConfig').getWalletFundingMode()}`);
   
+  // Run startup reconciliation for stuck DTH orders
+  const { reconcileDthTransactions } = require('./services/reconcileDthTransactions.service');
+  reconcileDthTransactions().catch(err => console.error('Reconciliation error:', err.message));
+
   // Print registered routes
   console.log('Registered Routes:');
   console.log('POST /api/auth/send-otp');

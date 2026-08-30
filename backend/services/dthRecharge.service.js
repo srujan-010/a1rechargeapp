@@ -5,7 +5,6 @@ const dthMappingService = require('./dthMapping.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
 const notificationService = require('./notification.service');
-const { processSuccessCommission } = require('../controllers/recharge.controller');
 
 /**
  * Independent Service for DTH Recharge Execution
@@ -102,19 +101,37 @@ class DthRechargeService {
       }
     }
 
-    // 4. Update RechargeTransaction in MongoDB
     const now = new Date();
+    let isWalletFinalized = false;
+
+    // 4. Handle Wallet Finalization BEFORE updating status to SUCCESS
+    if (isSuccess) {
+      try {
+        await walletService.commitOrderReservation({
+          userId,
+          orderId,
+          amount,
+          commissionEarnedPaise
+        });
+        isWalletFinalized = true;
+      } catch (commitErr) {
+        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${userId} expectedAmount=${amount} reason=${commitErr.message}`);
+      }
+    }
+
+    // 5. Update RechargeTransaction & Global Transaction
+    const finalStatus = (isSuccess && isWalletFinalized) ? 'SUCCESS' : (isFailed ? 'FAILED' : 'PENDING');
+    const globalStatus = (isSuccess && isWalletFinalized) ? 'success' : (isFailed ? 'failed' : 'pending');
+
     const updatePayload = {
       providerTransactionId: providerResponse.providerTransactionId || '',
       operatorReference: providerResponse.operatorReference || '',
       providerStatus: providerStatus,
-      status: providerStatus,
+      status: finalStatus,
       rawResponse: providerResponse.rawResponse || null,
+      ...(finalStatus === 'SUCCESS' || finalStatus === 'FAILED' ? { completedAt: now } : {}),
+      ...(isWalletFinalized ? { walletFinalizationStatus: 'COMPLETED', reservationStatus: 'CONSUMED' } : {}),
     };
-
-    if (isSuccess || isFailed) {
-      updatePayload.completedAt = now;
-    }
 
     const updatedRechargeTxn = await RechargeTransaction.findOneAndUpdate(
       { orderId, serviceType: 'dth' },
@@ -122,31 +139,24 @@ class DthRechargeService {
       { new: true }
     );
 
-    // 5. Update Global Transaction in MongoDB
-    const globalTxnStatus = isSuccess ? 'success' : (isFailed ? 'failed' : 'pending');
     const updatedGlobalTxn = await Transaction.findOneAndUpdate(
       { referenceId: orderId, service: 'dth' },
       {
         $set: {
-          status: globalTxnStatus,
+          status: globalStatus,
           apiReference: providerResponse.providerTransactionId || '',
           commissionEarnedPaise,
-          ...(isSuccess || isFailed ? { completedAt: now } : {}),
+          ...(finalStatus === 'SUCCESS' || finalStatus === 'FAILED' ? { completedAt: now } : {}),
         }
       },
       { new: true }
     );
 
-    console.log(`[DTH] Mongo update after provider response: Order ${orderId} updated to status '${providerStatus}'`);
+    console.log(`[DTH] Mongo update after provider response: Order ${orderId} updated to status '${finalStatus}'`);
 
-    // 6. Handle Wallet State Transition & Notifications
-    if (isSuccess) {
-      const netDebitRupees = Number((amount - (commissionEarnedPaise / 100)).toFixed(2));
-      const netDebitPaise = Math.round(amount * 100) - commissionEarnedPaise;
-      const walletBefore = await walletService.getWalletBalance(userId);
-
-      console.log(`[DTH WALLET COMMIT] orderId=${orderId} grossPaise=${Math.round(amount * 100)} commissionPaise=${commissionEarnedPaise} netDebitPaise=${netDebitPaise} walletBefore=${walletBefore}`);
-
+    // 6. Handle Notifications and Commission Logging
+    if (finalStatus === 'SUCCESS') {
+      const { processSuccessCommission } = require('../controllers/recharge.controller');
       // Record CommissionHistory & Ledger Credit via processSuccessCommission
       await processSuccessCommission({
         transaction: updatedRechargeTxn || { _id: orderId, orderId, status: 'SUCCESS' },
@@ -159,15 +169,6 @@ class DthRechargeService {
         amount,
         serviceType: 'dth',
       }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
-
-      // Commit held balance & credit commission (deducts netDebitRupees)
-      try {
-        await walletService.commitReservation(userId, amount, commissionEarnedPaise);
-        const walletAfter = await walletService.getWalletBalance(userId);
-        console.log(`[DTH WALLET COMMIT SUCCESS] orderId=${orderId} walletAfter=${walletAfter}`);
-      } catch (commitErr) {
-        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${userId} expectedAmount=${amount} reason=${commitErr.message}`);
-      }
 
       const walletAfter = await walletService.getWalletBalance(userId);
       const actualDiff = Number((walletBefore - walletAfter).toFixed(2));

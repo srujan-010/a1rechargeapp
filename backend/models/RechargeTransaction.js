@@ -172,6 +172,16 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    walletFinalizationStatus: {
+      type: String,
+      enum: ['NONE', 'PENDING', 'COMPLETED', 'FAILED'],
+      default: 'NONE',
+    },
+    reservationStatus: {
+      type: String,
+      enum: ['NONE', 'ACTIVE', 'CONSUMED', 'RELEASED'],
+      default: 'NONE',
+    },
   },
   { timestamps: true }
 );

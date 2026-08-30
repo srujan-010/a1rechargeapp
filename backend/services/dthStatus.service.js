@@ -4,7 +4,6 @@ const a1TopupProvider = require('./providers/a1topup/provider.service');
 const walletService = require('./wallet/wallet.service');
 const commissionService = require('./commission/commission.service');
 const notificationService = require('./notification.service');
-const { processSuccessCommission } = require('../controllers/recharge.controller');
 
 /**
  * Independent Status Service for DTH Orders
@@ -66,35 +65,6 @@ class DthStatusService {
       };
     }
 
-    // Atomic update to ensure no duplicate processing
-    const now = new Date();
-    const updateDoc = {
-      providerStatus: newStatus,
-      status: newStatus,
-      providerTransactionId: providerRes.providerTransactionId || txn.providerTransactionId,
-      operatorReference: providerRes.operatorReference || txn.operatorReference,
-    };
-
-    if (isSuccess || isFailed) {
-      updateDoc.completedAt = now;
-    }
-
-    const updatedTxn = await RechargeTransaction.findOneAndUpdate(
-      { _id: txn._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
-      { $set: updateDoc },
-      { new: true }
-    );
-
-    if (!updatedTxn && txn.status !== 'SUCCESS') {
-      console.log(`[DTH] Concurrent update detected for Order ${orderId}`);
-      const latest = await RechargeTransaction.findById(txn._id);
-      return {
-        orderId: latest.orderId,
-        status: latest.status,
-        providerStatus: latest.providerStatus,
-      };
-    }
-
     let commissionEarnedPaise = 0;
     if (isSuccess) {
       try {
@@ -105,8 +75,42 @@ class DthStatusService {
       }
     }
 
+    let isWalletFinalized = false;
+    if (isSuccess) {
+      try {
+        await walletService.commitOrderReservation({
+          userId: txn.userId,
+          orderId,
+          amount: txn.amount,
+          commissionEarnedPaise
+        });
+        isWalletFinalized = true;
+      } catch (commitErr) {
+        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${txn.userId} expectedAmount=${txn.amount} reason=${commitErr.message}`);
+      }
+    }
+
+    const finalStatus = (isSuccess && isWalletFinalized) ? 'SUCCESS' : (isFailed ? 'FAILED' : 'PENDING');
+    const globalStatus = (isSuccess && isWalletFinalized) ? 'success' : (isFailed ? 'failed' : 'pending');
+
+    // Atomic update to ensure no duplicate processing
+    const now = new Date();
+    const updateDoc = {
+      providerStatus: newStatus,
+      status: finalStatus,
+      providerTransactionId: providerRes.providerTransactionId || txn.providerTransactionId,
+      operatorReference: providerRes.operatorReference || txn.operatorReference,
+      ...(finalStatus === 'SUCCESS' || finalStatus === 'FAILED' ? { completedAt: now } : {}),
+      ...(isWalletFinalized ? { walletFinalizationStatus: 'COMPLETED', reservationStatus: 'CONSUMED' } : {}),
+    };
+
+    const updatedTxn = await RechargeTransaction.findOneAndUpdate(
+      { _id: txn._id, status: { $in: ['PENDING', 'PROCESSING', 'RECHARGE_PROCESSING', 'INITIATED', 'SUBMITTED'] } },
+      { $set: updateDoc },
+      { new: true }
+    );
+
     // Update global Transaction model
-    const globalStatus = isSuccess ? 'success' : (isFailed ? 'failed' : 'pending');
     const updatedGlobalTxn = await Transaction.findOneAndUpdate(
       { referenceId: orderId, service: 'dth' },
       {
@@ -114,14 +118,15 @@ class DthStatusService {
           status: globalStatus,
           apiReference: providerRes.providerTransactionId || txn.providerTransactionId,
           commissionEarnedPaise,
-          ...(isSuccess || isFailed ? { completedAt: now } : {}),
+          ...(finalStatus === 'SUCCESS' || finalStatus === 'FAILED' ? { completedAt: now } : {}),
         }
       },
       { new: true }
     );
 
     // Ledger / Wallet settlement & Notifications
-    if (isSuccess) {
+    if (finalStatus === 'SUCCESS') {
+      const { processSuccessCommission } = require('../controllers/recharge.controller');
       // Record CommissionHistory & Ledger Credit via processSuccessCommission
       await processSuccessCommission({
         transaction: updatedTxn || txn,
@@ -135,12 +140,6 @@ class DthStatusService {
         serviceType: 'dth',
       }).catch(e => console.error('[DTH Commission Process Warning]:', e.message));
 
-      try {
-        await walletService.commitReservation(txn.userId, txn.amount, commissionEarnedPaise);
-        console.log(`[DTH WALLET COMMIT SUCCESS] orderId=${orderId}`);
-      } catch (commitErr) {
-        console.error(`[DTH RESERVATION ERROR] orderId=${orderId} retailerId=${txn.userId} expectedAmount=${txn.amount} reason=${commitErr.message}`);
-      }
       console.log(`[DTH] Polling Complete: Order ${orderId} transitioned to SUCCESS`);
 
       notificationService.notifyRechargeSuccess({

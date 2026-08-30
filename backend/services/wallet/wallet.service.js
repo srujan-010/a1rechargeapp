@@ -83,51 +83,64 @@ class WalletService {
    * Commits the reserved amount (Deduct Net Amount: Gross Amount - Commission)
    */
   async commitReservation(userId, amount, commissionEarnedPaise = 0) {
+    return await this.commitOrderReservation({ userId, orderId: null, amount, commissionEarnedPaise });
+  }
+
+  /**
+   * Commits the reserved amount linked to a specific orderId (Idempotent & Atomic)
+   */
+  async commitOrderReservation(options) {
+    const { userId, orderId, amount, commissionEarnedPaise = 0 } = options;
+    const RechargeTransaction = require('../../models/RechargeTransaction');
+
+    let txn = null;
+    if (orderId) {
+      txn = await RechargeTransaction.findOne({ orderId });
+      if (txn && txn.walletFinalizationStatus === 'COMPLETED') {
+        console.log(`[DTH WALLET FINALIZATION] orderId=${orderId} ALREADY FINALIZED. Skipping duplicate commit.`);
+        return { success: true, alreadyFinalized: true };
+      }
+    }
+
     const grossPaise = Math.round(amount * 100);
     const netDebitPaise = Math.max(0, grossPaise - (Number(commissionEarnedPaise) || 0));
 
-    console.log(`[DTH WALLET COMMIT] userId: ${userId}, gross: ${grossPaise} paise (₹${amount}), commission: ${commissionEarnedPaise} paise, netDebit: ${netDebitPaise} paise`);
-
-    // 1. Primary attempt: match full gross hold
-    let result = await Wallet.updateOne(
-      { userId, onHoldPaise: { $gte: grossPaise } },
-      { 
-        $inc: { 
-          balancePaise: -netDebitPaise,
-          onHoldPaise: -grossPaise
-        }
-      }
-    );
-
-    if (result.modifiedCount > 0) {
-      return true;
-    }
-
-    // 2. Fallback: if hold was reserved for net amount or partial hold exists, consume available hold safely
-    const walletDoc = await Wallet.findOne({ userId }).lean();
-    if (!walletDoc) {
+    const walletBefore = await Wallet.findOne({ userId }).lean();
+    if (!walletBefore) {
       throw new Error(`Wallet not found for user ${userId}`);
     }
 
-    const availableHoldPaise = walletDoc.onHoldPaise || 0;
-    const holdDeduction = Math.min(availableHoldPaise, grossPaise);
+    const walletBalanceBefore = Number(((walletBefore.balancePaise || 0) / 100).toFixed(2));
+    const holdBalanceBefore = Number(((walletBefore.onHoldPaise || 0) / 100).toFixed(2));
 
-    console.warn(`[DTH WALLET COMMIT FALLBACK] userId: ${userId}, availableHold: ${availableHoldPaise} paise, targetGrossHold: ${grossPaise} paise. Executing resilient commit.`);
+    const currentHoldPaise = walletBefore.onHoldPaise || 0;
+    const holdToDeduct = Math.min(currentHoldPaise, grossPaise);
 
-    result = await Wallet.updateOne(
+    console.log(`[DTH WALLET FINALIZATION] orderId=${orderId} userId=${userId} grossAmountPaise=${grossPaise} commissionAmountPaise=${commissionEarnedPaise} netDebitPaise=${netDebitPaise} walletBalanceBefore=${walletBalanceBefore} holdBalanceBefore=${holdBalanceBefore}`);
+
+    await Wallet.updateOne(
       { userId },
-      { 
-        $inc: { 
+      {
+        $inc: {
           balancePaise: -netDebitPaise,
-          onHoldPaise: -holdDeduction
+          onHoldPaise: -holdToDeduct,
         }
       }
     );
 
-    if (result.modifiedCount === 0) {
-      throw new Error(`Invalid wallet state: Cannot commit reservation for user ${userId}.`);
+    const walletAfterDoc = await Wallet.findOne({ userId }).lean();
+    const walletBalanceAfter = Number(((walletAfterDoc.balancePaise || 0) / 100).toFixed(2));
+    const holdBalanceAfter = Number(((walletAfterDoc.onHoldPaise || 0) / 100).toFixed(2));
+
+    console.log(`[DTH WALLET FINALIZATION SUCCESS] orderId=${orderId} walletBalanceAfter=${walletBalanceAfter} holdBalanceAfter=${holdBalanceAfter}`);
+
+    if (txn) {
+      txn.walletFinalizationStatus = 'COMPLETED';
+      txn.reservationStatus = 'CONSUMED';
+      await txn.save();
     }
-    return true;
+
+    return { success: true, walletBalanceAfter, holdBalanceAfter };
   }
 
   /**
