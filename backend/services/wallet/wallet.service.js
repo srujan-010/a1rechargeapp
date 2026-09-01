@@ -376,8 +376,8 @@ class WalletService {
       await session.abortTransaction();
       session.endSession();
 
-      if (error.code === 112 || (error.message && (error.message.includes('Transaction') || error.message.includes('replica set') || error.message.includes('Write conflict') || error.message.includes('WriteConflict')))) {
-        console.warn('[WALLET SETTLEMENT] Concurrency write conflict in transaction, attempting standalone atomic fallback...');
+      if (error.code === 112 || (error.message && (error.message.includes('Transaction') || error.message.includes('replica set') || error.message.includes('retryable') || error.message.includes('MongoServerError') || error.message.includes('Write conflict') || error.message.includes('WriteConflict')))) {
+        console.warn('[WALLET SETTLEMENT] Concurrency/Standalone fallback attempting atomic execution...');
         return await this._settleWalletOrderAtomic({ userId, orderId, netPayablePaise: netDebitPaise });
       }
 

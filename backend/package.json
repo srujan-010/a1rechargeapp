@@ -10,6 +10,11 @@
     "seed:circles": "node scripts/seedCircles.js",
     "seed:states": "node scripts/seedStates.js"
   },
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/tests/setup/jestSetup.js"
+    ]
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

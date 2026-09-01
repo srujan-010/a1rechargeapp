@@ -106,14 +106,22 @@ class CommissionService {
         commissionRule = await getCommissionForOperatorAndService(effectiveServiceType, operatorCode || operatorName, targetAccountType);
       }
 
-      // STRICT ACCOUNT TYPE SEPARATION (Task 4 & Task 13):
-      // If no active slab exists for targetAccountType, throw error. NEVER fall back to opposite accountType!
-      if (!commissionRule) {
+      // STRICT ACCOUNT TYPE SEPARATION & DETERMINISTIC SLAB REQUIREMENT:
+      // If no active slab exists for targetAccountType, throw COMMISSION_CONFIGURATION_NOT_FOUND error.
+      // NEVER use hardcoded fallback percentages or select wrong accountType!
+      if (!commissionRule || commissionRule.status !== 'ACTIVE') {
         console.log('\n====================================================');
         console.log('[COMMISSION CONFIG NOT FOUND]');
-        console.log(`Lookup Parameters - accountType: ${targetAccountType}, operatorCode: ${operatorCode}, operatorName: ${operatorName}, serviceType: ${effectiveServiceType}`);
+        console.log(`Lookup Parameters - accountType: ${targetAccountType}, operatorCode: ${cleanCode}, operatorName: ${cleanName}, serviceType: ${effectiveServiceType}`);
         console.log('====================================================\n');
-        throw new Error(`No active commission slab configured for ${targetAccountType} account type.`);
+        const err = new Error(`COMMISSION_CONFIGURATION_NOT_FOUND: No active commission slab configured for ${targetAccountType} account type and operator ${cleanCode || cleanName}.`);
+        err.code = 'COMMISSION_CONFIGURATION_NOT_FOUND';
+        throw err;
+      }
+
+      const grossAmountPaise = Math.round(safeAmount * 100);
+      if (!Number.isSafeInteger(grossAmountPaise) || grossAmountPaise <= 0) {
+        throw new Error(`[FINANCIAL INTEGRITY ERROR] Invalid grossAmountPaise: ${grossAmountPaise}`);
       }
 
       const providerPercent = this._safeFloat(commissionRule.providerCommission, 0);
@@ -124,33 +132,59 @@ class CommissionService {
         ? this._safeFloat(commissionRule.personalCommission, 0)
         : (targetAccountType === 'PERSONAL' ? retailerPercent : 0);
 
-      const providerAmount = this._safeFloat((safeAmount * providerPercent) / 100, 0);
-      const retailerAmount = this._safeFloat((safeAmount * retailerPercent) / 100, 0);
-      const companyAmount = this._safeFloat((safeAmount * companyPercent) / 100, 0);
-      const personalDiscountAmount = this._safeFloat((safeAmount * personalPercent) / 100, 0);
+      // Deterministic Integer Paise arithmetic
+      const retailerCommissionAmountPaise = Math.round((grossAmountPaise * retailerPercent * 100) / 10000);
+      const providerCommissionAmountPaise = Math.round((grossAmountPaise * providerPercent * 100) / 10000);
+      const companyProfitAmountPaise = Math.round((grossAmountPaise * companyPercent * 100) / 10000);
+      const personalDiscountAmountPaise = Math.round((grossAmountPaise * personalPercent * 100) / 10000);
+
+      const netPayablePaise = grossAmountPaise - retailerCommissionAmountPaise;
+
+      // FINANCIAL SAFETY ASSERTIONS
+      if (!Number.isSafeInteger(retailerCommissionAmountPaise) || retailerCommissionAmountPaise < 0 || retailerCommissionAmountPaise > grossAmountPaise) {
+        throw new Error(`[FINANCIAL INTEGRITY ERROR] Invalid retailerCommissionAmountPaise: ${retailerCommissionAmountPaise}`);
+      }
+      if (!Number.isSafeInteger(netPayablePaise) || netPayablePaise < 0) {
+        throw new Error(`[FINANCIAL INTEGRITY ERROR] Invalid netPayablePaise: ${netPayablePaise}`);
+      }
+      if (grossAmountPaise !== retailerCommissionAmountPaise + netPayablePaise) {
+        throw new Error(`[FINANCIAL INVARIANT ERROR] Equation failed: gross (${grossAmountPaise}) !== commission (${retailerCommissionAmountPaise}) + netPayable (${netPayablePaise})`);
+      }
+
+      const providerAmount = Number((providerCommissionAmountPaise / 100).toFixed(2));
+      const retailerAmount = Number((retailerCommissionAmountPaise / 100).toFixed(2));
+      const companyAmount = Number((companyProfitAmountPaise / 100).toFixed(2));
+      const personalDiscountAmount = Number((personalDiscountAmountPaise / 100).toFixed(2));
 
       console.log('\n====================================================');
-      console.log('[COMMISSION CONFIG FOUND]');
+      console.log('[COMMISSION CONFIG FOUND & CALCULATED]');
       console.log(`accountType: ${targetAccountType}`);
       console.log(`operator: ${commissionRule.operatorName} (${commissionRule.operatorCode})`);
       console.log(`serviceType: ${commissionRule.serviceType || effectiveServiceType}`);
       console.log(`planType: ${planType}`);
       console.log(`commissionRecordId: ${commissionRule._id}`);
-      console.log(`providerCommissionPercent: ${providerPercent}`);
-      console.log(`retailerCommissionPercent: ${retailerPercent}`);
-      console.log(`personalCommissionPercent: ${personalPercent}`);
+      console.log(`grossAmountPaise: ${grossAmountPaise}`);
+      console.log(`retailerCommissionPercentage: ${retailerPercent}%`);
+      console.log(`retailerCommissionAmountPaise: ${retailerCommissionAmountPaise}`);
+      console.log(`netPayablePaise: ${netPayablePaise}`);
       console.log(`active: ${commissionRule.status}`);
       console.log('====================================================\n');
 
       return {
         accountType: targetAccountType,
+        grossAmountPaise,
+        netPayablePaise,
         providerCommissionPercentage: providerPercent,
+        providerCommissionAmountPaise,
         providerCommissionAmount: providerAmount,
         retailerCommissionPercentage: retailerPercent,
+        retailerCommissionAmountPaise,
         retailerCommissionAmount: retailerAmount,
         personalCommissionPercentage: personalPercent,
+        personalDiscountAmountPaise,
         personalDiscountAmount: personalDiscountAmount,
         companyProfitPercentage: companyPercent,
+        companyProfitAmountPaise,
         companyProfitAmount: companyAmount,
         commissionRecordId: String(commissionRule._id),
       };

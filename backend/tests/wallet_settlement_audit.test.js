@@ -8,22 +8,25 @@ const walletService = require('../services/wallet/wallet.service');
 const { processSuccessCommission } = require('../controllers/recharge.controller');
 const reconciliationService = require('../services/reconciliation/reconciliation.service');
 
+const { connectTestDb, assertTestDatabaseConnection } = require('./setup/testDbGuard');
+
 describe('CRITICAL WALLET SETTLEMENT & FINANCIAL ACCOUNTING SUITE', () => {
   let user;
 
   beforeAll(async () => {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/a1recharge_test';
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(mongoUri);
-    }
+    await connectTestDb();
   });
 
   beforeEach(async () => {
-    await User.deleteMany({ phone: '9999900000' });
-    await Wallet.deleteMany({});
-    await WalletLedger.deleteMany({});
-    await RechargeTransaction.deleteMany({});
-    await CommissionHistory.deleteMany({});
+    assertTestDatabaseConnection();
+    const existingTestUser = await User.findOne({ phone: '9999900000' });
+    if (existingTestUser) {
+      await User.deleteOne({ _id: existingTestUser._id });
+      await Wallet.deleteMany({ userId: existingTestUser._id });
+      await WalletLedger.deleteMany({ userId: existingTestUser._id });
+      await RechargeTransaction.deleteMany({ userId: existingTestUser._id });
+      await CommissionHistory.deleteMany({ userId: existingTestUser._id });
+    }
 
     user = await User.create({
       name: 'Test Retailer',
@@ -35,11 +38,13 @@ describe('CRITICAL WALLET SETTLEMENT & FINANCIAL ACCOUNTING SUITE', () => {
   });
 
   afterAll(async () => {
-    await User.deleteMany({ phone: '9999900000' });
-    await Wallet.deleteMany({});
-    await WalletLedger.deleteMany({});
-    await RechargeTransaction.deleteMany({});
-    await CommissionHistory.deleteMany({});
+    if (user) {
+      await User.deleteOne({ _id: user._id });
+      await Wallet.deleteMany({ userId: user._id });
+      await WalletLedger.deleteMany({ userId: user._id });
+      await RechargeTransaction.deleteMany({ userId: user._id });
+      await CommissionHistory.deleteMany({ userId: user._id });
+    }
     if (mongoose.connection.readyState !== 0) {
       await mongoose.disconnect();
     }

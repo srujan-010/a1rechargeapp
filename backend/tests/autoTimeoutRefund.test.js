@@ -12,10 +12,10 @@ const autoTimeoutRefundService = require('../services/autoTimeoutRefund.service'
 
 const TEST_PREFIX = 'TEST_AUTO_TIMEOUT_';
 
+const { connectTestDb, assertTestDatabaseConnection } = require('./setup/testDbGuard');
+
 beforeAll(async () => {
-  if (mongoose.connection.readyState === 0) {
-    await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
-  }
+  await connectTestDb();
 });
 
 afterAll(async () => {
