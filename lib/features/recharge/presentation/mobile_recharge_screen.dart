@@ -291,8 +291,8 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
     }
 
     // Fallback to API operator detection
-    ref.read(rechargeFlowProvider.notifier).setDetecting(true);
-    await _resolveOperator(last10);
+    final token = ref.read(rechargeFlowProvider.notifier).startDetection(last10);
+    await _resolveOperator(last10, token);
   }
 
   void _onRecentTap(String phone) {

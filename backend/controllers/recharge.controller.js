@@ -175,15 +175,23 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
  */
 const processSuccessCommission = async ({ transaction, globalTransaction, userId, orderId, mobileNumber, operator, operatorCode, amount, planType, serviceType = 'mobile' }) => {
   try {
+    if (!transaction) return;
+
     if (transaction.commissionCalculated) {
       console.log(`[COMMISSION IDEMPOTENT] Commission already processed for orderId ${orderId}. Skipping.`);
       return;
     }
 
-    const existingHist = await CommissionHistory.findOne({ transactionId: transaction._id }).catch(() => null);
+    const txnId = transaction._id || transaction.id;
+
+    const existingHist = await CommissionHistory.findOne({ transactionId: txnId }).catch(() => null);
     if (existingHist) {
-      transaction.commissionCalculated = true;
-      await transaction.save().catch(() => { });
+      if (typeof transaction.save === 'function') {
+        transaction.commissionCalculated = true;
+        await transaction.save().catch(() => { });
+      } else if (txnId) {
+        await RechargeTransaction.updateOne({ _id: txnId }, { $set: { commissionCalculated: true } }).catch(() => { });
+      }
       console.log(`[COMMISSION IDEMPOTENT] CommissionHistory record already exists for orderId ${orderId}. Skipping.`);
       return;
     }
@@ -203,7 +211,7 @@ const processSuccessCommission = async ({ transaction, globalTransaction, userId
     const safeValRupees = (paise) => Number((paise / 100).toFixed(2));
 
     await CommissionHistory.create({
-      transactionId: transaction._id,
+      transactionId: txnId,
       userId,
       operatorCode: String(operatorCode || transaction.operatorCode || 'UNKNOWN'),
       rechargeAmountPaise: fin.grossAmountPaise,
@@ -219,10 +227,14 @@ const processSuccessCommission = async ({ transaction, globalTransaction, userId
       companyProfitAmount: safeValRupees(fin.companyProfitAmountPaise),
     });
 
-    transaction.commissionCalculated = true;
-    await transaction.save().catch(() => { });
+    if (typeof transaction.save === 'function') {
+      transaction.commissionCalculated = true;
+      await transaction.save().catch(() => { });
+    } else if (txnId) {
+      await RechargeTransaction.updateOne({ _id: txnId }, { $set: { commissionCalculated: true } }).catch(() => { });
+    }
 
-    if (globalTransaction) {
+    if (globalTransaction && typeof globalTransaction.save === 'function') {
       globalTransaction.commissionEarnedPaise = fin.commissionAmountPaise;
       await globalTransaction.save().catch(() => { });
     }

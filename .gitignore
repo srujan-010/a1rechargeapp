@@ -83,6 +83,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 # Credentials & Secrets
+key.properties
+*.keystore
+*.jks
+*.p12
 backend/config/firebase/serviceAccountKey.json
 serviceAccountKey.json
 backend/service-account.json

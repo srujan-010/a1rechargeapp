@@ -481,7 +481,11 @@ const registerRetailer = async (req, res, next) => {
       await WalletLedger.create({
         userId: user._id,
         transactionType: 'CREDIT',
+        amountPaise: 0,
+        previousBalancePaise: 0,
+        balanceAfterPaise: 0,
         amount: 0,
+        previousBalance: 0,
         balanceAfter: 0,
         referenceType: 'MANUAL',
         referenceId: user._id,

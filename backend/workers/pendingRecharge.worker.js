@@ -240,8 +240,7 @@ class PendingRechargeWorker {
               amount: payablePaise,
               notes: { reason: 'Recharge failed at provider (poller)', orderId: transaction.orderId },
             });
-            transaction.status = 'REFUNDED';
-            await transaction.save();
+            await RechargeTransaction.updateOne({ _id: transaction._id }, { $set: { status: 'REFUNDED' } });
             console.log(`[Worker] Refunded ${payablePaise} paise for Razorpay payment ${transaction.razorpayPaymentId}`);
           } catch (rfErr) {
             console.error(`[Worker] Razorpay Refund Error for ${transaction.orderId}:`, rfErr.message);
