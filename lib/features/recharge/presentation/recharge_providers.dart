@@ -178,12 +178,12 @@ final plansProvider = FutureProvider.family<List<PlanCategory>, ({String operato
     }
 
     debugPrint('\n====================================================');
-    debugPrint('[PLAN API REQUEST AFTER MANUAL OPERATOR CHANGE]');
-    debugPrint('====================================================');
-    debugPrint('operator: ${op?.name ?? params.operatorId}');
-    debugPrint('operatorId: ${params.operatorId}');
-    debugPrint('plansApiOperatorCode: $operatorCode');
-    debugPrint('circleCode: $circleCode');
+    debugPrint('[PLAN REQUEST]');
+    debugPrint('mobile=${ref.read(rechargeFlowProvider).phoneNumber}');
+    debugPrint('operator=${op?.name ?? params.operatorId}');
+    debugPrint('operatorCode=$operatorCode');
+    debugPrint('circle=${params.circle}');
+    debugPrint('circleCode=$circleCode');
     debugPrint('====================================================\n');
 
     final repo = ref.watch(mobilePlanRepositoryProvider);
@@ -231,6 +231,8 @@ class RechargeState {
   final String? providerOperatorCode;
   final int? customAmountPaise;
   final bool isDetecting;
+  final bool detectionFailed;
+  final int detectionToken;
   final bool isProcessing;
   final RechargeTransactionState transactionState;
 
@@ -251,6 +253,8 @@ class RechargeState {
     this.providerOperatorCode,
     this.customAmountPaise,
     this.isDetecting = false,
+    this.detectionFailed = false,
+    this.detectionToken = 0,
     this.isProcessing = false,
     this.transactionState = RechargeTransactionState.mpinVerified,
   });
@@ -267,6 +271,8 @@ class RechargeState {
     String? providerOperatorCode,
     int? customAmountPaise,
     bool? isDetecting,
+    bool? detectionFailed,
+    int? detectionToken,
     bool? isProcessing,
     RechargeTransactionState? transactionState,
     bool clearPlan = false,
@@ -285,6 +291,8 @@ class RechargeState {
       providerOperatorCode: providerOperatorCode ?? (clearPlan ? null : this.providerOperatorCode),
       customAmountPaise: customAmountPaise ?? (clearPlan ? null : this.customAmountPaise),
       isDetecting: isDetecting ?? this.isDetecting,
+      detectionFailed: detectionFailed ?? this.detectionFailed,
+      detectionToken: detectionToken ?? this.detectionToken,
       isProcessing: isProcessing ?? this.isProcessing,
       transactionState: transactionState ?? this.transactionState,
     );
@@ -296,14 +304,33 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
   @override
   RechargeState build() => const RechargeState();
 
+  int startDetection(String number) {
+    final nextToken = state.detectionToken + 1;
+    state = RechargeState(
+      phoneNumber: number,
+      isDetecting: true,
+      detectionFailed: false,
+      detectionToken: nextToken,
+    );
+    return nextToken;
+  }
+
+  bool isLatestRequest(int token, String phone) {
+    return state.detectionToken == token && state.phoneNumber == phone;
+  }
+
   void setPhoneNumber(String number, {bool clearOperator = true, bool? clearPlan}) {
     final shouldClearPlan = clearPlan ?? clearOperator;
     if (state.phoneNumber != number) {
+      final nextToken = state.detectionToken + 1;
       state = state.copyWith(
         phoneNumber: number,
+        detectionToken: nextToken,
         clearManual: clearOperator,
         clearAuto: clearOperator,
         clearPlan: shouldClearPlan,
+        isDetecting: false,
+        detectionFailed: false,
       );
     }
   }
@@ -312,8 +339,24 @@ class RechargeFlowNotifier extends Notifier<RechargeState> {
     state = state.copyWith(isDetecting: detecting);
   }
 
+  void setDetectionFailed() {
+    state = state.copyWith(
+      isDetecting: false,
+      detectionFailed: true,
+      clearAuto: true,
+      clearManual: true,
+      clearPlan: true,
+    );
+  }
+
   void setAutoDetection(Operator op, Circle c) {
-    state = state.copyWith(autoOperator: op, autoCircle: c, isDetecting: false, clearPlan: true);
+    state = state.copyWith(
+      autoOperator: op,
+      autoCircle: c,
+      isDetecting: false,
+      detectionFailed: false,
+      clearPlan: true,
+    );
   }
 
   void setOperator(Operator op) {

@@ -103,9 +103,9 @@ function resolvePlansApiOperatorCode(operator, planType = '') {
     }
 
     // Mobile Direct Codes & Names
-    if (upper === 'AT' || upper === 'AIRTEL' || upper === 'A') return '2';
-    if (upper === 'VI' || upper === 'VODAFONE' || upper === 'V' || upper === 'IDEA' || upper === 'I') return '23';
-    if (upper === 'JIO' || upper === 'RELIANCE' || upper === 'RC' || upper === 'RJ') return '11';
+    if (upper === 'AT' || upper === 'AIRTEL' || upper === 'A' || upper.includes('AIRTEL') || upper.includes('BHARTI AIRTEL')) return '2';
+    if (upper === 'VI' || upper === 'VODAFONE' || upper === 'V' || upper === 'IDEA' || upper === 'I' || upper.includes('VODAFONE') || upper.includes('IDEA') || upper.includes('VI')) return '23';
+    if (upper === 'JIO' || upper === 'RELIANCE' || upper === 'RC' || upper === 'RJ' || upper.includes('JIO') || upper.includes('RELIANCE JIO') || upper.includes('RELIANCE')) return '11';
 
     return clean;
   }

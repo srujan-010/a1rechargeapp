@@ -18,6 +18,7 @@ import '../../../models/mobile_plan.dart';
 import '../domain/models/operator.dart';
 
 import '../domain/models/circle.dart';
+import '../../../core/utils/operator_normalizer.dart';
 import 'widgets/recent_contacts_list.dart';
 
 class MobileRechargeScreen extends ConsumerStatefulWidget {
@@ -125,80 +126,124 @@ class _MobileRechargeScreenState extends ConsumerState<MobileRechargeScreen> {
 
   void _onPhoneChanged(String value) {
     debugPrint('[FLOW] Mobile entered: $value');
-    ref.read(rechargeFlowProvider.notifier).setPhoneNumber(value);
     
     // Auto-resolve operator when 10 digits are entered
     if (value.length >= 10) {
-      debugPrint('[FLOW] Starting operator resolution for number');
-      ref.read(rechargeFlowProvider.notifier).setDetecting(true);
-      _resolveOperator(value.substring(value.length - 10)); // Take last 10 in case of +91
+      final last10 = value.replaceAll(RegExp(r'\D'), '');
+      final cleanPhone = last10.length >= 10 ? last10.substring(last10.length - 10) : last10;
+      final token = ref.read(rechargeFlowProvider.notifier).startDetection(cleanPhone);
+      _resolveOperator(cleanPhone, token);
       _phoneFocusNode.unfocus();
+    } else {
+      ref.read(rechargeFlowProvider.notifier).setPhoneNumber(value);
     }
   }
 
-  Future<void> _resolveOperator(String phone) async {
+  Future<void> _resolveOperator(String phone, int requestToken) async {
+    final sessionManager = ref.read(rechargeSessionProvider.notifier);
     final requestSessionId = ref.read(rechargeSessionProvider).sessionId;
-    debugPrint('[FLOW] Calling resolve API for phone: $phone (sessionId: $requestSessionId)');
+
+    debugPrint('\n====================================================');
+    debugPrint('[OPERATOR DETECTION START]');
+    debugPrint('mobile=$phone');
+    debugPrint('requestToken=$requestToken');
+    debugPrint('sessionId=$requestSessionId');
+    debugPrint('====================================================\n');
+
     try {
       final repo = ref.read(mobilePlanRepositoryProvider);
       final result = await repo.detectOperator(phone);
-      debugPrint('[FLOW] Response received from resolve API');
-      
+
       result
         ..onSuccess((res) async {
-          debugPrint('[FLOW] Parsing JSON successful. Updating operator and circle.');
+          debugPrint('\n====================================================');
+          debugPrint('[OPERATOR DETECTION RESPONSE]');
+          debugPrint('mobile=$phone');
+          debugPrint('rawOperator=${res.operatorName}');
+          debugPrint('rawOpCode=${res.operatorCode}');
+          debugPrint('rawCircle=${res.circleName}');
+          debugPrint('rawCircleCode=${res.circleCode}');
+          debugPrint('====================================================\n');
+
           if (!mounted) return;
 
-          // Guard against stale async responses from a previous session
-          if (!ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+          // Guard against stale async responses or changed numbers
+          if (!sessionManager.validateSession(requestSessionId) ||
+              !ref.read(rechargeFlowProvider.notifier).isLatestRequest(requestToken, phone)) {
+            debugPrint('[OPERATOR DETECTION] STALE RESPONSE DISCARDED for $phone (token: $requestToken)');
             return;
           }
-          
-          final operatorName = res.operatorName;
-          final circleName = res.circleName;
-          
-          // Wait for providers to be ready to avoid silently failing on first use
-          final operators = await ref.read(operatorsProvider('mobile').future);
-          final searchName = operatorName.toLowerCase().replaceAll('gsm', '').trim();
-          final opResult = operators.where((op) {
-            final opNameLower = op.name.toLowerCase();
-            return opNameLower == operatorName.toLowerCase() ||
-                   opNameLower == searchName ||
-                   operatorName.toLowerCase().contains(opNameLower) ||
-                   opNameLower.contains(operatorName.toLowerCase()) ||
-                   (op.shortCode != null && op.shortCode!.toLowerCase() == res.operatorCode?.toLowerCase()) ||
-                   (op.a1TopupCode != null && op.a1TopupCode!.toLowerCase() == res.operatorCode?.toLowerCase());
-          }).firstOrNull ?? operators.where((o) => o.name.toUpperCase().contains('BSNL')).firstOrNull ??
-          Operator(id: res.operatorCode ?? '', name: operatorName, logoUrl: '', type: OperatorType.prepaid, shortCode: res.operatorCode);
-          
-          final circles = await ref.read(circlesProvider.future);
-          final circleResult = circles.firstWhere(
-            (c) => c.state.toLowerCase() == circleName.toLowerCase() || (c.code != null && c.code!.toLowerCase() == res.circleCode?.toLowerCase()),
-            orElse: () => Circle(id: '', state: circleName, code: res.circleCode ?? ''),
+
+          final norm = OperatorNormalizer.normalize(
+            rawOperator: res.operatorName,
+            rawOpCode: res.operatorCode,
+            rawCircle: res.circleName,
+            rawCircleCode: res.circleCode,
           );
 
-          if (!ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
+          if (norm == null) {
+            debugPrint('[OPERATOR DETECTION] COULD NOT NORMALIZE OPERATOR: ${res.operatorName}');
+            if (ref.read(rechargeFlowProvider.notifier).isLatestRequest(requestToken, phone)) {
+              ref.read(rechargeFlowProvider.notifier).setDetectionFailed();
+            }
             return;
           }
 
-          if (opResult != null && circleResult != null) {
-            ref.read(rechargeFlowProvider.notifier).setAutoDetection(opResult, circleResult);
-          } else {
-            ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+          debugPrint('\n====================================================');
+          debugPrint('[NORMALIZED OPERATOR]');
+          debugPrint('operatorName=${norm.operatorName}');
+          debugPrint('operatorCode=${norm.providerOperatorCode}');
+          debugPrint('circle=${norm.circleName}');
+          debugPrint('circleCode=${norm.circleCode}');
+          debugPrint('====================================================\n');
+
+          // Match operator against Master Operator database or construct clean Operator
+          final operators = await ref.read(operatorsProvider('mobile').future);
+          final opResult = operators.where((op) {
+            final opNameLower = op.name.toLowerCase();
+            final normNameLower = norm.operatorName.toLowerCase();
+            return op.plansApiCode == norm.providerOperatorCode ||
+                   op.shortCode?.toUpperCase() == norm.a1TopupCode ||
+                   op.a1TopupCode?.toUpperCase() == norm.a1TopupCode ||
+                   opNameLower == normNameLower ||
+                   opNameLower.contains(normNameLower) ||
+                   normNameLower.contains(opNameLower);
+          }).firstOrNull ?? Operator(
+            id: norm.providerOperatorCode,
+            name: norm.operatorName,
+            logoUrl: '',
+            type: OperatorType.prepaid,
+            shortCode: norm.a1TopupCode,
+            a1TopupCode: norm.a1TopupCode,
+            plansApiCode: norm.providerOperatorCode,
+          );
+
+          final circles = await ref.read(circlesProvider.future);
+          final circleResult = circles.firstWhere(
+            (c) => c.code == norm.circleCode || c.state.toLowerCase() == norm.circleName.toLowerCase(),
+            orElse: () => Circle(id: norm.circleCode, state: norm.circleName, code: norm.circleCode),
+          );
+
+          if (!sessionManager.validateSession(requestSessionId) ||
+              !ref.read(rechargeFlowProvider.notifier).isLatestRequest(requestToken, phone)) {
+            debugPrint('[OPERATOR DETECTION] SECONDARY TOKEN CHECK DISCARDED for $phone');
+            return;
           }
-          debugPrint('[FLOW] State updated. Starting plans fetch automatically via plansProvider.');
+
+          ref.read(rechargeFlowProvider.notifier).setAutoDetection(opResult, circleResult);
+          debugPrint('[OPERATOR DETECTION SUCCESS] Applied Operator: ${opResult.name} (${opResult.plansApiCode ?? opResult.code}), Circle: ${circleResult.state} (${circleResult.code})');
         })
         ..onFailure((err) {
-          debugPrint('[FLOW] resolveOperator failed: $err');
-          if (ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
-            ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+          debugPrint('[OPERATOR DETECTION FAILED] $err');
+          if (ref.read(rechargeFlowProvider.notifier).isLatestRequest(requestToken, phone)) {
+            ref.read(rechargeFlowProvider.notifier).setDetectionFailed();
           }
         });
     } catch (e, st) {
-      debugPrint('[FLOW] resolveOperator threw exception: $e');
+      debugPrint('[OPERATOR DETECTION EXCEPTION] $e');
       debugPrintStack(stackTrace: st);
-      if (ref.read(rechargeSessionProvider.notifier).validateSession(requestSessionId)) {
-        ref.read(rechargeFlowProvider.notifier).setDetecting(false);
+      if (ref.read(rechargeFlowProvider.notifier).isLatestRequest(requestToken, phone)) {
+        ref.read(rechargeFlowProvider.notifier).setDetectionFailed();
       }
     }
   }
