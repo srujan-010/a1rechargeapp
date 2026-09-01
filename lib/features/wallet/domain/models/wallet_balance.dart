@@ -21,34 +21,41 @@ class WalletBalance extends Equatable {
   final String walletId;
   final String walletFundingMode;
 
+  /// Alias for backward compatibility
   int get balancePaise => availablePaise;
 
   bool get isAddMoneyEnabled =>
       walletFundingMode == 'RAZORPAY' || walletFundingMode == 'PAYMENT_GATEWAY' || walletFundingMode == 'BOTH';
 
   factory WalletBalance.fromJson(Map<String, dynamic> json) {
-    final rawLedger = (json['walletBalancePaise'] as num?)?.toInt() ??
-        (json['balancePaise'] as num?)?.toInt() ??
-        (json['availablePaise'] as num?)?.toInt() ??
-        (json['availableBalance'] as num?)?.toInt() ??
-        (json['ledgerBalancePaise'] as num?)?.toInt() ??
-        (json['ledgerBalance'] as num?)?.toInt() ??
+    final data = json['data'] is Map<String, dynamic> ? json['data'] as Map<String, dynamic> : json;
+
+    final rawLedger = (data['walletBalancePaise'] as num?)?.toInt() ??
+        (data['balancePaise'] as num?)?.toInt() ??
+        (data['ledgerBalancePaise'] as num?)?.toInt() ??
         0;
-    final rawHold = (json['holdAmountPaise'] as num?)?.toInt() ??
-        (json['onHoldPaise'] as num?)?.toInt() ??
-        (json['onHoldBalance'] as num?)?.toInt() ??
+
+    final rawHold = (data['holdAmountPaise'] as num?)?.toInt() ??
+        (data['onHoldPaise'] as num?)?.toInt() ??
+        (data['onHoldBalance'] as num?)?.toInt() ??
         0;
+
+    final computedAvailable = rawLedger - rawHold > 0 ? rawLedger - rawHold : 0;
+
+    final rawAvailable = (data['availablePaise'] as num?)?.toInt() ??
+        (data['availableBalance'] as num?)?.toInt() ??
+        computedAvailable;
 
     return WalletBalance(
       ledgerBalancePaise: rawLedger,
       onHoldPaise: rawHold,
-      availablePaise: rawLedger,
-      pendingSettlementPaise: (json['pendingSettlementPaise'] as num?)?.toInt() ?? 0,
-      lastUpdated: json['lastUpdated'] != null
-          ? DateTime.parse(json['lastUpdated'] as String)
+      availablePaise: rawAvailable,
+      pendingSettlementPaise: (data['pendingSettlementPaise'] as num?)?.toInt() ?? 0,
+      lastUpdated: data['lastUpdated'] != null
+          ? DateTime.parse(data['lastUpdated'] as String)
           : DateTime.now(),
-      walletId: json['walletId'] as String? ?? '',
-      walletFundingMode: json['walletFundingMode'] as String? ?? 'ADMIN_ONLY',
+      walletId: data['walletId'] as String? ?? '',
+      walletFundingMode: data['walletFundingMode'] as String? ?? 'ADMIN_ONLY',
     );
   }
 
@@ -63,8 +70,8 @@ class WalletBalance extends Equatable {
       };
 
   factory WalletBalance.fake() => WalletBalance(
-        availablePaise: 1254025, // ₹12,540.25
-        ledgerBalancePaise: 1254000,
+        availablePaise: 1229025, // ₹12,290.25 (₹12,540.25 - ₹250.00)
+        ledgerBalancePaise: 1254025,
         onHoldPaise: 25000, // ₹250.00
         pendingSettlementPaise: 18000, // ₹180.00
         lastUpdated: DateTime.now(),

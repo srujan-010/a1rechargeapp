@@ -29,9 +29,60 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // Authoritative Integer Paise Fields
+    grossAmountPaise: {
+      type: Number,
+      required: true,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    commissionAmountPaise: {
+      type: Number,
+      required: true,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    netPayablePaise: {
+      type: Number,
+      required: true,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    reservedAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    refundAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    // Legacy rupee fields for backwards compatibility
     amount: {
       type: Number,
       required: true,
+    },
+    commissionAmount: {
+      type: Number,
+      default: 0,
+    },
+    payableAmount: {
+      type: Number,
+      default: 0,
+    },
+    reservedAmount: {
+      type: Number,
+      default: 0,
+    },
+    refundAmount: {
+      type: Number,
+      default: 0,
     },
     operatorCode: {
       type: String,
@@ -46,14 +97,24 @@ const rechargeTransactionSchema = new mongoose.Schema(
       enum: ['INITIATED', 'PAYMENT_PENDING', 'PAYMENT_SUCCESS', 'RECHARGE_PROCESSING', 'PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED', 'REVERSED'],
       default: 'INITIATED',
     },
+    walletSettlementStatus: {
+      type: String,
+      enum: ['NONE', 'PENDING', 'SETTLED', 'RELEASED', 'FAILED', 'RECONCILIATION_REQUIRED'],
+      default: 'NONE',
+    },
+    walletSettlementAt: {
+      type: Date,
+      default: null,
+    },
+    walletDebitLedgerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WalletLedger',
+      default: null,
+    },
     refundStatus: {
       type: String,
       enum: ['NONE', 'NOT_APPLICABLE', 'PROCESSING', 'REFUNDED', 'FAILED'],
       default: 'NONE',
-    },
-    refundAmount: {
-      type: Number,
-      default: 0,
     },
     refundReason: {
       type: String,
@@ -100,14 +161,6 @@ const rechargeTransactionSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    commissionAmount: {
-      type: Number,
-      default: 0,
-    },
-    payableAmount: {
-      type: Number,
-      default: 0,
-    },
     operatorId: {
       type: String,
       default: null,
@@ -119,10 +172,6 @@ const rechargeTransactionSchema = new mongoose.Schema(
     clientOrderId: {
       type: String,
       default: null,
-    },
-    reservedAmount: {
-      type: Number,
-      default: 0,
     },
     commissionCalculated: {
       type: Boolean,
@@ -185,6 +234,10 @@ const rechargeTransactionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+rechargeTransactionSchema.index({ userId: 1, createdAt: -1 });
+rechargeTransactionSchema.index({ userId: 1, status: 1 });
+rechargeTransactionSchema.index({ walletSettlementStatus: 1 });
 
 const RechargeTransaction = mongoose.model('RechargeTransaction', rechargeTransactionSchema);
 module.exports = RechargeTransaction;

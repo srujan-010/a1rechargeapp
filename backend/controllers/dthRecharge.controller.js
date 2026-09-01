@@ -17,7 +17,7 @@ const { calculateRechargePayableHelper } = require('./recharge.controller');
 const executeDthRecharge = async (req, res, next) => {
   console.log(`[DTH] Controller Entered: executeDthRecharge`);
   let orderId;
-  let amountForRollback = 0;
+  let amountForRollbackPaise = 0;
   let walletReserved = false;
 
   try {
@@ -107,47 +107,59 @@ const executeDthRecharge = async (req, res, next) => {
       accountType: req.user?.accountType || 'BUSINESS',
     });
 
-    const commissionAmount = payableDetails.commissionAmount;
-    const payableAmount = payableDetails.payableAmount; // Net wallet debit (e.g. 266.06 for 275 recharge)
+    const grossAmountPaise = payableDetails.grossAmountPaise;
+    const commissionAmountPaise = payableDetails.commissionAmountPaise;
+    const netPayablePaise = payableDetails.netPayablePaise;
 
-    // Reserve Gross Amount in Wallet (Hold)
+    const commissionAmount = payableDetails.commissionAmount;
+    const payableAmount = payableDetails.payableAmount;
+
+    orderId = `A1DTH${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    // Reserve ONLY Net Retailer Payable in Wallet (Hold)
     if (paymentMode === 'wallet') {
       try {
-        await walletService.reserveAmount(userId, amount);
+        await walletService.reserveWalletAmount({
+          userId,
+          netPayablePaise,
+          orderId,
+        });
         walletReserved = true;
-        amountForRollback = amount;
-        console.log(`[DTH] Wallet Reserved: ₹${amount} (Gross: ₹${amount}, Expected Commission: ₹${commissionAmount}, Net Debit: ₹${payableAmount})`);
+        amountForRollbackPaise = netPayablePaise;
+        console.log(`[DTH WALLET RESERVED] orderId=${orderId} netPayablePaise=${netPayablePaise} grossPaise=${grossAmountPaise}`);
       } catch (wErr) {
         console.log(`[DTH] Wallet Reservation Failed: ${wErr.message}`);
         return res.status(400).json({
           success: false,
           step: "Wallet Reservation",
-          error: wErr.message || "Insufficient wallet balance"
+          error: wErr.message || "Insufficient wallet balance",
+          details: { shortfallPaise: wErr.shortfallPaise }
         });
       }
     }
 
     // 6. Create Mongo Pending Documents
-    orderId = `A1DTH${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-    console.log(`[DTH RESERVATION CREATED] orderId=${orderId} retailerId=${userId} grossPaise=${Math.round(amount * 100)} reservedPaise=${Math.round(amount * 100)} status=ACTIVE`);
-
     await RechargeTransaction.create({
       orderId,
       userId,
       providerName: 'A1Topup',
       mobileNumber: subscriberId,
-      amount,
+      grossAmountPaise,
+      commissionAmountPaise,
+      netPayablePaise,
+      reservedAmountPaise: paymentMode === 'wallet' ? netPayablePaise : 0,
+      amount: payableDetails.rechargeAmount,
+      commissionAmount,
+      payableAmount,
+      reservedAmount: paymentMode === 'wallet' ? payableAmount : 0,
       accountType: payableDetails.accountType,
       commissionRecordId: payableDetails.commissionRecordId,
       commissionPercent: payableDetails.commissionPercentage,
-      commissionAmount,
-      payableAmount,
       operatorCode: operator.code,
       circleCode: '4',
       serviceType: 'dth',
       status: 'PENDING',
-      reservedAmount: payableAmount,
+      walletSettlementStatus: paymentMode === 'wallet' ? 'PENDING' : 'NONE',
       paymentMethod: paymentMode,
       internalOperatorName: operator.name,
     });
@@ -155,11 +167,11 @@ const executeDthRecharge = async (req, res, next) => {
     await Transaction.create({
       userId,
       type: 'debit',
-      amountPaise: Math.round(amount * 100),
-      payableAmountPaise: Math.round(payableAmount * 100),
+      amountPaise: grossAmountPaise,
+      payableAmountPaise: netPayablePaise,
       accountType: payableDetails.accountType,
       commissionRecordId: payableDetails.commissionRecordId,
-      commissionEarnedPaise: Math.round(commissionAmount * 100),
+      commissionEarnedPaise: commissionAmountPaise,
       status: 'pending',
       service: 'dth',
       referenceId: orderId,
@@ -188,7 +200,10 @@ const executeDthRecharge = async (req, res, next) => {
         referenceId: orderId,
         subscriberNumber: subscriberId,
         operatorName: operator.name,
-        amountPaise: Math.round(amount * 100),
+        grossAmountPaise,
+        commissionAmountPaise,
+        netPayablePaise,
+        amountPaise: grossAmountPaise,
         status: serviceResult.status.toLowerCase(),
         providerStatus: serviceResult.status,
         providerTransactionId: serviceResult.providerTransactionId,
@@ -201,10 +216,9 @@ const executeDthRecharge = async (req, res, next) => {
   } catch (error) {
     console.error(`[DTH] Controller Error: ${error.message}`);
 
-    // Rollback wallet hold if reserved
-    if (walletReserved && userId && amountForRollback > 0) {
+    if (walletReserved && userId && amountForRollbackPaise > 0) {
       try {
-        await walletService.releaseReservation(userId, amountForRollback);
+        await walletService.releaseOrderHold({ userId, orderId, netPayablePaise: amountForRollbackPaise });
       } catch (rErr) {
         console.error(`[DTH] Wallet Rollback Error: ${rErr.message}`);
       }
@@ -340,16 +354,10 @@ const getDthPacks = async (req, res, next) => {
   try {
     const { operatorId, search } = req.query;
     console.log(`\n[DTH PACKS] Controller Entered: getDthPacks`);
-    console.log(`[DTH PACKS] Query Parameters: operatorId=${operatorId}, search=${search || ''}`);
-
     if (!operatorId) {
       return res.status(400).json({ success: false, message: 'operatorId is required' });
     }
-
-    // DTH Packs are now directly fetched from the PlanAPI on the frontend
-    // Return empty array to support legacy apps
     const packs = [];
-
     return res.status(200).json({
       success: true,
       service: 'dth',

@@ -232,25 +232,21 @@ class AutoTimeoutRefundService {
           }
         }
       } else if (isWalletPayment) {
-        // Wallet Debit / Hold Refund
+        // Wallet Hold Release (0 permanent debit occurred)
         try {
-          if (claimed.reservedAmount && claimed.reservedAmount > 0) {
-            // Funds were held as reservation: release hold back to user
-            await walletService.releaseReservation(claimed.userId, claimed.reservedAmount).catch(async (e) => {
-              // If hold was already committed, credit back wallet balance directly
-              await walletService.addBalance(claimed.userId, claimed.reservedAmount);
-            });
-          } else {
-            // Direct wallet debit: refund back to wallet balance
-            await walletService.addBalance(claimed.userId, refundAmount);
-          }
+          const netPayablePaise = claimed.netPayablePaise || Math.round((claimed.payableAmount || claimed.amount) * 100);
+          await walletService.releaseOrderHold({
+            userId: claimed.userId,
+            orderId: claimed.orderId,
+            netPayablePaise,
+          });
           finalRefundStatus = 'REFUNDED';
           refundSuccess = true;
-          console.log(`[AUTO TIMEOUT] Wallet refund successful for user ${claimed.userId} (₹${refundAmount})`);
+          console.log(`[AUTO TIMEOUT] Wallet hold released for order ${claimed.orderId} (user ${claimed.userId})`);
         } catch (wErr) {
           finalRefundStatus = 'FAILED';
           refundErrorMsg = wErr.message;
-          console.error(`[AUTO TIMEOUT ERROR] Wallet refund failed for user ${claimed.userId}:`, wErr.message);
+          console.error(`[AUTO TIMEOUT ERROR] Wallet hold release failed for user ${claimed.userId}:`, wErr.message);
         }
       } else {
         // Generic fallback: credit wallet if user exists

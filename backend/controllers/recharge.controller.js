@@ -97,6 +97,7 @@ const Transaction = require('../models/Transaction');
 const CommissionHistory = require('../models/CommissionHistory');
 const walletService = require('../services/wallet/wallet.service');
 const commissionService = require('../services/commission/commission.service');
+const financialService = require('../services/financial/financial.service');
 const ledgerService = require('../services/ledger/ledger.service');
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
@@ -115,25 +116,18 @@ const getRazorpayInstance = () => {
 };
 
 /**
- * Calculate payable amount and commission breakdown server-side
+ * Calculate payable amount and commission breakdown server-side in Integer Paise
  */
-const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operatorCode, operatorName, amount, userId, planType, accountType = 'BUSINESS' }) => {
-  const safeAmount = Number.isFinite(Number(amount)) ? Number(amount) : 0;
+const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operatorCode, operatorName, amount, amountPaise, userId, planType, accountType = 'BUSINESS' }) => {
+  const grossPaise = amountPaise ? Math.round(Number(amountPaise)) : Math.round((Number(amount) || 0) * 100);
 
-  let resolvedAccountType = accountType;
-  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-    const userQuery = User.findById(userId);
-    const userDoc = userQuery && typeof userQuery.lean === 'function' ? await userQuery.lean() : await userQuery;
-    if (userDoc && userDoc.accountType) {
-      resolvedAccountType = userDoc.accountType;
-    }
-  }
-  const targetAccountType = String(resolvedAccountType || 'BUSINESS').trim().toUpperCase() === 'PERSONAL' ? 'PERSONAL' : 'BUSINESS';
-
-  if (safeAmount <= 0) {
+  if (grossPaise <= 0) {
     return {
-      accountType: targetAccountType,
+      accountType: 'BUSINESS',
       commissionRecordId: null,
+      grossAmountPaise: 0,
+      commissionAmountPaise: 0,
+      netPayablePaise: 0,
       rechargeAmount: 0,
       rechargeAmountPaise: 0,
       commissionAmount: 0,
@@ -145,41 +139,33 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
     };
   }
 
-  const commission = await commissionService.calculateCommission(
-    operatorCode,
-    safeAmount,
-    operatorName,
+  const fin = await financialService.calculateRechargeFinancials({
     serviceType,
-    { retailerId: userId ? String(userId) : 'N/A', planType, accountType: targetAccountType }
-  );
+    operatorCode,
+    operatorName,
+    grossAmountPaise: grossPaise,
+    userId,
+    planType,
+    accountType,
+  });
 
-  const safeVal = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
-  };
-
-  const isPersonal = targetAccountType === 'PERSONAL';
-
-  const commissionAmount = isPersonal
-    ? safeVal(commission?.personalDiscountAmount)
-    : safeVal(commission?.retailerCommissionAmount);
-
-  const commissionPercentage = isPersonal
-    ? safeVal(commission?.personalCommissionPercentage)
-    : safeVal(commission?.retailerCommissionPercentage);
-
-  const payableAmount = safeVal(Math.max(0, safeAmount - commissionAmount));
+  const grossRupees = Number((fin.grossAmountPaise / 100).toFixed(2));
+  const commissionRupees = Number((fin.commissionAmountPaise / 100).toFixed(2));
+  const netPayableRupees = Number((fin.netPayablePaise / 100).toFixed(2));
 
   return {
-    accountType: targetAccountType,
-    commissionRecordId: commission?.commissionRecordId || null,
-    rechargeAmount: safeAmount,
-    rechargeAmountPaise: Math.round(safeAmount * 100),
-    commissionAmount,
-    commissionAmountPaise: Math.round(commissionAmount * 100),
-    commissionPercentage,
-    payableAmount,
-    payableAmountPaise: Math.round(payableAmount * 100),
+    accountType: fin.accountType,
+    commissionRecordId: fin.commissionRecordId,
+    grossAmountPaise: fin.grossAmountPaise,
+    commissionAmountPaise: fin.commissionAmountPaise,
+    netPayablePaise: fin.netPayablePaise,
+    rechargeAmount: grossRupees,
+    rechargeAmountPaise: fin.grossAmountPaise,
+    commissionAmount: commissionRupees,
+    commissionAmountPaise: fin.commissionAmountPaise,
+    commissionPercentage: fin.effectiveCommissionPercent,
+    payableAmount: netPayableRupees,
+    payableAmountPaise: fin.netPayablePaise,
     currency: 'INR',
   };
 };
@@ -189,9 +175,8 @@ const calculateRechargePayableHelper = async ({ serviceType = 'mobile', operator
  */
 const processSuccessCommission = async ({ transaction, globalTransaction, userId, orderId, mobileNumber, operator, operatorCode, amount, planType, serviceType = 'mobile' }) => {
   try {
-    // Prevent Duplicate Commission (Idempotency Guard)
     if (transaction.commissionCalculated) {
-      console.log(`[COMMISSION IDEMPOTENT] Commission already processed for orderId ${orderId}. Skipping duplicate credit.`);
+      console.log(`[COMMISSION IDEMPOTENT] Commission already processed for orderId ${orderId}. Skipping.`);
       return;
     }
 
@@ -199,88 +184,54 @@ const processSuccessCommission = async ({ transaction, globalTransaction, userId
     if (existingHist) {
       transaction.commissionCalculated = true;
       await transaction.save().catch(() => { });
-      console.log(`[COMMISSION IDEMPOTENT] CommissionHistory record already exists for orderId ${orderId}. Skipping duplicate credit.`);
+      console.log(`[COMMISSION IDEMPOTENT] CommissionHistory record already exists for orderId ${orderId}. Skipping.`);
       return;
     }
 
-    // Commission Lookup & Calculation
-    const commission = await commissionService.calculateCommission(
-      operatorCode,
-      amount,
-      operator ? operator.name : (transaction.internalOperatorName || ''),
+    const grossPaise = transaction.grossAmountPaise || Math.round((Number(amount) || 0) * 100);
+
+    const fin = await financialService.calculateRechargeFinancials({
       serviceType,
-      {
-        orderId,
-        retailerId: userId ? userId.toString() : 'N/A',
-        operatorId: transaction.internalOperatorId || 'N/A',
-        planType: planType || transaction.planType || 'N/A',
-      }
-    );
+      operatorCode: operatorCode || transaction.operatorCode,
+      operatorName: operator ? operator.name : (transaction.internalOperatorName || ''),
+      grossAmountPaise: grossPaise,
+      userId,
+      planType: planType || transaction.planType,
+      accountType: transaction.accountType,
+    });
 
-    const safeVal = (v) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
-    };
+    const safeValRupees = (paise) => Number((paise / 100).toFixed(2));
 
-    const providerCommissionPercent = safeVal(commission?.providerCommissionPercentage);
-    const providerCommissionAmount = safeVal(commission?.providerCommissionAmount);
-    const retailerCommissionPercent = safeVal(commission?.retailerCommissionPercentage);
-    const retailerCommissionAmount = safeVal(commission?.retailerCommissionAmount);
-    const companyProfitPercent = safeVal(commission?.companyProfitPercentage);
-    const companyProfitAmount = safeVal(commission?.companyProfitAmount);
-
-    // CRITICAL REQUIREMENT 17: Assert finite numeric values before saving to MongoDB
-    if (!Number.isFinite(providerCommissionAmount) || !Number.isFinite(retailerCommissionAmount)) {
-      console.error(`[COMMISSION CRITICAL ERROR] Invalid commission amounts calculated for orderId ${orderId}: provider=${providerCommissionAmount}, retailer=${retailerCommissionAmount}`);
-      throw new Error(`Commission calculation returned NaN/invalid number for order ${orderId}`);
-    }
-
-    let ledgerEntryId = 'N/A';
-
-    // Log to ledger for auditing
-    if (retailerCommissionAmount > 0) {
-      const ledgerLog = await ledgerService.logTransaction({
-        userId,
-        type: 'CREDIT',
-        amount: retailerCommissionAmount,
-        referenceType: 'COMMISSION',
-        referenceId: transaction._id,
-        description: `Commission for Recharge ${orderId}`,
-      }).catch(e => { console.error('[Ledger Credit Warning]:', e.message); return null; });
-
-      if (ledgerLog && ledgerLog._id) {
-        ledgerEntryId = ledgerLog._id.toString();
-      }
-    }
-
-    // Save CommissionHistory Record strictly with finite numbers
     await CommissionHistory.create({
       transactionId: transaction._id,
       userId,
-      operatorCode: String(operatorCode || 'UNKNOWN'),
-      rechargeAmount: safeVal(amount),
-      providerCommissionPercentage: providerCommissionPercent,
-      providerCommissionAmount: providerCommissionAmount,
-      retailerCommissionPercentage: retailerCommissionPercent,
-      retailerCommissionAmount: retailerCommissionAmount,
-      companyProfitPercentage: companyProfitPercent,
-      companyProfitAmount: companyProfitAmount,
+      operatorCode: String(operatorCode || transaction.operatorCode || 'UNKNOWN'),
+      rechargeAmountPaise: fin.grossAmountPaise,
+      providerCommissionAmountPaise: fin.providerCommissionAmountPaise,
+      retailerCommissionAmountPaise: fin.retailerCommissionAmountPaise,
+      companyProfitAmountPaise: fin.companyProfitAmountPaise,
+      rechargeAmount: safeValRupees(fin.grossAmountPaise),
+      providerCommissionPercentage: fin.providerCommissionPercentage,
+      providerCommissionAmount: safeValRupees(fin.providerCommissionAmountPaise),
+      retailerCommissionPercentage: fin.retailerCommissionPercentage,
+      retailerCommissionAmount: safeValRupees(fin.retailerCommissionAmountPaise),
+      companyProfitPercentage: fin.companyProfitPercentage,
+      companyProfitAmount: safeValRupees(fin.companyProfitAmountPaise),
     });
 
     transaction.commissionCalculated = true;
     await transaction.save().catch(() => { });
 
     if (globalTransaction) {
-      globalTransaction.commissionEarnedPaise = Math.round(retailerCommissionAmount * 100);
+      globalTransaction.commissionEarnedPaise = fin.commissionAmountPaise;
       await globalTransaction.save().catch(() => { });
     }
 
     console.log('\n====================================================');
-    console.log('[COMMISSION HISTORY CREATED SUCCESSFULLY]');
+    console.log('[COMMISSION HISTORY RECORDED]');
     console.log(`orderId: ${orderId}`);
-    console.log(`retailerId: ${userId}`);
-    console.log(`rechargeAmount: ${amount}`);
-    console.log(`retailerCommissionAmount: ${retailerCommissionAmount}`);
+    console.log(`grossAmountPaise: ${fin.grossAmountPaise}`);
+    console.log(`commissionAmountPaise: ${fin.commissionAmountPaise}`);
     console.log('====================================================\n');
 
   } catch (err) {
@@ -627,7 +578,12 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     }
 
     if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
-      await walletService.commitReservation(userId, transaction.payableAmount || transaction.amount).catch(e => console.error('[Wallet Commit Warning]:', e.message));
+      const netPayablePaise = transaction.netPayablePaise || Math.round((transaction.payableAmount || transaction.amount) * 100);
+      await walletService.settleWalletOrder({
+        userId,
+        orderId: transaction.orderId,
+        netPayablePaise,
+      }).catch(e => console.error('[Wallet Settlement Error]:', e.message));
     }
 
     await processSuccessCommission({
@@ -674,11 +630,16 @@ const dispatchA1TopupRecharge = async ({ transaction, globalTransaction, userId 
     }
 
     if (transaction.paymentMethod === 'WALLET' || transaction.paymentMethod === 'wallet') {
-      await walletService.releaseReservation(userId, transaction.payableAmount || transaction.amount).catch(e => console.error('[Wallet Release Warning]:', e.message));
+      const netPayablePaise = transaction.netPayablePaise || Math.round((transaction.payableAmount || transaction.amount) * 100);
+      await walletService.releaseOrderHold({
+        userId,
+        orderId: transaction.orderId,
+        netPayablePaise,
+      }).catch(e => console.error('[Wallet Release Error]:', e.message));
     } else if (transaction.razorpayPaymentId) {
       try {
         const razorpay = getRazorpayInstance();
-        const payablePaise = Math.round((transaction.payableAmount || transaction.amount) * 100);
+        const payablePaise = transaction.netPayablePaise || Math.round((transaction.payableAmount || transaction.amount) * 100);
         await razorpay.payments.refund(transaction.razorpayPaymentId, {
           amount: payablePaise,
           notes: { reason: 'Recharge failed at provider', orderId: transaction.orderId },
@@ -1152,12 +1113,21 @@ const executeRecharge = async (req, res, next) => {
       accountType: req.user?.accountType || 'BUSINESS',
     });
 
+    const grossAmountPaise = payableDetails.grossAmountPaise;
+    const commissionAmountPaise = payableDetails.commissionAmountPaise;
+    const netPayablePaise = payableDetails.netPayablePaise;
+
     const commissionAmount = payableDetails.commissionAmount;
-    const payableAmount = payableDetails.payableAmount; // e.g., 98 for 100 recharge
+    const payableAmount = payableDetails.payableAmount;
 
     transaction.accountType = payableDetails.accountType;
     transaction.commissionRecordId = payableDetails.commissionRecordId;
     transaction.commissionPercent = payableDetails.commissionPercentage;
+    transaction.grossAmountPaise = grossAmountPaise;
+    transaction.commissionAmountPaise = commissionAmountPaise;
+    transaction.netPayablePaise = netPayablePaise;
+    transaction.reservedAmountPaise = netPayablePaise;
+    transaction.amount = payableDetails.rechargeAmount;
     transaction.commissionAmount = commissionAmount;
     transaction.payableAmount = payableAmount;
     transaction.reservedAmount = payableAmount;
@@ -1166,17 +1136,22 @@ const executeRecharge = async (req, res, next) => {
     if (globalTransaction) {
       globalTransaction.accountType = payableDetails.accountType;
       globalTransaction.commissionRecordId = payableDetails.commissionRecordId;
-      globalTransaction.payableAmountPaise = Math.round(payableAmount * 100);
-      globalTransaction.commissionEarnedPaise = Math.round(commissionAmount * 100);
+      globalTransaction.amountPaise = grossAmountPaise;
+      globalTransaction.payableAmountPaise = netPayablePaise;
+      globalTransaction.commissionEarnedPaise = commissionAmountPaise;
       await globalTransaction.save();
     }
 
     const isWalletPayment = String(paymentMode || 'wallet').toLowerCase() === 'wallet';
 
     if (isWalletPayment) {
-      amountForRollback = payableAmount;
+      amountForRollback = netPayablePaise;
       try {
-        await walletService.reserveAmount(userId, payableAmount);
+        await walletService.reserveWalletAmount({
+          userId,
+          netPayablePaise,
+          orderId,
+        });
         walletReserved = true;
 
         notificationService.notifyWalletDebit({
@@ -1187,7 +1162,7 @@ const executeRecharge = async (req, res, next) => {
           referenceId: orderId
         });
       } catch (resErr) {
-        return await handlePreCheckFailure("Wallet Reservation", resErr.message, 400);
+        return await handlePreCheckFailure("Wallet Reservation", resErr.message, 400, { shortfallPaise: resErr.shortfallPaise });
       }
     } else {
       console.log(`[RECHARGE PAYMENT] paymentMethod=${paymentMode.toUpperCase()} — Skipping wallet balance validation & wallet reservation.`);

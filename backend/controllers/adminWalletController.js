@@ -218,7 +218,11 @@ const searchRetailers = async (req, res, next) => {
     });
 
     const result = retailers.map(r => {
-      const w = walletMap[r._id.toString()] || { balancePaise: 0, onHoldPaise: 0, availablePaise: 0 };
+      const w = walletMap[r._id.toString()] || { balancePaise: 0, onHoldPaise: 0 };
+      const balancePaise = Math.round(w.balancePaise || 0);
+      const holdPaise = Math.round(w.onHoldPaise || 0);
+      const availablePaise = Math.max(0, balancePaise - holdPaise);
+
       return {
         id: r._id,
         retailerId: r.retailerId,
@@ -227,16 +231,16 @@ const searchRetailers = async (req, res, next) => {
         shopName: r.shopName || '',
         role: r.role || 'retailer',
         kycStatus: r.kycStatus || 'notStarted',
-        walletBalancePaise: w.balancePaise,
-        holdAmountPaise: w.onHoldPaise,
-        walletBalanceRupees: Number((w.balancePaise / 100).toFixed(2)),
-        holdAmountRupees: Number((w.onHoldPaise / 100).toFixed(2)),
+        walletBalancePaise: balancePaise,
+        holdAmountPaise: holdPaise,
+        walletBalanceRupees: Number((balancePaise / 100).toFixed(2)),
+        holdAmountRupees: Number((holdPaise / 100).toFixed(2)),
         // Backward compatibility fields:
-        balancePaise: w.balancePaise,
-        availablePaise: w.balancePaise,
-        balanceRupees: Number((w.balancePaise / 100).toFixed(2)),
-        onHoldRupees: Number((w.onHoldPaise / 100).toFixed(2)),
-        availableRupees: Number((w.balancePaise / 100).toFixed(2)),
+        balancePaise: balancePaise,
+        availablePaise: availablePaise,
+        balanceRupees: Number((balancePaise / 100).toFixed(2)),
+        onHoldRupees: Number((holdPaise / 100).toFixed(2)),
+        availableRupees: Number((availablePaise / 100).toFixed(2)),
       };
     });
 

@@ -17,6 +17,30 @@ const commissionHistorySchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    rechargeAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    providerCommissionAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    retailerCommissionAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    companyProfitAmountPaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
     rechargeAmount: {
       type: Number,
       required: true,

@@ -17,17 +17,33 @@ const walletLedgerSchema = new mongoose.Schema(
       enum: ['CREDIT', 'DEBIT'],
       required: true,
     },
-    amount: {
+    amountPaise: {
       type: Number,
       required: true,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    previousBalancePaise: {
+      type: Number,
+      default: 0,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    balanceAfterPaise: {
+      type: Number,
+      required: true,
+      get: v => Math.round(v || 0),
+      set: v => Math.round(v || 0),
+    },
+    // Backwards compatibility fields (rupees)
+    amount: {
+      type: Number,
     },
     previousBalance: {
       type: Number,
-      default: 0,
     },
     balanceAfter: {
       type: Number,
-      required: true,
     },
     referenceType: {
       type: String,
@@ -49,6 +65,9 @@ const walletLedgerSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+walletLedgerSchema.index({ userId: 1, referenceType: 1, referenceId: 1, transactionType: 1 }, { unique: true });
+walletLedgerSchema.index({ userId: 1, createdAt: -1 });
 
 const WalletLedger = mongoose.model('WalletLedger', walletLedgerSchema);
 module.exports = WalletLedger;

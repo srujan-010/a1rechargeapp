@@ -262,17 +262,12 @@ class CurrentBillPaymentService {
 
     // Step 5: If already SUCCESS, commit wallet and ledger immediately
     if (paymentResponse.success) {
-      await walletService.commitReservation(user._id, amount);
-      await ledgerService.createTransaction(
-        user._id,
-        'DEBIT',
-        amount,
-        `${serviceType} Payment - ${consumerIdentifier}`,
+      await walletService.settleWalletOrder({
+        userId: user._id,
         orderId,
-        'RECHARGE',
-        transaction._id
-      );
-      console.log(`[PAYMENT EXECUTOR] ✔ Wallet committed and ledger entry created (immediate SUCCESS).`);
+        netPayablePaise: Math.round(amount * 100),
+      });
+      console.log(`[PAYMENT EXECUTOR] ✔ Wallet settled and ledger entry created (immediate SUCCESS).`);
 
       notificationService.notifyRechargeSuccess({
         userId: user._id,
@@ -361,24 +356,22 @@ class CurrentBillPaymentService {
         transaction.operatorReference = statusResponse.operatorReference;
         await transaction.save();
 
-        await walletService.commitReservation(transaction.userId, transaction.amount);
-        
-        await ledgerService.createTransaction(
-          transaction.userId,
-          'DEBIT',
-          transaction.amount,
-          `${transaction.serviceType} Payment - ${transaction.mobileNumber}`,
-          transaction.orderId,
-          'RECHARGE',
-          transaction._id
-        );
+        await walletService.settleWalletOrder({
+          userId: transaction.userId,
+          orderId: transaction.orderId,
+          netPayablePaise: transaction.netPayablePaise || Math.round(transaction.amount * 100),
+        });
       } else if (statusResponse.status === 'FAILED') {
         transaction.status = 'FAILED';
         transaction.failureReason = statusResponse.message;
         transaction.providerTransactionId = statusResponse.providerTransactionId;
         await transaction.save();
 
-        await walletService.releaseReservation(transaction.userId, transaction.amount);
+        await walletService.releaseOrderHold({
+          userId: transaction.userId,
+          orderId: transaction.orderId,
+          netPayablePaise: transaction.netPayablePaise || Math.round(transaction.amount * 100),
+        });
       } else {
         // Still PENDING
         if (statusResponse.providerTransactionId && !transaction.providerTransactionId) {

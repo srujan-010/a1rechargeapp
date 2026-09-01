@@ -14,6 +14,26 @@ const transactionSchema = new mongoose.Schema({
   amountPaise: {
     type: Number,
     required: true,
+    get: v => Math.round(v || 0),
+    set: v => Math.round(v || 0),
+  },
+  payableAmountPaise: {
+    type: Number,
+    default: null,
+    get: v => (v != null ? Math.round(v) : null),
+    set: v => (v != null ? Math.round(v) : null),
+  },
+  commissionEarnedPaise: {
+    type: Number,
+    default: 0,
+    get: v => Math.round(v || 0),
+    set: v => Math.round(v || 0),
+  },
+  closingBalancePaise: {
+    type: Number,
+    default: null,
+    get: v => (v != null ? Math.round(v) : null),
+    set: v => (v != null ? Math.round(v) : null),
   },
   status: {
     type: String,
@@ -23,7 +43,6 @@ const transactionSchema = new mongoose.Schema({
   service: {
     type: String,
     required: true,
-    // e.g., 'mobile_recharge', 'bbps', 'dmt', 'wallet_topup', etc.
   },
   referenceId: {
     type: String,
@@ -33,15 +52,8 @@ const transactionSchema = new mongoose.Schema({
   description: {
     type: String,
   },
-  closingBalancePaise: {
-    type: Number,
-  },
   recipientName: String,
   mobileNumber: String,
-  commissionEarnedPaise: {
-    type: Number,
-    default: 0
-  },
   accountType: {
     type: String,
     enum: ['PERSONAL', 'BUSINESS'],
@@ -77,10 +89,6 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     default: 'wallet',
   },
-  payableAmountPaise: {
-    type: Number,
-    default: null,
-  },
   razorpayOrderId: {
     type: String,
     default: null,
@@ -102,4 +110,3 @@ transactionSchema.index({ userId: 1, service: 1, status: 1 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 module.exports = Transaction;
-

@@ -58,15 +58,15 @@ const getBalance = async (req, res, next) => {
 
     const walletBalancePaise = Math.round(wallet.balancePaise || 0);
     const holdAmountPaise = Math.round(wallet.onHoldPaise || 0);
+    const availablePaise = Math.max(0, walletBalancePaise - holdAmountPaise);
 
     res.status(200).json({
       success: true,
       data: {
         walletBalancePaise,
         holdAmountPaise,
-        // Both balancePaise and availablePaise represent the ACTUAL WALLET BALANCE (Opening + Credits - Debits)
         balancePaise: walletBalancePaise,
-        availablePaise: walletBalancePaise,
+        availablePaise,
         onHoldPaise: holdAmountPaise,
         currency: wallet.currency || 'INR',
         walletFundingMode: getWalletFundingMode(),
