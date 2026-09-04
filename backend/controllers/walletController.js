@@ -189,7 +189,60 @@ const getStatement = async (req, res, next) => {
         });
     }
 
-    const merged = [...formattedGlobal, ...formattedRecharges];
+    // Also query WalletLedger collection to ensure all ledger entries (admin credits, UPI top-ups, refunds, etc.) are present
+    const WalletLedger = require('../models/WalletLedger');
+    const ledgerEntries = await WalletLedger.find(baseQuery)
+      .sort({ createdAt: -1 })
+      .lean()
+      .maxTimeMS(3000);
+
+    const existingRefIds = new Set([
+      ...formattedGlobal.map(t => t.referenceNumber).filter(Boolean),
+      ...formattedRecharges.map(t => t.referenceNumber).filter(Boolean)
+    ]);
+
+    const formattedLedger = ledgerEntries
+      .filter(l => !existingRefIds.has(String(l.referenceId)))
+      .map(l => {
+        const isCred = l.transactionType === 'CREDIT';
+        let serviceType = 'wallet_topup';
+        if (l.referenceType === 'ADMIN_CREDIT' || l.referenceType === 'ADMIN_DEBIT' || l.referenceType === 'MANUAL') {
+          serviceType = 'admin_credit';
+        } else if (l.referenceType === 'RECHARGE') {
+          serviceType = 'mobile_recharge';
+        } else if (l.referenceType === 'REFUND') {
+          serviceType = 'refund';
+        } else if (l.referenceType === 'COMMISSION') {
+          serviceType = 'commission';
+        }
+
+        const refStr = String(l.referenceId || '');
+        return {
+          id: String(l._id),
+          type: isCred ? 'credit' : 'debit',
+          serviceType,
+          operatorName: 'System',
+          operatorId: null,
+          transactionTitle: l.referenceType === 'ADMIN_CREDIT' ? 'ADMIN CREDIT' : (l.referenceType === 'ADMIN_DEBIT' ? 'ADMIN DEBIT' : getTransactionTitle(serviceType, 'System')),
+          customerIdentifier: '',
+          amount: l.amountPaise || Math.round((l.amount || 0) * 100),
+          commission: 0,
+          status: 'success',
+          createdAt: (l.createdAt instanceof Date ? l.createdAt : new Date(l.createdAt)).toISOString(),
+          completedAt: (l.createdAt instanceof Date ? l.createdAt : new Date(l.createdAt)).toISOString(),
+          updatedAt: (l.updatedAt instanceof Date ? l.updatedAt : new Date(l.updatedAt || l.createdAt)).toISOString(),
+          paymentMethod: l.referenceType === 'RAZORPAY_WALLET_CREDIT' ? 'razorpay' : 'system',
+          referenceNumber: refStr,
+          clientOrderId: refStr,
+          apiReference: refStr,
+          providerTransactionId: refStr,
+          failureReason: null,
+          providerMessage: null,
+          description: l.description || l.remark || 'Wallet Transaction',
+        };
+      });
+
+    const merged = [...formattedGlobal, ...formattedRecharges, ...formattedLedger];
     merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     const pageNum = Number(page) || 1;

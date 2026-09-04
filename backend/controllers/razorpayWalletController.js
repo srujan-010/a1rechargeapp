@@ -8,6 +8,7 @@ const WalletFundingTransaction = require('../models/WalletFundingTransaction');
 const Notification = require('../models/Notification');
 const notificationService = require('../services/notification.service');
 const { isRazorpayEnabled, getRazorpayKeyId } = require('../config/walletConfig');
+const reviewerService = require('../services/reviewer.service');
 
 /**
  * Initialize Razorpay SDK Instance safely with exact environment credentials
@@ -31,6 +32,14 @@ const getRazorpayInstance = () => {
  */
 const createOrder = async (req, res, next) => {
   try {
+    // Reviewer Sandbox Safety Guard: Block live Razorpay wallet topup orders
+    if (reviewerService.isReviewerUser(req.user)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Online payment gateways are disabled for Reviewer Test Account. Please use test wallet balance.',
+      });
+    }
+
     if (!isRazorpayEnabled()) {
       return res.status(400).json({
         success: false,
@@ -303,6 +312,9 @@ const verifyPayment = async (req, res, next) => {
     const ledger = await WalletLedger.create({
       userId: req.user._id,
       transactionType: 'CREDIT',
+      amountPaise: wft.amountPaise,
+      previousBalancePaise,
+      balanceAfterPaise: newBalancePaise,
       amount: wft.amountRupees,
       previousBalance: walletBeforeRupees,
       balanceAfter: walletAfterRupees,
@@ -427,6 +439,9 @@ const handleWebhook = async (req, res, next) => {
         await WalletLedger.create({
           userId: wft.userId,
           transactionType: 'CREDIT',
+          amountPaise: wft.amountPaise,
+          previousBalancePaise,
+          balanceAfterPaise: newBalancePaise,
           amount: wft.amountRupees,
           previousBalance: Number((previousBalancePaise / 100).toFixed(2)),
           balanceAfter: Number((newBalancePaise / 100).toFixed(2)),

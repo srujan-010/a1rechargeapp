@@ -12,6 +12,7 @@ const generateRetailerId = require('../utils/generateRetailerId');
 const fast2smsService = require('../services/fast2sms.service');
 const admin = require('firebase-admin');
 const { getApp } = require('../config/firebase');
+const reviewerService = require('../services/reviewer.service');
 
 // Configuration Constants
 const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES || '10', 10);
@@ -95,6 +96,11 @@ const sendOtp = async (req, res, next) => {
     if (!mobile || mobile.length !== 10) {
       res.status(400);
       throw new Error('Please provide a valid 10-digit mobile number.');
+    }
+
+    // Google Play Reviewer Authentication Path (Server-Side Only)
+    if (reviewerService.isReviewerPhone(mobile)) {
+      return await reviewerService.handleReviewerSendOtp(res, mobile);
     }
 
     // Rate Limiting: Max 5 requests per hour per mobile for login
@@ -185,6 +191,11 @@ const verifyOtp = async (req, res, next) => {
       console.error(`[VERIFY OTP FAILURE REASON]: Invalid OTP length`);
       res.status(400);
       throw new Error('Please enter a valid 6-digit OTP.');
+    }
+
+    // Google Play Reviewer Verification Path (Server-Side Only)
+    if (reviewerService.isReviewerPhone(mobile)) {
+      return await reviewerService.handleReviewerVerifyOtp(req, res, mobile, enteredOtp);
     }
 
     const otpRecord = await Otp.findOne({ mobile, purpose: 'login' });
@@ -289,6 +300,11 @@ const resendOtp = async (req, res, next) => {
     if (!mobile || mobile.length !== 10) {
       res.status(400);
       throw new Error('Please provide a valid 10-digit mobile number.');
+    }
+
+    // Google Play Reviewer Resend Path (Server-Side Only)
+    if (reviewerService.isReviewerPhone(mobile)) {
+      return await reviewerService.handleReviewerSendOtp(res, mobile);
     }
 
     const otpRecord = await Otp.findOne({ mobile, purpose: 'login' });

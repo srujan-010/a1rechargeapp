@@ -168,6 +168,29 @@ class CurrentBillPaymentService {
 
     const orderId = `${orderIdPrefix}${Date.now()}`;
 
+    // Reviewer Sandbox Safety Guard: Zero live provider calls
+    const reviewerService = require('./reviewer.service');
+    if (reviewerService.isReviewerUser(user)) {
+      const simulated = await reviewerService.simulateRechargePayment({
+        user,
+        orderId,
+        mobileNumber: consumerIdentifier,
+        amount,
+        operatorCode,
+        circleCode: 'N/A',
+        serviceType: serviceType || 'bill_payment',
+        internalOperatorName: `${serviceType} Bill Sandbox`,
+      });
+      return {
+        success: true,
+        status: 'SUCCESS',
+        orderId,
+        providerTransactionId: simulated.providerTransactionId,
+        operatorReference: simulated.operatorReference,
+        message: `${serviceType} bill payment successful (Sandbox Mode)`,
+      };
+    }
+
     console.log('\n==================================================');
     console.log(`[LOG 2] Generated internal transactionId / orderId: ${orderId}`);
     console.log(`[LOG 3] Generated provider orderId: ${orderId}`);

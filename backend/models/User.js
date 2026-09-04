@@ -172,6 +172,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isTestAccount: {
+      type: Boolean,
+      default: false,
+    },
     lastLogin: {
       type: Date,
     },
@@ -330,6 +334,7 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     hasPhysicalShop: this.hasPhysicalShop !== false,
     businessType: this.businessType || null,
     isVerified: this.isVerified,
+    isTestAccount: this.isTestAccount === true,
     hasSecurityPin: !!this.securityPinHash,
     securityPinConfigured: !!this.securityPinHash,
     hasWalletMpin: !!(this.walletMpinHash || this.mpinHash),

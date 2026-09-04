@@ -5,6 +5,7 @@ const User = require('../models/User');
 const notificationService = require('../services/notification.service');
 const Otp = require('../models/Otp');
 const fast2smsService = require('../services/fast2sms.service');
+const reviewerService = require('../services/reviewer.service');
 
 // Helper to validate 6-digit Wallet MPIN rules
 const validateMpinRules = (mpin) => {
@@ -167,6 +168,11 @@ const sendForgotOtp = async (req, res, next) => {
     if (!mobile || mobile.length !== 10) {
       res.status(400);
       throw new Error('Valid registered mobile number not found on user profile.');
+    }
+
+    // Google Play Reviewer Forgot Wallet MPIN Flow (Server-Side Only)
+    if (reviewerService.isReviewerPhone(mobile)) {
+      return await reviewerService.handleReviewerForgotOtp(res, mobile, 'wallet_pin_reset');
     }
 
     const otp = crypto.randomInt(100000, 1000000).toString();

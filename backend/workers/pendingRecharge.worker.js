@@ -73,6 +73,13 @@ class PendingRechargeWorker {
         return;
       }
 
+      // Reviewer Isolation Double-Lock Guard
+      const reviewerService = require('../services/reviewer.service');
+      if (transaction.providerName === 'TEST_REVIEWER_SANDBOX' || (await reviewerService.isReviewerUserId(transaction.userId))) {
+        console.log(`[Worker] Skipping reviewer test transaction ${transaction.orderId}`);
+        return;
+      }
+
       // Step 1: Verify Mongo query by looking up document by orderId
       const foundDoc = await RechargeTransaction.findOne({ orderId: transaction.orderId });
       console.log(`\n[Worker] Mongo Query Verification for orderId '${transaction.orderId}':`);

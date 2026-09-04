@@ -47,7 +47,7 @@ const walletLedgerSchema = new mongoose.Schema(
     },
     referenceType: {
       type: String,
-      enum: ['RECHARGE', 'COMMISSION', 'REFUND', 'ADD_MONEY', 'MANUAL', 'ADMIN_CREDIT', 'RAZORPAY_WALLET_CREDIT'],
+      enum: ['RECHARGE', 'COMMISSION', 'REFUND', 'ADD_MONEY', 'MANUAL', 'ADMIN_CREDIT', 'ADMIN_DEBIT', 'RAZORPAY_WALLET_CREDIT', 'HOLD_RELEASE'],
       required: true,
     },
     referenceId: {
@@ -71,3 +71,4 @@ walletLedgerSchema.index({ userId: 1, createdAt: -1 });
 
 const WalletLedger = mongoose.model('WalletLedger', walletLedgerSchema);
 module.exports = WalletLedger;
+

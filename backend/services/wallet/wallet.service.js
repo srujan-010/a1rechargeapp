@@ -566,15 +566,53 @@ class WalletService {
     return true;
   }
 
-  async addBalance(userId, amount) {
+  async addBalance(userId, amount, metadata = {}) {
     const amountPaise = Math.round(Number(amount) * 100);
-    const result = await Wallet.updateOne(
-      { userId },
-      { $inc: { balancePaise: amountPaise } }
-    );
-    return result.modifiedCount > 0;
+    let wallet = await Wallet.findOne({ userId });
+    if (!wallet) {
+      wallet = await Wallet.create({ userId, balancePaise: 0, onHoldPaise: 0, currency: 'INR' });
+    }
+    const previousBalancePaise = Math.round(wallet.balancePaise || 0);
+    wallet.balancePaise = previousBalancePaise + amountPaise;
+    await wallet.save();
+
+    const balanceAfterPaise = wallet.balancePaise;
+    const refType = metadata.referenceType || 'ADD_MONEY';
+    const refId = metadata.referenceId || `CREDIT_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const desc = metadata.description || 'Wallet balance credit';
+
+    let ledger = null;
+    try {
+      ledger = await WalletLedger.create({
+        userId,
+        adminId: metadata.adminId || null,
+        transactionType: 'CREDIT',
+        amountPaise,
+        previousBalancePaise,
+        balanceAfterPaise,
+        amount: Number((amountPaise / 100).toFixed(2)),
+        previousBalance: Number((previousBalancePaise / 100).toFixed(2)),
+        balanceAfter: Number((balanceAfterPaise / 100).toFixed(2)),
+        referenceType: refType,
+        referenceId: refId,
+        remark: metadata.remark || desc,
+        description: desc,
+      });
+    } catch (err) {
+      if (err.code !== 11000) {
+        console.error('[WALLET SERVICE] Ledger creation error in addBalance:', err);
+      }
+    }
+
+    return {
+      success: true,
+      modifiedCount: 1,
+      newBalancePaise: balanceAfterPaise,
+      ledger,
+    };
   }
 }
 
 module.exports = new WalletService();
+
 

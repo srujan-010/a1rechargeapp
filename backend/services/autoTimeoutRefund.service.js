@@ -71,6 +71,14 @@ class AutoTimeoutRefundService {
       console.log(`====================================================`);
 
       for (const txn of candidates) {
+        // Reviewer Isolation Double-Lock Guard
+        const reviewerService = require('./reviewer.service');
+        if (txn.providerName === 'TEST_REVIEWER_SANDBOX' || (await reviewerService.isReviewerUserId(txn.userId))) {
+          console.log(`[AUTO TIMEOUT] Skipping reviewer test transaction ${txn.orderId}`);
+          summary.skipped++;
+          continue;
+        }
+
         const ageMinutes = Math.round((now.getTime() - new Date(txn.createdAt).getTime()) / 60000);
 
         console.log(`\n[AUTO TIMEOUT]`);

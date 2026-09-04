@@ -34,6 +34,13 @@ class DthStatusWorker {
       console.log(`[DTH Worker] Found ${pendingTxns.length} pending DTH transaction(s) to verify.`);
 
       for (const txn of pendingTxns) {
+        // Reviewer Isolation Double-Lock Guard
+        const reviewerService = require('../services/reviewer.service');
+        if (txn.providerName === 'TEST_REVIEWER_SANDBOX' || (await reviewerService.isReviewerUserId(txn.userId))) {
+          console.log(`[DTH Worker] Skipping reviewer test transaction ${txn.orderId}`);
+          continue;
+        }
+
         console.log(`[DTH Worker] Processing Pending DTH Transaction: Order ID=${txn.orderId}, Mongo ID=${txn._id}`);
         try {
           await dthStatusService.checkDthStatus(txn.orderId);

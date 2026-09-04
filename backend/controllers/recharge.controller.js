@@ -9,6 +9,7 @@ const ProviderOperator = require('../models/ProviderOperator');
 const ProviderCircle = require('../models/ProviderCircle');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const reviewerService = require('../services/reviewer.service');
 
 // @desc    Check health of the A1 Topup provider
 // @route   GET /api/provider/a1topup/health
@@ -314,6 +315,14 @@ const createRazorpayRechargeOrder = async (req, res, next) => {
   let globalTransaction;
   try {
     const userId = req.user._id;
+
+    // Reviewer Sandbox Safety Guard: Block live Razorpay recharge orders
+    if (reviewerService.isReviewerUser(req.user)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Online payment gateways are disabled for Reviewer Test Account. Please use test wallet balance.',
+      });
+    }
     let mobileNumber = req.body.mobileNumber || req.body.phoneNumber || req.body.subscriberNumber || 'N/A';
     let {
       amount,
@@ -880,6 +889,33 @@ const executeRecharge = async (req, res, next) => {
   amount = amount || 0;
 
   try {
+    // Reviewer Sandbox Safety Guard: Zero live provider calls, isolated test balance debit
+    if (reviewerService.isReviewerUser(req.user)) {
+      const inputMpin = req.body.walletMpin || mpin;
+      if (inputMpin) {
+        const isMatch = await req.user.matchWalletMpin(inputMpin);
+        if (!isMatch) {
+          return res.status(400).json({ success: false, error: 'Invalid Wallet MPIN' });
+        }
+      }
+
+      const simulatedReceipt = await reviewerService.simulateRechargePayment({
+        user: req.user,
+        orderId,
+        mobileNumber,
+        amount,
+        operatorCode: reqProviderOpCode || operatorId || 'TEST',
+        circleCode: circleId || '4',
+        serviceType: 'mobile',
+        internalOperatorName: planName || 'Reviewer Sandbox Operator',
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: simulatedReceipt,
+      });
+    }
+
     // Requirement 1: Create transaction record immediately in INITIATED status
     transaction = await RechargeTransaction.create({
       orderId,

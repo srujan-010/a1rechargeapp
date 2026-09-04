@@ -6,6 +6,7 @@ const dthRechargeService = require('../services/dthRecharge.service');
 const dthStatusService = require('../services/dthStatus.service');
 const walletService = require('../services/wallet/wallet.service');
 const { calculateRechargePayableHelper } = require('./recharge.controller');
+const reviewerService = require('../services/reviewer.service');
 
 /**
  * Controller dedicated exclusively to DTH Recharge operations.
@@ -50,6 +51,40 @@ const executeDthRecharge = async (req, res, next) => {
         step: "Amount Validation",
         error: "Invalid recharge amount",
         details: { amount }
+      });
+    }
+
+    // Reviewer Sandbox Safety Guard: Zero live provider calls
+    if (reviewerService.isReviewerUser(req.user)) {
+      if (paymentMode === 'wallet') {
+        const inputMpin = req.body.walletMpin || mpin;
+        if (inputMpin) {
+          const isMpinValid = await req.user.matchWalletMpin(inputMpin);
+          if (!isMpinValid) {
+            return res.status(400).json({
+              success: false,
+              step: "MPIN Validation",
+              error: "Invalid Wallet MPIN entered"
+            });
+          }
+        }
+      }
+
+      orderId = `DTH${Date.now()}${Math.floor(Math.random() * 1000)}`;
+      const simulatedReceipt = await reviewerService.simulateRechargePayment({
+        user: req.user,
+        orderId,
+        mobileNumber: subscriberId,
+        amount,
+        operatorCode: operatorId || 'DTH_TEST',
+        circleCode: '4',
+        serviceType: 'dth',
+        internalOperatorName: 'Reviewer DTH Sandbox',
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: simulatedReceipt,
       });
     }
 
