@@ -697,7 +697,7 @@ class _WalletTransactionTile extends StatelessWidget {
     }
     
     IconData getIcon() {
-      if (txn.serviceType == 'admin_credit') return Icons.admin_panel_settings;
+      if (txn.serviceType == 'admin_credit' || txn.serviceType == 'admin_debit') return Icons.admin_panel_settings;
       if (txn.serviceType == 'wallet_topup') return Icons.account_balance_wallet;
       if (txn.serviceType == 'commission') return Icons.star;
       if (txn.serviceType == 'mobile_recharge' || txn.serviceType == 'mobile' || txn.serviceType == 'dth') return Icons.phone_android;
@@ -707,11 +707,13 @@ class _WalletTransactionTile extends StatelessWidget {
 
     String getTitle() {
       if (txn.serviceType == 'admin_credit') return 'ADMIN CREDIT';
+      if (txn.serviceType == 'admin_debit') return 'ADMIN DEBIT';
       return txn.transactionTitle;
     }
     
     String getSubtitle() {
       if (txn.serviceType == 'admin_credit') return 'Wallet credited by administrator';
+      if (txn.serviceType == 'admin_debit') return 'Wallet debited by administrator';
       if (txn.serviceType == 'wallet_topup') return 'UPI';
       if (txn.customerIdentifier.isNotEmpty) return txn.customerIdentifier;
       if (txn.referenceId.isNotEmpty) return 'Ref: ${txn.referenceId}';

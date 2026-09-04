@@ -238,6 +238,10 @@ serviceType: ${txn.serviceType}
                       isBold: true,
                     ),
                   _DetailRow(label: 'Payment Method', value: txn.paymentMethod.toUpperCase()),
+                  if (txn.adminName != null && txn.adminName!.isNotEmpty)
+                    _DetailRow(label: 'Performed By', value: txn.adminName!, isBold: true),
+                  if (txn.reason != null && txn.reason!.isNotEmpty)
+                    _DetailRow(label: 'Reason', value: txn.reason!, isBold: true),
                   const Divider(height: 1, color: Color(0xFFF1F5F9)),
                   
                   _DetailRow(label: 'Order / Ref ID', value: txn.referenceId.isNotEmpty ? txn.referenceId : txn.id),
@@ -359,9 +363,11 @@ serviceType: ${txn.serviceType}
       'dth' => 'DTH Recharge',
       'bbps' => 'BBPS Bill Payment',
       'wallet_topup' => 'Wallet Topup',
+      'admin_credit' => 'ADMIN CREDIT',
+      'admin_debit' => 'ADMIN DEBIT',
       'commission' => 'Commission Credit',
       'settlement' => 'Bank Settlement',
-      _ => type.toUpperCase(),
+      _ => type.toUpperCase().replaceAll('_', ' '),
     };
   }
 

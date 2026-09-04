@@ -13,6 +13,7 @@ const getTransactionTitle = (serviceType, operatorName) => {
     'dth': 'DTH Recharge',
     'wallet_topup': 'Wallet Top-up',
     'admin_credit': 'ADMIN CREDIT',
+    'admin_debit': 'ADMIN DEBIT',
     'commission': 'Commission Earned',
     'dmt': 'Money Transfer',
     'aeps': 'AEPS Withdrawal',
@@ -118,18 +119,22 @@ const getStatement = async (req, res, next) => {
       .maxTimeMS(3000);
 
     const formattedGlobal = globalTransactions.map(t => {
-      const isCred = t.type === 'credit' || t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit';
+      const isCred = t.type === 'credit' || (t.service === 'wallet_topup' || t.service === 'commission' || t.service === 'admin_credit') && t.service !== 'admin_debit';
       const refNo = t.referenceNumber || t.referenceId || t.orderId || (t.metadata && t.metadata.orderId) || '';
       const mobile = t.mobileNumber || t.customerIdentifier || t.recipientName || (t.metadata && t.metadata.customerNumber) || '';
-      const opName = t.operatorName || (t.metadata && t.metadata.operator) || (t.operatorId ? t.operatorId : 'Operator');
+      const sType = t.serviceType || t.service || 'mobile_recharge';
+      const isAdminTx = sType === 'admin_credit' || sType === 'admin_debit' || t.service === 'admin_credit' || t.service === 'admin_debit';
+      const opName = t.operatorName || (t.metadata && t.metadata.operator) || (isAdminTx ? 'Admin' : (t.operatorId ? t.operatorId : 'Operator'));
+      const title = sType === 'admin_debit' ? 'ADMIN DEBIT' : (sType === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(sType, opName));
+      const payMethod = isAdminTx ? 'ADMIN' : (t.paymentMethod || 'wallet');
 
       return {
         id: String(t._id),
-        type: isCred ? 'credit' : 'debit',
-        serviceType: t.serviceType || t.service || 'mobile_recharge',
+        type: t.type ? t.type.toLowerCase() : (isCred ? 'credit' : 'debit'),
+        serviceType: sType,
         operatorName: opName,
         operatorId: t.operatorId || null,
-        transactionTitle: t.service === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(t.service || 'mobile_recharge', opName),
+        transactionTitle: title,
         customerIdentifier: mobile,
         amount: t.amountPaise || Math.round((t.amount || 0) * 100),
         commission: t.commissionEarnedPaise || Math.round((t.commission || 0) * 100),
@@ -137,14 +142,18 @@ const getStatement = async (req, res, next) => {
         createdAt: (t.createdAt instanceof Date ? t.createdAt : new Date(t.createdAt)).toISOString(),
         completedAt: ((t.updatedAt || t.createdAt) instanceof Date ? (t.updatedAt || t.createdAt) : new Date(t.updatedAt || t.createdAt)).toISOString(),
         updatedAt: (t.updatedAt instanceof Date ? t.updatedAt : new Date(t.updatedAt || t.createdAt)).toISOString(),
-        paymentMethod: t.paymentMethod || 'wallet',
+        paymentMethod: payMethod,
         referenceNumber: refNo,
         clientOrderId: refNo,
         apiReference: t.apiReference || t.providerTransactionId || '',
         providerTransactionId: t.providerTransactionId || t.apiReference || null,
         failureReason: t.failureReason || null,
         providerMessage: t.providerMessage || null,
-        description: t.description || `Transaction for ${mobile || 'account'}`,
+        description: t.description || t.reason || `Transaction for ${mobile || 'account'}`,
+        reason: t.reason || t.description || null,
+        adminId: t.adminId || null,
+        adminName: t.adminName || (isAdminTx ? 'System Admin' : null),
+        performedBy: t.adminName || (isAdminTx ? 'System Admin' : null),
       };
     });
 
@@ -206,8 +215,12 @@ const getStatement = async (req, res, next) => {
       .map(l => {
         const isCred = l.transactionType === 'CREDIT';
         let serviceType = 'wallet_topup';
-        if (l.referenceType === 'ADMIN_CREDIT' || l.referenceType === 'ADMIN_DEBIT' || l.referenceType === 'MANUAL') {
+        if (l.referenceType === 'ADMIN_CREDIT') {
           serviceType = 'admin_credit';
+        } else if (l.referenceType === 'ADMIN_DEBIT') {
+          serviceType = 'admin_debit';
+        } else if (l.referenceType === 'MANUAL') {
+          serviceType = isCred ? 'admin_credit' : 'admin_debit';
         } else if (l.referenceType === 'RECHARGE') {
           serviceType = 'mobile_recharge';
         } else if (l.referenceType === 'REFUND') {
@@ -217,13 +230,18 @@ const getStatement = async (req, res, next) => {
         }
 
         const refStr = String(l.referenceId || '');
+        const isAdminTx = serviceType === 'admin_credit' || serviceType === 'admin_debit';
+        const title = serviceType === 'admin_debit' ? 'ADMIN DEBIT' : (serviceType === 'admin_credit' ? 'ADMIN CREDIT' : getTransactionTitle(serviceType, 'System'));
+        const opName = isAdminTx ? 'Admin' : 'System';
+        const payMethod = isAdminTx ? 'ADMIN' : (l.referenceType === 'RAZORPAY_WALLET_CREDIT' ? 'razorpay' : 'system');
+
         return {
           id: String(l._id),
           type: isCred ? 'credit' : 'debit',
           serviceType,
-          operatorName: 'System',
+          operatorName: opName,
           operatorId: null,
-          transactionTitle: l.referenceType === 'ADMIN_CREDIT' ? 'ADMIN CREDIT' : (l.referenceType === 'ADMIN_DEBIT' ? 'ADMIN DEBIT' : getTransactionTitle(serviceType, 'System')),
+          transactionTitle: title,
           customerIdentifier: '',
           amount: l.amountPaise || Math.round((l.amount || 0) * 100),
           commission: 0,
@@ -231,7 +249,7 @@ const getStatement = async (req, res, next) => {
           createdAt: (l.createdAt instanceof Date ? l.createdAt : new Date(l.createdAt)).toISOString(),
           completedAt: (l.createdAt instanceof Date ? l.createdAt : new Date(l.createdAt)).toISOString(),
           updatedAt: (l.updatedAt instanceof Date ? l.updatedAt : new Date(l.updatedAt || l.createdAt)).toISOString(),
-          paymentMethod: l.referenceType === 'RAZORPAY_WALLET_CREDIT' ? 'razorpay' : 'system',
+          paymentMethod: payMethod,
           referenceNumber: refStr,
           clientOrderId: refStr,
           apiReference: refStr,
@@ -239,6 +257,10 @@ const getStatement = async (req, res, next) => {
           failureReason: null,
           providerMessage: null,
           description: l.description || l.remark || 'Wallet Transaction',
+          reason: l.remark || l.description || null,
+          adminId: l.adminId || null,
+          adminName: isAdminTx ? 'System Admin' : null,
+          performedBy: isAdminTx ? 'System Admin' : null,
         };
       });
 

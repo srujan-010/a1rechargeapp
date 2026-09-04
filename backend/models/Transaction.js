@@ -52,6 +52,19 @@ const transactionSchema = new mongoose.Schema({
   description: {
     type: String,
   },
+  reason: {
+    type: String,
+    default: null,
+  },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
+  adminName: {
+    type: String,
+    default: null,
+  },
   recipientName: String,
   mobileNumber: String,
   accountType: {

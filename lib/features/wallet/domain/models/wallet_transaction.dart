@@ -23,6 +23,8 @@ class WalletTransaction extends Equatable {
     required this.referenceId,
     this.apiReference,
     this.description,
+    this.reason,
+    this.adminName,
     this.closingBalancePaise,
     this.type,
   });
@@ -41,6 +43,8 @@ class WalletTransaction extends Equatable {
   final String referenceId;
   final String? apiReference;
   final String? description;
+  final String? reason;
+  final String? adminName;
   final int? closingBalancePaise;
   final String? type;
 
@@ -49,8 +53,8 @@ class WalletTransaction extends Equatable {
   bool get isCredit {
     final tLower = (type ?? '').toLowerCase();
     final sLower = serviceType.toLowerCase();
-    if (tLower == 'debit' || sLower.contains('debit')) return false;
-    if (tLower == 'credit' || sLower.contains('credit') || sLower.contains('topup')) return true;
+    if (tLower == 'debit' || sLower == 'admin_debit' || sLower.contains('debit')) return false;
+    if (tLower == 'credit' || sLower == 'admin_credit' || sLower.contains('credit') || sLower.contains('topup')) return true;
     return false;
   }
   bool get isDebit => !isCredit;
@@ -104,11 +108,12 @@ class WalletTransaction extends Equatable {
     final rawOp = _asString(json['operatorName'] ?? json['operator'] ?? json['operatorCode']) ?? '';
     final rawType = _asString(json['type']);
     final rawService = _asString(json['serviceType'] ?? json['service']) ?? 'unknown';
+    final isAdminService = rawService == 'admin_credit' || rawService == 'admin_debit';
 
     return WalletTransaction(
       id: _asString(json['id'] ?? json['_id']) ?? '',
       serviceType: rawService,
-      operatorName: OperatorFormatter.getDisplayOperatorName(rawOp),
+      operatorName: isAdminService ? 'Admin' : OperatorFormatter.getDisplayOperatorName(rawOp),
       transactionTitle: _asString(json['transactionTitle']) ?? (rawService == 'admin_credit' ? 'ADMIN CREDIT' : (rawService == 'admin_debit' ? 'ADMIN DEBIT' : 'Transaction')),
       customerIdentifier: _asString(json['customerIdentifier'] ?? json['mobileNumber']) ?? '',
       amountPaise: _asInt(json['amount']) ?? _asInt(json['amountPaise']) ?? 0,
@@ -116,10 +121,12 @@ class WalletTransaction extends Equatable {
       status: _parseStatus(_asString(json['status'])),
       createdAt: parseTimestamp(json['createdAt'] ?? json['timestamp']),
       completedAt: parseTimestamp(json['completedAt'] ?? json['timestamp']),
-      paymentMethod: _asString(json['paymentMethod']) ?? 'wallet',
+      paymentMethod: isAdminService ? 'ADMIN' : (_asString(json['paymentMethod']) ?? 'wallet'),
       referenceId: _asString(json['referenceNumber'] ?? json['referenceId'] ?? json['orderId'] ?? json['clientOrderId']) ?? '',
       apiReference: _asString(json['apiReference'] ?? json['providerTransactionId']),
       description: _asString(json['description']),
+      reason: _asString(json['reason'] ?? json['description']),
+      adminName: _asString(json['performedBy'] ?? json['adminName']),
       closingBalancePaise: _asInt(json['closingBalancePaise'] ?? json['closingBalance']),
       type: rawType,
     );
